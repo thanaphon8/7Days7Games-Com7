@@ -709,115 +709,9 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
   );
 }
 
-function Crown({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 32 24" aria-hidden className={`drop-shadow ${className}`}>
-      <path d="M3 9l6 5 7-10 7 10 6-5-3 13H6L3 9z" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" strokeLinejoin="round" />
-      {[[3, 9], [16, 4], [29, 9]].map(([x, y]) => (
-        <circle key={x} cx={x} cy={y} r="2" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" />
-      ))}
-    </svg>
-  );
-}
-
-// ===== โปรไฟล์ผู้ใช้ =====
+// ===== ผู้ใช้ =====
 type Profile = { userId?: string; name: string; avatar: string };
 type RankUser = { name: string; games: number; score: number };
-
-const AVATAR_IDS = Array.from({ length: 25 }, (_, i) => String(i + 1).padStart(2, "0"));
-const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
-
-function Avatar({ id, size }: { id: string; size: string }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [id]);
-  if (failed)
-    return (
-      <span style={{ backgroundColor: FALLBACK_BG[((Number(id) || 1) - 1) % 4] }} className={`flex shrink-0 items-center justify-center rounded-full font-light text-zinc-900 ${size}`}>
-        {id}
-      </span>
-    );
-  return <Image src={`/img/avatars/${id}.png`} alt="" width={216} height={216} onError={() => setFailed(true)} className={`shrink-0 rounded-full object-cover ${size}`} />;
-}
-
-function ProfileSheet({ profile, savedCount, crown, onSave, onLogout, onClose }: { profile: Profile; savedCount: number; crown: boolean; onSave: (p: Profile) => void; onLogout: () => void; onClose: () => void }) {
-  useOverlay(true, onClose);
-  const [name, setName] = useState(profile.name);
-  const [avatar, setAvatar] = useState(profile.avatar);
-  const clean = name.trim();
-  const valid = clean.length >= 2 && clean.length <= 20;
-  const changed = clean !== profile.name || avatar !== profile.avatar;
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label="โปรไฟล์ของฉัน" style={{ animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)" }} className="fixed inset-0 z-[60] overflow-y-auto bg-white text-zinc-900">
-      <div className="mx-auto max-w-3xl px-6 pb-44 pt-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">โปรไฟล์ของฉัน</h2>
-          <CloseButton onClick={onClose} className="!bg-zinc-100 !shadow-none" />
-        </div>
-
-        <div className="mt-8 flex items-center gap-5 rounded-[2rem] bg-[#F4D35E] p-6 text-[#4A3B00]">
-          <div className="relative">
-            {crown && <Crown className="absolute -top-8 left-1/2 w-12 -translate-x-1/2 -rotate-6" />}
-            <Avatar key={avatar} id={avatar} size="h-24 w-24 ring-4 ring-white" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-3xl font-semibold tracking-tight">{clean || "ชื่อของคุณ"}</p>
-            <p className="mt-1 text-sm opacity-70">กิจกรรมที่บันทึกไว้ {savedCount} รายการ</p>
-          </div>
-        </div>
-
-        <div className="mt-8">
-          <label htmlFor="pname" className="text-sm font-medium">ชื่อที่แสดง</label>
-          <input
-            id="pname"
-            value={name}
-            maxLength={20}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="ชื่อที่จะแสดงบนอันดับ"
-            className="mt-2 h-12 w-full rounded-full border border-black/[.08] bg-white px-5 text-base outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900"
-          />
-          <p className={`mt-2 px-2 text-sm ${valid ? "text-zinc-500" : "text-[#C4262E]"}`}>{valid ? "ชื่อนี้จะแสดงบนอันดับให้ผู้เล่นคนอื่นเห็น" : "ชื่อต้องยาว 2-20 ตัวอักษร"}</p>
-        </div>
-
-        <div className="mt-8">
-          <p className="text-sm font-medium">รูปโปรไฟล์</p>
-          <div role="radiogroup" aria-label="รูปโปรไฟล์" className="mt-4 grid grid-cols-4 gap-4 sm:grid-cols-5 sm:gap-5">
-            {AVATAR_IDS.map((id) => {
-              const on = avatar === id;
-              return (
-                <button
-                  key={id}
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={`รูปโปรไฟล์ ${id}`}
-                  onClick={() => setAvatar(id)}
-                  className={`rounded-full transition-transform duration-150 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 ${on ? "scale-105 shadow-lg ring-4 ring-[#2B7FFF]" : "hover:scale-105"}`}
-                >
-                  <Avatar id={id} size="aspect-square w-full" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="fixed inset-x-0 bottom-0 bg-gradient-to-t from-white via-white/90 to-transparent px-6 pb-6 pt-12">
-        <div className="mx-auto flex max-w-3xl gap-3">
-          <button onClick={onLogout} className="h-14 rounded-full border border-black/[.08] bg-white px-6 text-sm font-medium transition-colors hover:bg-black/[.04]">
-            ออกจากระบบ
-          </button>
-          <button
-            disabled={!valid || !changed}
-            onClick={() => onSave({ ...profile, name: clean, avatar })}
-            className="h-14 flex-1 rounded-full bg-zinc-900 text-base font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            บันทึกการเปลี่ยนแปลง
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function Home() {
   const [cat, setCat] = useState("ทั้งหมด");
@@ -826,14 +720,11 @@ export default function Home() {
   const [favOpen, setFavOpen] = useState(false);
   const [gameId, setGameId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [profOpen, setProfOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  
+
   // State สำหรับเก็บข้อมูลอันดับจาก API
   const [topUsers, setTopUsers] = useState<RankUser[]>([]);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
-
-  const isTop = !!profile && topUsers.length > 0 && profile.name === topUsers[0].name;
 
   // 1. ดึงข้อมูล Leaderboard 3 อันดับแรก
   useEffect(() => {
@@ -926,44 +817,7 @@ export default function Home() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  // 3. บันทึกข้อมูล Profile ลง LocalStorage และ MongoDB
-  async function saveProfile(p: Profile) {
-    setProfile(p);
-    setProfOpen(false);
-
-    localStorage.setItem(
-      "profile",
-      JSON.stringify({
-        userId: p.userId,
-        name: p.name,
-        avatarId: p.avatar,
-      })
-    );
-
-    if (p.userId) {
-      try {
-        await fetch("/api/user", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: p.userId,
-            name: p.name,
-            avatarId: p.avatar,
-          }),
-        });
-      } catch (error) {
-        console.error("Failed to sync profile with database:", error);
-      }
-    }
-  }
-
-  function logout() {
-    localStorage.removeItem("profile");
-    setProfile(null);
-    setProfOpen(false);
-  }
-
-  // 4. บันทึกรายการโปรด (Saved Events)
+  // 3. บันทึกรายการโปรด (Saved Events)
   async function toggleSave(id: string) {
     const nextSaved = saved.includes(id) ? saved.filter((x) => x !== id) : [...saved, id];
     setSaved(nextSaved);
@@ -1028,17 +882,20 @@ export default function Home() {
           {!ready ? (
             <span className="h-10 w-10 animate-pulse rounded-full bg-zinc-200" />
           ) : profile ? (
-            <button
-              onClick={() => setProfOpen(true)}
+            <Link
+              href="/login/profile"
               aria-label="โปรไฟล์ของฉัน"
               className="flex items-center gap-3 rounded-full border border-black/[.08] p-1 transition-colors hover:bg-black/[.04] sm:pr-4"
             >
-              <span className="relative">
-                {isTop && <Crown className="absolute -top-3 left-1/2 w-5 -translate-x-1/2 -rotate-6" />}
-                <Avatar id={profile.avatar} size="h-10 w-10" />
-              </span>
+              <Image
+                src={`/img/avatars/${profile.avatar}.png`}
+                alt=""
+                width={40}
+                height={40}
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+              />
               <span className="hidden max-w-28 truncate text-sm font-medium sm:block">{profile.name}</span>
-            </button>
+            </Link>
           ) : (
             <Link
               href="/login"
@@ -1052,7 +909,7 @@ export default function Home() {
 
       <main className="flex w-full max-w-5xl flex-col gap-6 px-6 pb-24">
         {/* ===== Events (เลื่อนอัตโนมัติ) ===== */}
-        <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId || profOpen} />
+        <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId} />
 
         {/* ===== ตัวเลขสรุป ===== */}
         <section className="grid grid-cols-3 gap-3">
@@ -1174,7 +1031,7 @@ export default function Home() {
             <h2 className="text-3xl font-semibold tracking-tight">พร้อมเล่นรอบแรกหรือยัง</h2>
             <p className="mt-2 text-sm opacity-70">สมัครใช้เวลาไม่ถึงหนึ่งนาที</p>
           </div>
-          <Link href="/login#signup" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-black">
+          <Link href="/login#signup" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-[#1F2A5C]/80">
             สมัครเข้าร่วม
           </Link>
         </section>
@@ -1184,9 +1041,6 @@ export default function Home() {
         7 Days 7 Games · มินิเกมสำหรับพักสมอง
       </footer>
 
-      {profOpen && profile && (
-        <ProfileSheet profile={profile} savedCount={saved.length} crown={isTop} onSave={saveProfile} onLogout={logout} onClose={() => setProfOpen(false)} />
-      )}
       <GameDetail game={GAMES.find((g) => g.id === gameId) ?? null} onClose={() => setGameId(null)} />
       <FavoritesSheet open={favOpen} detailOpen={!!openId} saved={saved} toggleSave={toggleSave} onOpenEvent={setOpenId} onClose={() => setFavOpen(false)} />
       <EventDetail
