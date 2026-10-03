@@ -569,7 +569,7 @@ export default function Home() {
       <footer className="w-full max-w-5xl border-t border-black/[.08] px-6 py-8 text-sm text-zinc-500">
         7 Days 7 Games · มินิเกมสำหรับพักสมอง
       </footer>
-
+            
       <GameDetail game={GAMES.find((g) => g.id === gameId) ?? null} onClose={() => setGameId(null)} />
       <FavoritesSheet open={favOpen} detailOpen={!!openId} saved={saved} toggleSave={toggleSave} onOpenEvent={setOpenId} onClose={() => setFavOpen(false)} />
       <EventDetail
