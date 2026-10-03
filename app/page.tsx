@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { RANKING } from "../lib/ranking";
 import { useEffect, useState } from "react";
 
 // ===== ข้อมูลตัวอย่าง (ยังไม่เชื่อมระบบ) =====
@@ -58,11 +59,7 @@ const GAMES: Game[] = [
   },
 ];
 
-const TOP = [
-  { name: "ณัฐ", total: 3420, games: 4 },
-  { name: "มินท์", total: 3180, games: 4 },
-  { name: "ปิ่น", total: 2960, games: 3 },
-];
+const TOP = RANKING.slice(0, 3);
 
 const STEPS = [
   { title: "สมัครเข้าร่วม", desc: "ใช้อีเมลบริษัทและตั้งชื่อที่จะแสดงบนอันดับ" },
@@ -133,7 +130,7 @@ const EVENTS: EventItem[] = [
     id: "pubg", status: "SOON", meta: "เริ่ม 26 ต.ค. 2026", lines: ["PUBG", "Mobile Cup"],
     desc: "ศึกชิงแชมป์ PUBG Mobile ของบริษัท รวมทีม 4 คน ลงสนามแบบ Squad ลุ้นเป็นทีมสุดท้ายที่รอดชีวิต",
     cta: "ดูรายละเอียด", href: "#", bg: "#B7CBB0", fg: "#1F3A2A", visual: "shapes",
-    image: "/img/pubg1.jpg", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png",
+    image: "/img/pubg1.png", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png",
     info: [["วันแข่ง", "26 ต.ค. 2026 เวลา 18:00 น."], ["รูปแบบ", "Squad ทีมละ 4 คน"], ["รอบการแข่ง", "คัดเลือก 3 แมตช์ แล้วน็อกเอาต์ 8 ทีม"]],
     rules: ["สมัครเป็นทีม ทีมละ 4 คน และมีผู้เล่นสำรองได้ 1 คน", "รอบคัดเลือกแข่ง 3 แมตช์ คะแนนรวมมาจากอันดับของทีมและจำนวน Kill", "8 ทีมคะแนนสูงสุดเข้าสู่รอบน็อกเอาต์ แข่งโหมด Team Deathmatch 4 ต่อ 4", "ทีมที่ชนะรอบชิงชนะเลิศเป็นแชมป์ รางวัลจะประกาศก่อนวันแข่ง", "ทุกคนต้องใช้บัญชีของตัวเอง และห้ามใช้โปรแกรมช่วยเล่นทุกชนิด"],
     bracket: {
@@ -230,11 +227,13 @@ function HeartButton({ on, onClick, className = "", tabIndex = 0 }: { on: boolea
 
 function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: string[]; toggleSave: (id: string) => void; setOpenId: (id: string | null) => void; overlayOpen: boolean }) {
   const n = EVENTS.length;
-  const slides = [...EVENTS, EVENTS[0]]; // ท้ายสุดเป็นสำเนาใบแรก เพื่อให้วนต่อเนื่องไม่กระตุก
-  const [index, setIndex] = useState(0);
-  const [animate, setAnimate] = useState(true);
+  // pos นับเพิ่มขึ้นเรื่อยๆ ไม่ย้อนกลับ: การ์ดที่เพิ่งเลื่อนออกทางซ้ายจะวาร์ปไปรอทางขวาตอนที่อยู่นอกจอ
+  // ทำให้หลังการ์ดสุดท้ายก็เลื่อนต่อเนื่องไปการ์ดแรกในทิศทางเดิม (ต้องมีการ์ดอย่างน้อย 3 ใบ)
+  const [pos, setPos] = useState(0);
+  const [instant, setInstant] = useState(false); // true = สลับทันทีไม่มีแอนิเมชัน (ตอนกดจุดข้ามไปการ์ดอื่น)
   const [paused, setPaused] = useState(false);
   const [reduced, setReduced] = useState(false);
+  const active = ((pos % n) + n) % n;
 
   useEffect(() => {
     setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -243,19 +242,9 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
   // เลื่อนอัตโนมัติ (หยุดเมื่อเอาเมาส์ชี้ หรือเปิดหน้ารายละเอียดอยู่)
   useEffect(() => {
     if (paused || reduced || overlayOpen) return;
-    const t = setInterval(() => {
-      setAnimate(true);
-      setIndex((i) => (i >= n ? i : i + 1));
-    }, SLIDE_MS);
+    const t = setInterval(() => setPos((p) => p + 1), SLIDE_MS);
     return () => clearInterval(t);
-  }, [paused, reduced, overlayOpen, n]);
-
-  function onEnd(e: React.TransitionEvent) {
-    if (e.target !== e.currentTarget || index !== n) return;
-    setAnimate(false); // กระโดดกลับใบแรกแบบไม่เห็นการเลื่อน
-    setIndex(0);
-    setTimeout(() => setAnimate(true), 60);
-  }
+  }, [paused, reduced, overlayOpen]);
 
   return (
     <section
@@ -272,28 +261,29 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
         @keyframes sheet-in { from { opacity: 0; transform: translateY(28px) scale(.98); } to { opacity: 1; transform: none; } }
       `}</style>
 
-      <div className="overflow-hidden rounded-[2rem]">
-        <div
-          onTransitionEnd={onEnd}
-          className="flex gap-4"
-          style={{
-            transform: `translateX(calc(${-index * 100}% - ${index}rem))`,
-            transition: animate && !reduced ? "transform 700ms cubic-bezier(.65,0,.35,1)" : "none",
-          }}
-        >
-          {slides.map((e, i) => {
+      <div className="grid overflow-hidden rounded-[2rem]">
+        {EVENTS.map((e, i) => {
             const Title = i === 0 ? "h1" : "h2";
-            const clone = i === n;
+            // ตำแหน่งสัมพัทธ์: 0 = กำลังแสดง, -1 = เพิ่งเลื่อนออกทางซ้าย, 1.. = รออยู่ทางขวา
+            const rel = ((((i - pos + 1) % n) + n) % n) - 1;
+            const clone = rel !== 0;
             const stop = (ev: React.MouseEvent) => ev.stopPropagation();
             return (
               <article
-                key={`${e.id}-${i}`}
+                key={e.id}
                 aria-hidden={clone}
                 aria-label={`${e.lines.join(" ")} กดเพื่อดูรายละเอียด`}
                 tabIndex={clone ? -1 : 0}
                 onClick={() => setOpenId(e.id)}
                 onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && setOpenId(e.id)}
-                style={{ backgroundColor: e.bg, color: e.fg }}
+                style={{
+                  backgroundColor: e.bg,
+                  color: e.fg,
+                  gridArea: "1 / 1",
+                  transform: `translateX(calc(${rel * 100}% + ${rel}rem))`,
+                  // ใบที่วาร์ปไปรอทางขวา (rel = n-2) อยู่นอกจอ จึงสลับตำแหน่งทันทีได้ ใบอื่นเลื่อนต่อเนื่อง
+                  transition: instant || reduced || rel === n - 2 ? "none" : "transform 700ms cubic-bezier(.65,0,.35,1)",
+                }}
                 className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden rounded-[2rem] p-5 outline-none focus-visible:ring-4 focus-visible:ring-blue-400 md:grid-cols-2 md:p-6 ${e.image ? "min-h-[30rem] md:min-h-[26rem]" : ""}`}
               >
                 {e.image && (
@@ -339,8 +329,7 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
                 )}
               </article>
             );
-          })}
-        </div>
+        })}
       </div>
 
       <div className="mt-5 flex justify-center gap-2">
@@ -348,12 +337,13 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
           <button
             key={e.id}
             aria-label={`ไปที่ Event ${i + 1}`}
-            aria-current={index % n === i}
+            aria-current={active === i}
             onClick={() => {
-              setAnimate(true);
-              setIndex(i);
+              setInstant(true);
+              setPos((p) => p - (((p % n) + n) % n) + i);
+              setTimeout(() => setInstant(false), 60);
             }}
-            className={`h-2.5 rounded-full transition-all duration-300 ${index % n === i ? "w-8 bg-zinc-900" : "w-2.5 bg-zinc-300 hover:bg-zinc-400"}`}
+            className={`h-2.5 rounded-full transition-all duration-300 ${active === i ? "w-8 bg-zinc-900" : "w-2.5 bg-zinc-300 hover:bg-zinc-400"}`}
           />
         ))}
       </div>
@@ -454,6 +444,8 @@ function Bracket({ teams, accent }: { teams: string[]; accent: string }) {
 // ===== หน้ารายละเอียดกิจกรรมเต็มจอ =====
 function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: EventItem | null; saved: string[]; toggleSave: (id: string) => void; onClose: () => void; onPlay: () => void }) {
   useOverlay(!!sel, onClose);
+  const [fade, setFade] = useState(0); // 0 = เห็นรูปชัด, 1 = รูปกลืนเป็นสีพื้นเต็มที่ (เพิ่มขึ้นตามการเลื่อน)
+  useEffect(() => setFade(0), [sel?.id]);
   if (!sel) return null;
   const isSaved = saved.includes(sel.id);
   return (
@@ -461,13 +453,15 @@ function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: EventIt
       role="dialog"
       aria-modal="true"
       aria-label={sel.lines.join(" ")}
+      onScroll={sel.cover ? (e) => setFade(Math.min(1, e.currentTarget.scrollTop / (window.innerHeight * 0.45))) : undefined}
       style={{ backgroundColor: sel.bg, color: sel.fg, animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)" }}
       className="fixed inset-0 z-[60] overflow-y-auto"
     >
       {sel.cover && (
-        <div aria-hidden className="absolute inset-x-0 top-0 h-[62vh] overflow-hidden">
+        <div aria-hidden className="fixed inset-x-0 top-0 h-[62vh] overflow-hidden">
           <Image src={sel.cover} alt="" fill priority sizes="100vw" className="object-cover" />
           <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, rgba(0,0,0,.25) 0%, rgba(0,0,0,0) 30%, ${sel.bg} 100%)` }} />
+          <div className="absolute inset-0" style={{ backgroundColor: sel.bg, opacity: fade * 0.92 }} />
         </div>
       )}
       <div className="relative mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-36 pt-6">
@@ -694,6 +688,18 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
   );
 }
 
+// มงกุฏของผู้นำอันดับ 1
+function Crown({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 24" aria-hidden className={`drop-shadow ${className}`}>
+      <path d="M3 9l6 5 7-10 7 10 6-5-3 13H6L3 9z" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" strokeLinejoin="round" />
+      {[[3, 9], [16, 4], [29, 9]].map(([x, y]) => (
+        <circle key={x} cx={x} cy={y} r="2" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" />
+      ))}
+    </svg>
+  );
+}
+
 // ===== โปรไฟล์ผู้ใช้ =====
 type Profile = { name: string; avatar: string };
 const AVATAR_IDS = Array.from({ length: 25 }, (_, i) => String(i + 1).padStart(2, "0")); // public/img/avatars/01.png ... 25.png
@@ -712,7 +718,7 @@ function Avatar({ id, size }: { id: string; size: string }) {
   return <Image src={`/img/avatars/${id}.png`} alt="" width={216} height={216} onError={() => setFailed(true)} className={`shrink-0 rounded-full object-cover ${size}`} />;
 }
 
-function ProfileSheet({ profile, savedCount, onSave, onLogout, onClose }: { profile: Profile; savedCount: number; onSave: (p: Profile) => void; onLogout: () => void; onClose: () => void }) {
+function ProfileSheet({ profile, savedCount, crown, onSave, onLogout, onClose }: { profile: Profile; savedCount: number; crown: boolean; onSave: (p: Profile) => void; onLogout: () => void; onClose: () => void }) {
   useOverlay(true, onClose);
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
@@ -730,7 +736,10 @@ function ProfileSheet({ profile, savedCount, onSave, onLogout, onClose }: { prof
 
         {/* ตัวอย่างโปรไฟล์ (เปลี่ยนตามที่แก้ทันที) */}
         <div className="mt-8 flex items-center gap-5 rounded-[2rem] bg-[#F4D35E] p-6 text-[#4A3B00]">
-          <Avatar key={avatar} id={avatar} size="h-24 w-24 ring-4 ring-white" />
+          <div className="relative">
+            {crown && <Crown className="absolute -top-8 left-1/2 w-12 -translate-x-1/2 -rotate-6" />}
+            <Avatar key={avatar} id={avatar} size="h-24 w-24 ring-4 ring-white" />
+          </div>
           <div className="min-w-0">
             <p className="truncate text-3xl font-semibold tracking-tight">{clean || "ชื่อของคุณ"}</p>
             <p className="mt-1 text-sm opacity-70">กิจกรรมที่บันทึกไว้ {savedCount} รายการ</p>
@@ -799,6 +808,7 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profOpen, setProfOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const isTop = !!profile && profile.name === RANKING[0].name; // ผู้ใช้เป็นที่ 1 -> มีมงกุฏบนรูปโปรไฟล์
 
   useEffect(() => {
     try {
@@ -861,7 +871,7 @@ export default function Home() {
         <nav className="hidden gap-10 text-sm font-medium sm:flex">
           <a href="#events" className="hover:opacity-60">Events</a>
           <a href="#games" className="hover:opacity-60">เกมทั้งหมด</a>
-          <a href="#ranking" className="hover:opacity-60">อันดับ</a>
+          <Link href="/rank" className="hover:opacity-60">อันดับ</Link>
           <button onClick={() => setFavOpen(true)} className="flex items-center hover:opacity-60">
             รายการโปรด
             {saved.length > 0 && (
@@ -891,7 +901,10 @@ export default function Home() {
               aria-label="โปรไฟล์ของฉัน"
               className="flex items-center gap-3 rounded-full border border-black/[.08] p-1 transition-colors hover:bg-black/[.04] sm:pr-4"
             >
-              <Avatar id={profile.avatar} size="h-10 w-10" />
+              <span className="relative">
+                {isTop && <Crown className="absolute -top-3 left-1/2 w-5 -translate-x-1/2 -rotate-6" />}
+                <Avatar id={profile.avatar} size="h-10 w-10" />
+              </span>
               <span className="hidden max-w-28 truncate text-sm font-medium sm:block">{profile.name}</span>
             </button>
           ) : (
@@ -989,9 +1002,7 @@ export default function Home() {
                 แต้มรวมจากคะแนนสูงสุดของแต่ละเกม อัปเดตทุกครั้งที่มีคนเล่นจบ
               </p>
             </div>
-            <a href="#" className="inline-flex h-11 w-fit items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]">
-              ดูอันดับทั้งหมด
-            </a>
+            <Link href="/rank" className="inline-flex h-11 w-fit items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]">ดูอันดับทั้งหมด</Link>
           </div>
           <ol className="flex flex-col gap-3">
             {TOP.map((r, i) => (
@@ -999,7 +1010,7 @@ export default function Home() {
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/70 text-base font-semibold">{i + 1}</span>
                 <span className="flex-1 truncate text-lg font-medium">{r.name}</span>
                 <span className="text-sm opacity-60">{r.games} เกม</span>
-                <span className="w-20 pr-3 text-right text-xl font-semibold tabular-nums">{r.total}</span>
+                <span className="w-20 pr-3 text-right text-xl font-semibold tabular-nums">{r.score}</span>
               </li>
             ))}
           </ol>
@@ -1038,7 +1049,7 @@ export default function Home() {
       </footer>
 
       {profOpen && profile && (
-        <ProfileSheet profile={profile} savedCount={saved.length} onSave={saveProfile} onLogout={logout} onClose={() => setProfOpen(false)} />
+        <ProfileSheet profile={profile} savedCount={saved.length} crown={isTop} onSave={saveProfile} onLogout={logout} onClose={() => setProfOpen(false)} />
       )}
       <GameDetail game={GAMES.find((g) => g.id === gameId) ?? null} onClose={() => setGameId(null)} />
       <FavoritesSheet open={favOpen} detailOpen={!!openId} saved={saved} toggleSave={toggleSave} onOpenEvent={setOpenId} onClose={() => setFavOpen(false)} />
