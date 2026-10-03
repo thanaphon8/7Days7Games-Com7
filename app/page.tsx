@@ -13,6 +13,7 @@ import EventsCarousel, {
   useOverlay,
   type Status,
 } from "./components/events/page";
+import Navbar, { getAvatarSrc, type Profile } from "./components/navbar/page";
 
 // ===== ข้อมูลตัวอย่าง =====
 type Game = {
@@ -206,30 +207,7 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
 }
 
 // ===== ผู้ใช้ =====
-type Profile = { userId?: string; name: string; avatar: string };
 type RankUser = { name: string; avatarId?: string; games: number; score: number };
-
-// Helper สำหรับดึง URL ของ Avatar จาก public/img/ โดยตรง
-function getAvatarSrc(avatar?: string) {
-  if (!avatar) return "/img/p01.png"; // Default รูปถ้าไม่มีข้อมูล
-
-  // หากเป็น URL เต็ม หรือ Data URL (Base64)
-  if (avatar.startsWith("http") || avatar.startsWith("data:")) {
-    return avatar;
-  }
-
-  // หากมี Path นำหน้าเป็น /img/ หรือ / แล้ว ให้ใช้นั้นเลย
-  if (avatar.startsWith("/")) {
-    return avatar;
-  }
-
-  // ถ้าส่งมาเป็น "p24.png" หรือ "p24" หรือ "24"
-  if (avatar.endsWith(".png") || avatar.endsWith(".jpg") || avatar.endsWith(".jpeg") || avatar.endsWith(".webp")) {
-    return `/img/${avatar}`;
-  }
-
-  return `/img/${avatar}.png`;
-}
 
 export default function Home() {
   const [cat, setCat] = useState("ทั้งหมด");
@@ -362,71 +340,12 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
       {/* ===== เมนู / NAVBAR ===== */}
-      <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
-        <a href="#" aria-label="COM7 หน้าแรก" className="flex items-center">
-          <Image
-            src="/img/com7logo.png"
-            alt="COM7"
-            width={120}
-            height={36}
-            priority
-            className="h-9 w-auto origin-left scale-[2.1]"
-          />
-        </a>
-        <nav className="hidden gap-10 text-sm font-medium sm:flex">
-          <a href="#events" className="hover:opacity-60">Events</a>
-          <a href="#games" className="hover:opacity-60">เกมทั้งหมด</a>
-          <Link href="/rank" className="hover:opacity-60">อันดับ</Link>
-          <button onClick={() => setFavOpen(true)} className="flex items-center hover:opacity-60">
-            รายการโปรด
-            {saved.length > 0 && (
-              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E5484D] px-1.5 text-xs font-semibold text-white">{saved.length}</span>
-            )}
-          </button>
-          <a href="#how" className="hover:opacity-60">วิธีเล่น</a>
-        </nav>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFavOpen(true)}
-            aria-label="รายการโปรด"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/[.08] transition-colors hover:bg-black/[.04] sm:hidden"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill={saved.length ? "#E5484D" : "none"} stroke={saved.length ? "#E5484D" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d={HEART_PATH} />
-            </svg>
-            {saved.length > 0 && (
-              <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-900 px-1 text-xs font-semibold text-white">{saved.length}</span>
-            )}
-          </button>
-          {!ready ? (
-            <span className="h-10 w-10 animate-pulse rounded-full bg-zinc-200" />
-          ) : profile ? (
-            <Link
-              href="/login/profile"
-              aria-label="โปรไฟล์ของฉัน"
-              className="flex items-center gap-3 rounded-full border border-black/[.08] p-1 transition-colors hover:bg-black/[.04] sm:pr-4"
-            >
-              {/* ใช้ <img> เผื่อกรณีไฟล์ไม่มีอยู่จริงจะติด Fallback onerror */}
-              <img
-                src={getAvatarSrc(profile.avatar)}
-                alt={profile.name}
-                className="h-10 w-10 shrink-0 rounded-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = "/img/p01.png";
-                }}
-              />
-              <span className="hidden max-w-28 truncate text-sm font-medium sm:block">{profile.name}</span>
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="flex h-10 items-center rounded-full bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-700"
-            >
-              เข้าสู่ระบบ
-            </Link>
-          )}
-        </div>
-      </header>
+      <Navbar
+        saved={saved}
+        profile={profile}
+        ready={ready}
+        onOpenFavorites={() => setFavOpen(true)}
+      />
 
       <main className="flex w-full max-w-5xl flex-col gap-6 px-6 pb-24">
         {/* ===== Events (เลื่อนอัตโนมัติ) ===== */}
@@ -569,7 +488,7 @@ export default function Home() {
       <footer className="w-full max-w-5xl border-t border-black/[.08] px-6 py-8 text-sm text-zinc-500">
         7 Days 7 Games · มินิเกมสำหรับพักสมอง
       </footer>
-            
+
       <GameDetail game={GAMES.find((g) => g.id === gameId) ?? null} onClose={() => setGameId(null)} />
       <FavoritesSheet open={favOpen} detailOpen={!!openId} saved={saved} toggleSave={toggleSave} onOpenEvent={setOpenId} onClose={() => setFavOpen(false)} />
       <EventDetail
