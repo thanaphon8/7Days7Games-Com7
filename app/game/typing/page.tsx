@@ -9,9 +9,8 @@ import type { RefObject } from "react";
 const BG = "#F4D35E";
 const FG = "#4A3B00";
 const RED = "#C4262E";
+const GAME_ID = "typing"; // ID อ้างอิงของเกมนี้
 
-// ===== คลังคำ: ชุด english (200 คำที่ใช้บ่อย) แบบเดียวกับ Monkeytype =====
-// หมายเหตุ: ถ้าอยากได้ไฟล์ตรงตัว ให้ก๊อปจาก monkeytype repo (frontend/static/languages/english.json) มาแทนอาร์เรย์นี้
 const WORDS = [
   "the", "be", "of", "and", "a", "to", "in", "he", "have", "it", "that", "for", "they", "I", "with", "as", "not", "on", "she", "at",
   "by", "this", "we", "you", "do", "but", "from", "or", "which", "one", "would", "all", "will", "there", "say", "who", "make", "when", "can", "more",
@@ -34,7 +33,7 @@ function makeWords(n: number): string[] {
   const out: string[] = [];
   while (out.length < n) {
     const w = WORDS[Math.floor(Math.random() * WORDS.length)];
-    if (w !== out[out.length - 1]) out.push(w); // ไม่ให้คำซ้ำติดกัน
+    if (w !== out[out.length - 1]) out.push(w);
   }
   return out;
 }
@@ -49,7 +48,6 @@ function rating(wpm: number) {
 
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-// ตัวเลขนับขึ้นจาก 0 ถึงค่าจริง (ใช้ตอนโชว์ผล)
 function useCountUp(target: number, active: boolean) {
   const [v, setV] = useState(0);
   useEffect(() => {
@@ -70,11 +68,10 @@ function useCountUp(target: number, active: boolean) {
   return v;
 }
 
-// ===== หนึ่งคำบนเทป: ตัวอักษร + ช่องว่างท้ายคำ =====
 const WordView = memo(function WordView({ w, t, active, past, targetRef }: { w: string; t: string; active: boolean; past: boolean; targetRef: RefObject<HTMLSpanElement | null> }) {
   const bad = past && t !== w;
   const extra = t.length > w.length ? t.slice(w.length) : "";
-  const tgt = active ? Math.min(t.length, w.length) : -1; // ตำแหน่งที่แคเรตอยู่ (= w.length หมายถึงช่องว่าง)
+  const tgt = active ? Math.min(t.length, w.length) : -1;
   return (
     <span className="flex shrink-0">
       <span className="flex" style={bad ? { boxShadow: `inset 0 -4px 0 0 ${RED}` } : undefined}>
@@ -113,7 +110,7 @@ export default function TypingGame() {
   const trackRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLSpanElement>(null);
   const startRef = useRef(0);
-  const snapRef = useRef(true); // true = เลื่อนไปตำแหน่งใหม่ทันทีโดยไม่ใช้แอนิเมชัน (ตอนเริ่ม/รีเซ็ต)
+  const snapRef = useRef(true);
 
   const reset = useCallback((d: number) => {
     snapRef.current = true;
@@ -131,7 +128,6 @@ export default function TypingGame() {
 
   const close = useCallback(() => router.push("/#games"), [router]);
 
-  // เริ่มต้น: สุ่มคำฝั่งไคลเอนต์ (กัน hydration mismatch) + โหลดสถิติที่ดีที่สุด
   useEffect(() => {
     reset(60);
     try {
@@ -140,7 +136,6 @@ export default function TypingGame() {
     } catch {}
   }, [reset]);
 
-  // ล็อกการเลื่อนหน้าหลัง + Esc ปิดเกม + กดปุ่มตัวอักษรตอนยังไม่โฟกัส ให้เริ่มพิมพ์ได้เลย
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -157,7 +152,6 @@ export default function TypingGame() {
     };
   }, [close]);
 
-  // จับเวลา (เริ่มเมื่อพิมพ์ตัวอักษรแรก)
   useEffect(() => {
     if (phase !== "running") return;
     const t = setInterval(() => {
@@ -168,7 +162,6 @@ export default function TypingGame() {
     return () => clearInterval(t);
   }, [phase, duration]);
 
-  // เลื่อนเทปให้ตัวอักษรที่กำลังจะพิมพ์อยู่ตรงแคเรตเสมอ (CSS transition ทำให้ไหลลื่น)
   useIsoLayoutEffect(() => {
     const tr = trackRef.current;
     const el = targetRef.current;
@@ -177,7 +170,7 @@ export default function TypingGame() {
     if (snapRef.current) {
       tr.style.transition = "none";
       tr.style.transform = `translate3d(${-x}px,0,0)`;
-      void tr.offsetWidth; // บังคับให้เบราว์เซอร์คำนวณตำแหน่งก่อนเปิด transition กลับ
+      void tr.offsetWidth;
       tr.style.transition = "";
       snapRef.current = false;
     } else {
@@ -185,7 +178,6 @@ export default function TypingGame() {
     }
   }, [typed, wordIdx, words, phase]);
 
-  // ===== คำนวณผล =====
   const current = words[wordIdx] ?? "";
   let prefix = 0;
   while (prefix < typed.length && typed[prefix] === current[prefix]) prefix++;
@@ -195,16 +187,74 @@ export default function TypingGame() {
   const accuracy = keys > 0 ? Math.round(((keys - wrong) / keys) * 100) : 100;
   const shownWpm = useCountUp(wpm, phase === "done");
 
-  // จบเกม: เก็บสถิติที่ดีที่สุด
-  useEffect(() => {
-    if (phase !== "done" || wpm <= best) return;
-    setBest(wpm);
-    setNewRecord(true);
-    // TODO: ส่งคะแนนไปบันทึกกับบัญชีผู้ใช้จริงทีหลัง (ตอนนี้เก็บในเบราว์เซอร์)
+  // ฟังก์ชันส่งคะแนนบันทึกลง MongoDB Atlas (ปรับแก้ให้รองรับทุกล็อกอิน)
+  const saveScoreToUser = useCallback(async (finalWpm: number) => {
     try {
-      localStorage.setItem(BEST_KEY, String(wpm));
-    } catch {}
-  }, [phase, wpm, best]);
+      let userId = "";
+      
+      // อ่านข้อมูลจาก LocalStorage
+      const profileStr = localStorage.getItem("profile");
+      if (profileStr) {
+        const profile = JSON.parse(profileStr);
+        userId = profile.userId || profile.id || profile._id;
+      }
+
+      if (!userId) {
+        userId = localStorage.getItem("userId") || "";
+      }
+
+      if (!userId) {
+        console.warn("ไม่พบ userId ของผู้ใช้งาน");
+        return;
+      }
+
+      // 1. ดึงข้อมูลคะแนนปัจจุบันของผู้ใช้
+      const res = await fetch(`/api/user?userId=${encodeURIComponent(userId)}`);
+      const result = await res.json();
+
+      let currentScores = {};
+      if (result.success && result.data) {
+        currentScores = result.data.gameScores || {};
+      }
+
+      const oldScore = (currentScores as Record<string, number>)[GAME_ID] || 0;
+
+      // 2. บันทึกใหม่เมื่อทำคะแนนได้มากกว่าเดิม หรือยังไม่เคยมีคะแนน
+      if (finalWpm > oldScore || oldScore === 0) {
+        const updatedScores = { ...currentScores, [GAME_ID]: finalWpm };
+        
+        const patchRes = await fetch("/api/user", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            _id: userId,
+            gameScores: updatedScores,
+          }),
+        });
+
+        const patchData = await patchRes.json();
+        console.log("บันทึกคะแนนสำเร็จ:", patchData);
+      }
+    } catch (err) {
+      console.error("เกิดข้อผิดพลาดในการบันทึกคะแนนลง MongoDB:", err);
+    }
+  }, []);
+
+  // จบเกม: บันทึกทั้ง LocalStorage และ MongoDB
+  useEffect(() => {
+    if (phase !== "done") return;
+
+    if (wpm > best) {
+      setBest(wpm);
+      setNewRecord(true);
+      try {
+        localStorage.setItem(BEST_KEY, String(wpm));
+      } catch {}
+    }
+
+    saveScoreToUser(wpm);
+  }, [phase, wpm, best, saveScoreToUser]);
 
   function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (phase === "done") return;
@@ -214,7 +264,6 @@ export default function TypingGame() {
       startRef.current = performance.now();
       setPhase("running");
     }
-    // เว้นวรรค = ส่งคำนี้แล้วไปคำถัดไป
     if (v.endsWith(" ")) {
       const w = v.trim();
       if (!w) return;
@@ -233,7 +282,6 @@ export default function TypingGame() {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    // Tab = เริ่มใหม่ (เหมือน Monkeytype)
     if (e.key === "Tab") {
       e.preventDefault();
       reset(duration);
@@ -252,7 +300,6 @@ export default function TypingGame() {
     ["สถิติดีที่สุด", String(best)],
   ];
 
-  // ขอบซ้าย/ขวา: เบลอและจางเป็นสีเดียวกับพื้นหลัง
   const edge = (side: "left" | "right"): React.CSSProperties => {
     const to = side === "left" ? "to right" : "to left";
     const m = `linear-gradient(${to}, #000 45%, transparent)`;
@@ -343,7 +390,7 @@ export default function TypingGame() {
                   <button onClick={() => reset(duration)} className="inline-flex h-12 items-center rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700">
                     เล่นอีกครั้ง
                   </button>
-                  <Link href="/#ranking" className="inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]">
+                  <Link href="/rank" className="inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]">
                     ดูอันดับ
                   </Link>
                 </div>
@@ -351,7 +398,6 @@ export default function TypingGame() {
             </div>
           ) : (
             <>
-              {/* แถบเวลา: ลดลงเรื่อยๆ แบบต่อเนื่อง */}
               <div className="mx-auto mb-10 w-full max-w-md px-6">
                 <div className="h-2 overflow-hidden rounded-full bg-white/50">
                   <div
@@ -365,7 +411,6 @@ export default function TypingGame() {
                 </div>
               </div>
 
-              {/* เทปคำศัพท์แถวเดียว ไหลผ่านแคเรตที่อยู่ตำแหน่งคงที่ */}
               <div className="relative">
                 <div
                   className={`relative h-40 overflow-hidden font-mono text-4xl font-medium transition-[filter,opacity] duration-300 sm:h-48 sm:text-6xl lg:text-7xl ${focused ? "" : "opacity-60 blur-[3px]"}`}
@@ -393,11 +438,9 @@ export default function TypingGame() {
                   />
                 </div>
 
-                {/* ขอบซ้าย/ขวามัวๆ กลืนไปกับสีพื้นหลัง */}
                 <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[24%]" style={edge("left")} />
                 <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-[24%]" style={edge("right")} />
 
-                {/* คำแนะนำตอนยังไม่โฟกัส */}
                 <div className={`pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${focused || words.length === 0 ? "opacity-0" : "opacity-100"}`}>
                   <span className="rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white">คลิกที่นี่หรือกดปุ่มใดก็ได้เพื่อเริ่มพิมพ์</span>
                 </div>

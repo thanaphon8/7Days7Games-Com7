@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 type Mode = "in" | "up";
 type Step = "form" | "avatar" | "welcome";
 
-// รูปโปรไฟล์: วางไฟล์ไว้ที่ public/img/avatars/01.png ... 25.png (เพิ่ม/ลดได้ที่ AVATAR_COUNT)
 const AVATAR_COUNT = 25;
 const AVATAR_IDS = Array.from({ length: AVATAR_COUNT }, (_, i) => String(i + 1).padStart(2, "0"));
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
@@ -25,7 +24,6 @@ const SHAPES: Record<string, React.CSSProperties> = {
   star: { clipPath: "polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)" },
 };
 
-// angle = ทิศที่ยิง (เรเดียน, ลบ = ขึ้นบน), spread = ความกว้างของลำ, vmin/vmax = ความแรง
 function makePieces(n: number, angle: number, spread: number, vmin: number, vmax: number, fall: number): Piece[] {
   const names = Object.keys(SHAPES);
   return Array.from({ length: n }, (_, id) => {
@@ -90,7 +88,6 @@ function ConfettiLayer({ bursts }: { bursts: Burst[] }) {
 
 function Avatar({ id, size }: { id: string; size: string }) {
   const [failed, setFailed] = useState(false);
-  // ถ้ายังไม่มีไฟล์ภาพ จะแสดงวงกลมสีพร้อมเลขแทนชั่วคราว
   if (failed)
     return (
       <span
@@ -116,6 +113,7 @@ export default function Login() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("in");
   const [step, setStep] = useState<Step>("form");
+  const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -129,7 +127,6 @@ export default function Login() {
     if (window.location.hash === "#signup") setMode("up");
   }, []);
 
-  // พลุกระดาษ: ยิงจากมุมล่างซ้ายและขวา เมื่อขึ้นหน้า Welcome
   useEffect(() => {
     if (step !== "welcome") return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -164,28 +161,87 @@ export default function Login() {
 
     setError("");
     setBusy(true);
-    // TODO: เชื่อมระบบสมัคร/เข้าสู่ระบบจริงตรงนี้ (ตอนนี้จำลองการโหลด)
-    await new Promise((r) => setTimeout(r, 800));
-    setBusy(false);
-    if (mode === "in") {
-      // TODO: ดึงชื่อ/รูปโปรไฟล์จากระบบจริง (ตอนนี้ถ้ายังไม่เคยมีโปรไฟล์ในเบราว์เซอร์ จะสร้างจากอีเมลให้ก่อน)
-      try {
-        if (!localStorage.getItem("profile")) localStorage.setItem("profile", JSON.stringify({ name: email.split("@")[0], avatar: "01" }));
-      } catch {}
-      router.push("/");
-    }
-    else setStep("avatar"); // สมัครเสร็จ ไปเลือกรูปโปรไฟล์ต่อ
-  }
 
-  function confirmAvatar() {
-    // TODO: บันทึกรูปโปรไฟล์ลงระบบจริง (ตอนนี้เก็บไว้ในเบราว์เซอร์เพื่อให้หน้าอื่นอ่านต่อได้)
     try {
-      localStorage.setItem("profile", JSON.stringify({ name, avatar }));
-    } catch {}
-    setStep("welcome");
+      if (mode === "in") {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบ API /api/auth/login");
+        }
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "เข้าสู่ระบบไม่สำเร็จ");
+        }
+
+        localStorage.setItem("profile", JSON.stringify(data.data));
+        localStorage.setItem("userId", data.data.userId);
+        router.push("/");
+      } else {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, password }),
+        });
+
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบ API /api/auth/register");
+        }
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "สมัครสมาชิกไม่สำเร็จ");
+        }
+
+        setUserId(data.data.userId);
+        localStorage.setItem("userId", data.data.userId);
+        setStep("avatar");
+      }
+    } catch (err: any) {
+      setError(err.message || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  // ===== ขั้นที่ 2: เลือกรูปโปรไฟล์ (เต็มหน้า) =====
+  async function confirmAvatar() {
+    setBusy(true);
+    const updatedProfile = { userId, name, avatarId: avatar };
+
+    try {
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          avatarId: avatar,
+          name,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        localStorage.setItem("profile", JSON.stringify(data.data));
+      } else {
+        localStorage.setItem("profile", JSON.stringify(updatedProfile));
+      }
+    } catch (err) {
+      console.error("Failed to update avatar via API:", err);
+      localStorage.setItem("profile", JSON.stringify(updatedProfile));
+    } finally {
+      localStorage.setItem("userId", userId);
+      setBusy(false);
+      setStep("welcome");
+    }
+  }
+
   if (step === "avatar") {
     return (
       <div className="min-h-screen bg-[#E6E8EC] px-4 pb-28 pt-10 font-sans text-zinc-900">
@@ -215,9 +271,13 @@ export default function Login() {
         </div>
 
         <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#E6E8EC] via-[#E6E8EC]/90 to-transparent px-4 pb-6 pt-10">
-          <button onClick={confirmAvatar} className="flex h-12 w-full max-w-xs items-center justify-center gap-3 rounded-full bg-zinc-900 text-sm font-medium text-white shadow-lg transition-colors hover:bg-zinc-700">
+          <button
+            onClick={confirmAvatar}
+            disabled={busy}
+            className="flex h-12 w-full max-w-xs items-center justify-center gap-3 rounded-full bg-zinc-900 text-sm font-medium text-white shadow-lg transition-colors hover:bg-zinc-700 disabled:opacity-50"
+          >
             <Avatar id={avatar} size="h-8 w-8" />
-            ใช้รูปนี้
+            {busy ? "กำลังบันทึก..." : "ใช้รูปนี้"}
           </button>
         </div>
       </div>
@@ -233,7 +293,6 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-white p-4 font-sans text-zinc-900 md:p-6">
       <ConfettiLayer bursts={bursts} />
       <div className="grid w-full max-w-5xl overflow-hidden rounded-[2rem] md:min-h-[640px] md:grid-cols-2">
-        {/* ฝั่งแบรนด์ */}
         <aside className="flex flex-col justify-between gap-12 bg-[#F4A58A] p-8 text-[#4A2412] md:p-10">
           <Link href="/" aria-label="กลับหน้าแรก" className="flex w-fit items-center">
             <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto" />
@@ -256,11 +315,15 @@ export default function Login() {
         </aside>
 
         <main className="flex flex-col justify-center bg-zinc-50 p-8 md:p-12">
-          {/* ===== ขั้นที่ 1: ฟอร์ม ===== */}
           {step === "form" && (
             <>
               <div role="tablist" className="flex w-fit rounded-full bg-white p-1 ring-1 ring-black/[.06]">
-                {([["in", "เข้าสู่ระบบ"], ["up", "สมัครเข้าร่วม"]] as const).map(([m, label]) => (
+                {(
+                  [
+                    ["in", "เข้าสู่ระบบ"],
+                    ["up", "สมัครเข้าร่วม"],
+                  ] as const
+                ).map(([m, label]) => (
                   <button
                     key={m}
                     role="tab"
@@ -284,9 +347,22 @@ export default function Login() {
 
               <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-3">
                 {mode === "up" && (
-                  <input className={field} placeholder="ชื่อที่แสดง" autoComplete="nickname" value={name} onChange={(e) => setName(e.target.value)} />
+                  <input
+                    className={field}
+                    placeholder="ชื่อที่แสดง"
+                    autoComplete="nickname"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
                 )}
-                <input className={field} type="email" placeholder="อีเมล" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input
+                  className={field}
+                  type="email"
+                  placeholder="อีเมล"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
                 <div className="relative">
                   <input
                     className={`${field} pr-20`}
@@ -312,7 +388,7 @@ export default function Login() {
                 )}
 
                 <button type="submit" disabled={busy} className={`${primary} mt-2`}>
-                  {busy ? "กำลังดำเนินการ" : mode === "in" ? "เข้าสู่ระบบ" : "สมัครและไปต่อ"}
+                  {busy ? "กำลังดำเนินการ..." : mode === "in" ? "เข้าสู่ระบบ" : "สมัครและไปต่อ"}
                 </button>
               </form>
 
@@ -325,7 +401,6 @@ export default function Login() {
             </>
           )}
 
-          {/* ===== ขั้นที่ 3: ต้อนรับ ===== */}
           {step === "welcome" && (
             <div className="flex flex-col items-start">
               <Avatar id={avatar} size="h-28 w-28 text-6xl" />

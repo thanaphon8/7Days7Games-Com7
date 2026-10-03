@@ -5,7 +5,7 @@ import Link from "next/link";
 import { RANKING } from "../lib/ranking";
 import { useEffect, useState } from "react";
 
-// ===== ข้อมูลตัวอย่าง (ยังไม่เชื่อมระบบ) =====
+// ===== ข้อมูลตัวอย่าง =====
 type Status = "NOW" | "SOON";
 type Game = {
   id: string;
@@ -16,14 +16,15 @@ type Game = {
   time: string;
   tone: string;
   glyph: string;
-  href?: string; // ลิงก์ไปหน้าเกม (ถ้ามี จะกดเริ่มเล่นได้)
-  scoring: string; // วิธีนับคะแนน (แสดงในหน้ารายละเอียด)
-  rules: string[]; // กติกา (แสดงในหน้ารายละเอียด)
+  href?: string;
+  image?: string;
+  scoring: string;
+  rules: string[];
 };
 
 const GAMES: Game[] = [
   {
-    id: "typing", name: "พิมพ์ไว", desc: "พิมพ์ข้อความภาษาอังกฤษให้เร็วและแม่นที่สุดก่อนหมดเวลา", category: "อาร์เคด", status: "NOW", time: "1 นาที", tone: "bg-[#F4D35E]", glyph: "Aa", href: "/game/typing",
+    id: "typing", name: "พิมพ์ไว", desc: "พิมพ์ข้อความภาษาอังกฤษให้เร็วและแม่นที่สุดก่อนหมดเวลา", category: "อาร์เคด", status: "NOW", time: "1 นาที", tone: "bg-[#F4D35E]", glyph: "Aa", href: "/game/typing", image: "/img/typing.jpg",
     scoring: "คำต่อนาที (WPM)",
     rules: ["พิมพ์คำที่ขึ้นบนเทปให้ตรงกับตัวอักษร แล้วเว้นวรรคเพื่อไปคำถัดไป", "เลือกเวลาได้ 30, 60 หรือ 120 วินาที เวลาจะเริ่มนับเมื่อพิมพ์ตัวอักษรแรก", "กด Tab เพื่อเริ่มใหม่ได้ทุกเมื่อ", "คะแนนคือ WPM โดยนับเฉพาะคำที่พิมพ์ถูก"],
   },
@@ -84,7 +85,7 @@ function Badge({ status }: { status: Status }) {
   );
 }
 
-// ===== Events: ประกาศกิจกรรม/การแข่งขันที่กำลังจะจัด (ข้อมูลตัวอย่าง แก้ได้เลย) =====
+// ===== Events =====
 type EventItem = {
   id: string;
   status: Status;
@@ -96,15 +97,27 @@ type EventItem = {
   bg: string;
   fg: string;
   visual: "shapes" | "memory" | "tiles";
-  image?: string; // รูปบนการ์ด (ถ้ามี จะใช้แทนภาพประกอบสี)
-  cover?: string; // รูปพื้นหลังหน้ารายละเอียด
-  logo?: string; // โลโก้ที่ใช้แทนตัวหนังสือชื่อกิจกรรม
-  bracket?: { teams: string[]; note: string }; // สายการแข่งขัน (teams เรียงตามอันดับ 1-8)
-  info: [string, string][]; // การ์ดข้อมูลในหน้ารายละเอียด
-  rules: string[]; // กติกา
+  image?: string;
+  cover?: string;
+  logo?: string;
+  bracket?: { teams: string[]; note: string };
+  info: [string, string][];
+  rules: string[];
 };
 
 const EVENTS: EventItem[] = [
+  {
+    id: "pubg", status: "SOON", meta: "เริ่ม 26 ต.ค. 2026", lines: ["PUBG", "Mobile Cup"],
+    desc: "ศึกชิงแชมป์ PUBG Mobile ของบริษัท รวมทีม 4 คน ลงสนามแบบ Squad ลุ้นเป็นทีมสุดท้ายที่รอดชีวิต",
+    cta: "ดูรายละเอียด", href: "#", bg: "#B7CBB0", fg: "#1F3A2A", visual: "shapes",
+    image: "/img/pubg1.jpg", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png",
+    info: [["วันแข่ง", "26 ต.ค. 2026 เวลา 18:00 น."], ["รูปแบบ", "Squad ทีมละ 4 คน"], ["รอบการแข่ง", "คัดเลือก 3 แมตช์ แล้วน็อกเอาต์ 8 ทีม"]],
+    rules: ["สมัครเป็นทีม ทีมละ 4 คน และมีผู้เล่นสำรองได้ 1 คน", "รอบคัดเลือกแข่ง 3 แมตช์ คะแนนรวมมาจากอันดับของทีมและจำนวน Kill", "8 ทีมคะแนนสูงสุดเข้าสู่รอบน็อกเอาต์ แข่งโหมด Team Deathmatch 4 ต่อ 4", "ทีมที่ชนะรอบชิงชนะเลิศเป็นแชมป์ รางวัลจะประกาศก่อนวันแข่ง", "ทุกคนต้องใช้บัญชีของตัวเอง และห้ามใช้โปรแกรมช่วยเล่นทุกชนิด"],
+    bracket: {
+      teams: ["Alpha Squad", "Night Owls", "Red Dragons", "Pixel Force", "Blue Wolves", "Gold Rush", "Silent Hawks", "Neon Crew"],
+      note: "ตัวอย่างสาย 8 ทีมสุดท้าย เรียงตามอันดับจากรอบคัดเลือก (ข้อมูลจำลอง) ผลแต่ละรอบจะอัปเดตเมื่อเริ่มแข่ง",
+    },
+  },
   {
     id: "main", status: "NOW", meta: "เหลืออีก 4 วัน", lines: ["7 Days", "7 Games"],
     desc: "พักสมองด้วยเกมสั้นๆ เล่นคนเดียว สะสมแต้ม แล้วลุ้นอันดับ เมื่อครบ 7 วันจะประกาศผู้ชนะ",
@@ -125,18 +138,6 @@ const EVENTS: EventItem[] = [
     cta: "ดูรายละเอียด", href: "#", bg: "#A8B5E8", fg: "#1F2A5C", visual: "tiles",
     info: [["เริ่มแข่ง", "19 ต.ค. 2026"], ["เวลา", "10 นาทีต่อรอบ"], ["ตัดสินจาก", "แต้มสูงสุดที่ทำได้"]],
     rules: ["มีเวลาเล่น 10 นาทีต่อรอบ", "นับแต้มจากรอบที่ดีที่สุดของแต่ละคน", "ผู้ที่ได้แต้มสูงสุดเป็นผู้ชนะ", "รายละเอียดรางวัลจะประกาศก่อนวันแข่ง"],
-  },
-  {
-    id: "pubg", status: "SOON", meta: "เริ่ม 26 ต.ค. 2026", lines: ["PUBG", "Mobile Cup"],
-    desc: "ศึกชิงแชมป์ PUBG Mobile ของบริษัท รวมทีม 4 คน ลงสนามแบบ Squad ลุ้นเป็นทีมสุดท้ายที่รอดชีวิต",
-    cta: "ดูรายละเอียด", href: "#", bg: "#B7CBB0", fg: "#1F3A2A", visual: "shapes",
-    image: "/img/pubg1.png", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png",
-    info: [["วันแข่ง", "26 ต.ค. 2026 เวลา 18:00 น."], ["รูปแบบ", "Squad ทีมละ 4 คน"], ["รอบการแข่ง", "คัดเลือก 3 แมตช์ แล้วน็อกเอาต์ 8 ทีม"]],
-    rules: ["สมัครเป็นทีม ทีมละ 4 คน และมีผู้เล่นสำรองได้ 1 คน", "รอบคัดเลือกแข่ง 3 แมตช์ คะแนนรวมมาจากอันดับของทีมและจำนวน Kill", "8 ทีมคะแนนสูงสุดเข้าสู่รอบน็อกเอาต์ แข่งโหมด Team Deathmatch 4 ต่อ 4", "ทีมที่ชนะรอบชิงชนะเลิศเป็นแชมป์ รางวัลจะประกาศก่อนวันแข่ง", "ทุกคนต้องใช้บัญชีของตัวเอง และห้ามใช้โปรแกรมช่วยเล่นทุกชนิด"],
-    bracket: {
-      teams: ["Alpha Squad", "Night Owls", "Red Dragons", "Pixel Force", "Blue Wolves", "Gold Rush", "Silent Hawks", "Neon Crew"],
-      note: "ตัวอย่างสาย 8 ทีมสุดท้าย เรียงตามอันดับจากรอบคัดเลือก (ข้อมูลจำลอง) ผลแต่ละรอบจะอัปเดตเมื่อเริ่มแข่ง",
-    },
   },
 ];
 
@@ -175,7 +176,6 @@ function EventVisual({ kind }: { kind: EventItem["visual"] }) {
   );
 }
 
-// ชื่อกิจกรรม: ถ้ามีโลโก้ใช้รูปแทนตัวหนังสือ (ยังมีข้อความสำหรับโปรแกรมอ่านหน้าจอ)
 function TitleContent({ e, logoClass }: { e: EventItem; logoClass: string }) {
   if (!e.logo)
     return (
@@ -203,7 +203,7 @@ function HeartButton({ on, onClick, className = "", tabIndex = 0 }: { on: boolea
       aria-pressed={on}
       aria-label={on ? "ยกเลิกการบันทึกกิจกรรม" : "บันทึกกิจกรรม"}
       onClick={(e) => {
-        e.stopPropagation(); // กดหัวใจต้องไม่เปิดหน้ารายละเอียด
+        e.stopPropagation();
         onClick();
       }}
       className={`flex h-11 w-11 items-center justify-center rounded-full bg-white text-zinc-900 shadow-md ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-90 ${className}`}
@@ -225,12 +225,71 @@ function HeartButton({ on, onClick, className = "", tabIndex = 0 }: { on: boolea
   );
 }
 
+function EventCard({ e, titleTag, saved, toggleSave, onOpen, clone = false, style, onNavigate }: { e: EventItem; titleTag: "h1" | "h2" | "h3"; saved: string[]; toggleSave: (id: string) => void; onOpen: () => void; clone?: boolean; style?: React.CSSProperties; onNavigate?: () => void }) {
+  const Title = titleTag;
+  const isMain = e.id === "main";
+  const stop = (ev: React.MouseEvent) => {
+    ev.stopPropagation();
+    onNavigate?.();
+  };
+  return (
+    <article
+      aria-hidden={clone}
+      aria-label={`${e.lines.join(" ")} กดเพื่อดูรายละเอียด`}
+      tabIndex={clone ? -1 : 0}
+      onClick={onOpen}
+      onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && onOpen()}
+      style={{ backgroundColor: e.bg, color: e.fg, ...style }}
+      className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden rounded-[2rem] p-5 outline-none focus-visible:ring-4 focus-visible:ring-blue-400 md:grid-cols-2 md:p-6 ${e.image ? "min-h-[30rem] md:min-h-[26rem]" : ""}`}
+    >
+      {e.image && (
+        <>
+          <Image src={e.image} alt="" fill sizes="(min-width: 1024px) 1024px, 100vw" className="object-cover" />
+          <div aria-hidden className="absolute inset-0 md:hidden" style={{ background: `linear-gradient(to top, ${e.bg} 0%, ${e.bg}F2 45%, ${e.bg}00 100%)` }} />
+          <div aria-hidden className="absolute inset-0 hidden md:block" style={{ background: `linear-gradient(to right, ${e.bg} 0%, ${e.bg}F2 30%, ${e.bg}99 52%, ${e.bg}00 78%)` }} />
+        </>
+      )}
+      <HeartButton
+        on={saved.includes(e.id)}
+        onClick={() => toggleSave(e.id)}
+        tabIndex={clone ? -1 : 0}
+        className="absolute right-5 top-5 z-10 md:right-6 md:top-6"
+      />
+      <div className="relative z-10 flex flex-col justify-between gap-16 p-3 md:p-6">
+        <div className="flex items-center gap-3">
+          <Badge status={e.status} />
+          <span className="text-sm opacity-70">{e.meta}</span>
+        </div>
+        <div>
+          <Title className="text-6xl font-semibold leading-[1.05] tracking-tight md:text-7xl">
+            <TitleContent e={e} logoClass="w-full max-w-[18rem] md:max-w-[22rem]" />
+          </Title>
+          <p className="mt-5 max-w-xs text-base leading-7 opacity-70">{e.desc}</p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <a href={e.href} onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop} tabIndex={clone ? -1 : 0} style={{ backgroundColor: e.fg }} className="inline-flex h-12 items-center rounded-full px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
+              {e.cta}
+            </a>
+            {isMain && (
+              <a href="#how" onClick={stop} tabIndex={clone ? -1 : 0} style={{ borderColor: `${e.fg}33` }} className="inline-flex h-12 items-center rounded-full border px-6 text-sm font-medium transition-colors hover:bg-black/5">
+                วิธีเล่น
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+      {!e.image && (
+        <div className="flex min-h-72 items-center justify-center rounded-3xl bg-white p-6">
+          <EventVisual kind={e.visual} />
+        </div>
+      )}
+    </article>
+  );
+}
+
 function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: string[]; toggleSave: (id: string) => void; setOpenId: (id: string | null) => void; overlayOpen: boolean }) {
   const n = EVENTS.length;
-  // pos นับเพิ่มขึ้นเรื่อยๆ ไม่ย้อนกลับ: การ์ดที่เพิ่งเลื่อนออกทางซ้ายจะวาร์ปไปรอทางขวาตอนที่อยู่นอกจอ
-  // ทำให้หลังการ์ดสุดท้ายก็เลื่อนต่อเนื่องไปการ์ดแรกในทิศทางเดิม (ต้องมีการ์ดอย่างน้อย 3 ใบ)
   const [pos, setPos] = useState(0);
-  const [instant, setInstant] = useState(false); // true = สลับทันทีไม่มีแอนิเมชัน (ตอนกดจุดข้ามไปการ์ดอื่น)
+  const [instant, setInstant] = useState(false);
   const [paused, setPaused] = useState(false);
   const [reduced, setReduced] = useState(false);
   const active = ((pos % n) + n) % n;
@@ -239,7 +298,6 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
     setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }, []);
 
-  // เลื่อนอัตโนมัติ (หยุดเมื่อเอาเมาส์ชี้ หรือเปิดหน้ารายละเอียดอยู่)
   useEffect(() => {
     if (paused || reduced || overlayOpen) return;
     const t = setInterval(() => setPos((p) => p + 1), SLIDE_MS);
@@ -263,72 +321,23 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
 
       <div className="grid overflow-hidden rounded-[2rem]">
         {EVENTS.map((e, i) => {
-            const Title = i === 0 ? "h1" : "h2";
-            // ตำแหน่งสัมพัทธ์: 0 = กำลังแสดง, -1 = เพิ่งเลื่อนออกทางซ้าย, 1.. = รออยู่ทางขวา
-            const rel = ((((i - pos + 1) % n) + n) % n) - 1;
-            const clone = rel !== 0;
-            const stop = (ev: React.MouseEvent) => ev.stopPropagation();
-            return (
-              <article
-                key={e.id}
-                aria-hidden={clone}
-                aria-label={`${e.lines.join(" ")} กดเพื่อดูรายละเอียด`}
-                tabIndex={clone ? -1 : 0}
-                onClick={() => setOpenId(e.id)}
-                onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && setOpenId(e.id)}
-                style={{
-                  backgroundColor: e.bg,
-                  color: e.fg,
-                  gridArea: "1 / 1",
-                  transform: `translateX(calc(${rel * 100}% + ${rel}rem))`,
-                  // ใบที่วาร์ปไปรอทางขวา (rel = n-2) อยู่นอกจอ จึงสลับตำแหน่งทันทีได้ ใบอื่นเลื่อนต่อเนื่อง
-                  transition: instant || reduced || rel === n - 2 ? "none" : "transform 700ms cubic-bezier(.65,0,.35,1)",
-                }}
-                className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden rounded-[2rem] p-5 outline-none focus-visible:ring-4 focus-visible:ring-blue-400 md:grid-cols-2 md:p-6 ${e.image ? "min-h-[30rem] md:min-h-[26rem]" : ""}`}
-              >
-                {e.image && (
-                  <>
-                    <Image src={e.image} alt="" fill sizes="(min-width: 1024px) 1024px, 100vw" className="object-cover" />
-                    {/* สีการ์ดไล่จางทับรูป: ซ้ายทึบให้อ่านข้อความง่าย ขวาเห็นรูปชัด (มือถือไล่จากล่างขึ้นบน) */}
-                    <div aria-hidden className="absolute inset-0 md:hidden" style={{ background: `linear-gradient(to top, ${e.bg} 0%, ${e.bg}F2 45%, ${e.bg}00 100%)` }} />
-                    <div aria-hidden className="absolute inset-0 hidden md:block" style={{ background: `linear-gradient(to right, ${e.bg} 0%, ${e.bg}F2 30%, ${e.bg}99 52%, ${e.bg}00 78%)` }} />
-                  </>
-                )}
-                <HeartButton
-                  on={saved.includes(e.id)}
-                  onClick={() => toggleSave(e.id)}
-                  tabIndex={clone ? -1 : 0}
-                  className="absolute right-5 top-5 z-10 md:right-6 md:top-6"
-                />
-                <div className="relative z-10 flex flex-col justify-between gap-16 p-3 md:p-6">
-                  <div className="flex items-center gap-3">
-                    <Badge status={e.status} />
-                    <span className="text-sm opacity-70">{e.meta}</span>
-                  </div>
-                  <div>
-                    <Title className="text-6xl font-semibold leading-[1.05] tracking-tight md:text-7xl">
-                      <TitleContent e={e} logoClass="w-full max-w-[18rem] md:max-w-[22rem]" />
-                    </Title>
-                    <p className="mt-5 max-w-xs text-base leading-7 opacity-70">{e.desc}</p>
-                    <div className="mt-8 flex flex-wrap gap-3">
-                      <a href={e.href} onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop} tabIndex={clone ? -1 : 0} style={{ backgroundColor: e.fg }} className="inline-flex h-12 items-center rounded-full px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
-                        {e.cta}
-                      </a>
-                      {i === 0 && (
-                        <a href="#how" onClick={stop} tabIndex={clone ? -1 : 0} style={{ borderColor: `${e.fg}33` }} className="inline-flex h-12 items-center rounded-full border px-6 text-sm font-medium transition-colors hover:bg-black/5">
-                          วิธีเล่น
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {!e.image && (
-                  <div className="flex min-h-72 items-center justify-center rounded-3xl bg-white p-6">
-                    <EventVisual kind={e.visual} />
-                  </div>
-                )}
-              </article>
-            );
+          const rel = ((((i - pos + 1) % n) + n) % n) - 1;
+          return (
+            <EventCard
+              key={e.id}
+              e={e}
+              titleTag={e.id === "main" ? "h1" : "h2"}
+              saved={saved}
+              toggleSave={toggleSave}
+              onOpen={() => setOpenId(e.id)}
+              clone={rel !== 0}
+              style={{
+                gridArea: "1 / 1",
+                transform: `translateX(calc(${rel * 100}% + ${rel}rem))`,
+                transition: instant || reduced || rel === n - 2 ? "none" : "transform 700ms cubic-bezier(.65,0,.35,1)",
+              }}
+            />
+          );
         })}
       </div>
 
@@ -347,14 +356,12 @@ function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: 
           />
         ))}
       </div>
-
     </section>
   );
 }
 
 const HEART_PATH = "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.2l7.8-7.7 1-1.1a5.5 5.5 0 0 0 0-7.8z";
 
-// ล็อกการเลื่อนหน้าหลังตอนเปิดหน้าเต็มจอ + กด Esc เพื่อปิด
 function useOverlay(active: boolean, onClose: () => void) {
   useEffect(() => {
     if (!active) return;
@@ -384,7 +391,6 @@ function CloseButton({ onClick, className = "" }: { onClick: () => void; classNa
   );
 }
 
-// ===== สายการแข่งขันแบบน็อกเอาต์ 8 ทีม (รอบ 8 ทีม → รอบรอง → ชิงชนะเลิศ → แชมป์) =====
 function Bracket({ teams, accent }: { teams: string[]; accent: string }) {
   const row = (name?: string, seed?: number) => (
     <div className="flex items-center gap-3 px-3 py-2.5">
@@ -402,7 +408,7 @@ function Bracket({ teams, accent }: { teams: string[]; accent: string }) {
     </div>
   );
   const line = "absolute bg-zinc-300";
-  const first: [number, number][] = [[0, 7], [3, 4], [1, 6], [2, 5]]; // 1v8, 4v5, 2v7, 3v6
+  const first: [number, number][] = [[0, 7], [3, 4], [1, 6], [2, 5]];
   const rounds = [{ label: "รอบ 8 ทีม", n: 4 }, { label: "รอบรอง", n: 2 }, { label: "ชิงชนะเลิศ", n: 1 }];
 
   return (
@@ -414,7 +420,6 @@ function Bracket({ teams, accent }: { teams: string[]; accent: string }) {
             {Array.from({ length: r.n }, (_, c) => (
               <div key={c} className="relative flex flex-1 items-center">
                 {ri === 0 ? match(first[c][0], first[c][1]) : match()}
-                {/* เส้นเชื่อมไปรอบถัดไป */}
                 <span className={`${line} left-full top-1/2 h-px ${ri < 2 ? "w-6" : "w-12"}`} />
                 {ri < 2 && c % 2 === 0 && (
                   <>
@@ -441,10 +446,9 @@ function Bracket({ teams, accent }: { teams: string[]; accent: string }) {
   );
 }
 
-// ===== หน้ารายละเอียดกิจกรรมเต็มจอ =====
 function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: EventItem | null; saved: string[]; toggleSave: (id: string) => void; onClose: () => void; onPlay: () => void }) {
   useOverlay(!!sel, onClose);
-  const [fade, setFade] = useState(0); // 0 = เห็นรูปชัด, 1 = รูปกลืนเป็นสีพื้นเต็มที่ (เพิ่มขึ้นตามการเลื่อน)
+  const [fade, setFade] = useState(0);
   useEffect(() => setFade(0), [sel?.id]);
   if (!sel) return null;
   const isSaved = saved.includes(sel.id);
@@ -545,10 +549,8 @@ function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: EventIt
   );
 }
 
-// สีพื้นของหน้ารายละเอียดเกม: ดึงจากสีการ์ด (เกมที่ยังไม่เปิดใช้โทนเทา)
 const toneHex = (g: Game) => g.tone.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? "#E7E5E4";
 
-// ===== หน้ารายละเอียดเกมเต็มจอ: กติกา + ปุ่มเริ่มเล่น =====
 function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void }) {
   useOverlay(!!game, onClose);
   if (!game) return null;
@@ -578,11 +580,17 @@ function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void 
             <h2 className="text-6xl font-semibold leading-[1.05] tracking-tight md:text-8xl">{game.name}</h2>
             <p className="mt-6 max-w-md text-lg leading-8 opacity-80">{game.desc}</p>
           </div>
-          <div className="flex min-h-72 items-center justify-center rounded-[2rem] bg-white p-8">
-            <span style={{ backgroundColor: bg }} className="flex h-44 w-44 items-center justify-center rounded-[2.5rem] text-8xl font-light md:h-52 md:w-52">
-              {game.glyph}
-            </span>
-          </div>
+          {game.image ? (
+            <div className="relative min-h-72 overflow-hidden rounded-[2rem] bg-zinc-900 lg:min-h-80">
+              <Image src={game.image} alt={game.name} fill sizes="(min-width: 1024px) 480px, 100vw" className="object-cover" />
+            </div>
+          ) : (
+            <div className="flex min-h-72 items-center justify-center rounded-[2rem] bg-white p-8">
+              <span style={{ backgroundColor: bg }} className="flex h-44 w-44 items-center justify-center rounded-[2.5rem] text-8xl font-light md:h-52 md:w-52">
+                {game.glyph}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="mt-10 grid gap-4 sm:grid-cols-3">
@@ -622,7 +630,42 @@ function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void 
   );
 }
 
-// ===== รายการโปรด: กิจกรรมที่ผู้ใช้กดหัวใจไว้ =====
+function FavoriteCard({ e, onOpen, toggleSave }: { e: EventItem; onOpen: () => void; toggleSave: (id: string) => void }) {
+  return (
+    <article
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && onOpen()}
+      style={{ backgroundColor: e.bg, color: e.fg }}
+      className="relative flex min-h-48 cursor-pointer flex-col justify-between overflow-hidden rounded-[2rem] p-5 outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-4 focus-visible:ring-blue-400"
+    >
+      {e.image ? (
+        <>
+          <Image src={e.image} alt="" fill sizes="(min-width: 640px) 480px, 100vw" className="object-cover" />
+          <div aria-hidden className="absolute inset-0" style={{ background: `linear-gradient(to right, ${e.bg} 0%, ${e.bg}F2 38%, ${e.bg}99 60%, ${e.bg}00 85%)` }} />
+        </>
+      ) : (
+        <div aria-hidden className="absolute bottom-5 right-5 flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-white">
+          <div className="scale-[0.32]">
+            <EventVisual kind={e.visual} />
+          </div>
+        </div>
+      )}
+      <HeartButton on onClick={() => toggleSave(e.id)} className="absolute right-4 top-4 z-10" />
+      <div className="relative z-10 flex items-center gap-3 pr-14">
+        <Badge status={e.status} />
+        <span className="text-sm opacity-70">{e.meta}</span>
+      </div>
+      <div className="relative z-10 max-w-[62%]">
+        <h3 className="text-3xl font-semibold leading-[1.1] tracking-tight">
+          <TitleContent e={e} logoClass="w-full max-w-[10rem]" />
+        </h3>
+        <p className="mt-2 line-clamp-2 text-sm leading-6 opacity-70">{e.desc}</p>
+      </div>
+    </article>
+  );
+}
+
 function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onClose }: { open: boolean; detailOpen: boolean; saved: string[]; toggleSave: (id: string) => void; onOpenEvent: (id: string) => void; onClose: () => void }) {
   useOverlay(open && !detailOpen, onClose);
   if (!open) return null;
@@ -658,28 +701,9 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
             </button>
           </div>
         ) : (
-          <div className="mt-10 grid gap-5 sm:grid-cols-2">
+          <div className="mt-10 grid gap-4 sm:grid-cols-2">
             {items.map((e) => (
-              <article
-                key={e.id}
-                tabIndex={0}
-                onClick={() => onOpenEvent(e.id)}
-                onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && onOpenEvent(e.id)}
-                style={{ backgroundColor: e.bg, color: e.fg }}
-                className="relative flex min-h-64 cursor-pointer flex-col justify-between rounded-[2rem] p-6 outline-none focus-visible:ring-4 focus-visible:ring-blue-400"
-              >
-                <HeartButton on onClick={() => toggleSave(e.id)} className="absolute right-5 top-5" />
-                <div className="flex items-center gap-3 pr-14">
-                  <Badge status={e.status} />
-                  <span className="text-sm opacity-70">{e.meta}</span>
-                </div>
-                <div>
-                  <h3 className="text-4xl font-semibold leading-[1.1] tracking-tight">
-                    <TitleContent e={e} logoClass="w-full max-w-[14rem]" />
-                  </h3>
-                  <p className="mt-3 line-clamp-2 max-w-xs text-sm leading-6 opacity-70">{e.desc}</p>
-                </div>
-              </article>
+              <FavoriteCard key={e.id} e={e} onOpen={() => onOpenEvent(e.id)} toggleSave={toggleSave} />
             ))}
           </div>
         )}
@@ -688,7 +712,6 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
   );
 }
 
-// มงกุฏของผู้นำอันดับ 1
 function Crown({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 24" aria-hidden className={`drop-shadow ${className}`}>
@@ -701,14 +724,13 @@ function Crown({ className = "" }: { className?: string }) {
 }
 
 // ===== โปรไฟล์ผู้ใช้ =====
-type Profile = { name: string; avatar: string };
-const AVATAR_IDS = Array.from({ length: 25 }, (_, i) => String(i + 1).padStart(2, "0")); // public/img/avatars/01.png ... 25.png
+type Profile = { userId?: string; name: string; avatar: string };
+const AVATAR_IDS = Array.from({ length: 25 }, (_, i) => String(i + 1).padStart(2, "0"));
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
 
 function Avatar({ id, size }: { id: string; size: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [id]);
-  // ถ้ายังไม่มีไฟล์ภาพ แสดงวงกลมสีพร้อมเลขแทนชั่วคราว
   if (failed)
     return (
       <span style={{ backgroundColor: FALLBACK_BG[((Number(id) || 1) - 1) % 4] }} className={`flex shrink-0 items-center justify-center rounded-full font-light text-zinc-900 ${size}`}>
@@ -734,7 +756,6 @@ function ProfileSheet({ profile, savedCount, crown, onSave, onLogout, onClose }:
           <CloseButton onClick={onClose} className="!bg-zinc-100 !shadow-none" />
         </div>
 
-        {/* ตัวอย่างโปรไฟล์ (เปลี่ยนตามที่แก้ทันที) */}
         <div className="mt-8 flex items-center gap-5 rounded-[2rem] bg-[#F4D35E] p-6 text-[#4A3B00]">
           <div className="relative">
             {crown && <Crown className="absolute -top-8 left-1/2 w-12 -translate-x-1/2 -rotate-6" />}
@@ -788,7 +809,7 @@ function ProfileSheet({ profile, savedCount, crown, onSave, onLogout, onClose }:
           </button>
           <button
             disabled={!valid || !changed}
-            onClick={() => onSave({ name: clean, avatar })}
+            onClick={() => onSave({ ...profile, name: clean, avatar })}
             className="h-14 flex-1 rounded-full bg-zinc-900 text-base font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             บันทึกการเปลี่ยนแปลง
@@ -808,55 +829,127 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profOpen, setProfOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const isTop = !!profile && profile.name === RANKING[0].name; // ผู้ใช้เป็นที่ 1 -> มีมงกุฏบนรูปโปรไฟล์
+  const isTop = !!profile && profile.name === RANKING[0].name;
 
+  // 1. ดึงข้อมูล Profile และ Saved Events จากทั้ง LocalStorage และ MongoDB Atlas
   useEffect(() => {
-    try {
-      const v = localStorage.getItem("savedEvents");
-      if (v) setSaved(JSON.parse(v));
-    } catch {}
-    try {
-      const pv = localStorage.getItem("profile"); // ผู้ใช้ที่ล็อกอินแล้วจะมีโปรไฟล์เก็บไว้
-      if (pv) {
-        const o = JSON.parse(pv);
-        if (o?.name) setProfile({ name: o.name, avatar: AVATAR_IDS.includes(o.avatar) ? o.avatar : "01" });
+    async function loadProfileAndData() {
+      // ดึง local profile
+      const localData = localStorage.getItem("profile");
+      let currentUserId: string | null = null;
+      let localProfile: Profile | null = null;
+
+      if (localData) {
+        try {
+          const parsed = JSON.parse(localData);
+          localProfile = {
+            userId: parsed.userId || parsed.id,
+            name: parsed.name || "ผู้เล่นใหม่",
+            avatar: parsed.avatarId || parsed.avatar || "01",
+          };
+          setProfile(localProfile);
+          currentUserId = localProfile.userId || null;
+        } catch (e) {
+          console.error("Failed to parse local profile:", e);
+        }
       }
-    } catch {}
-    setReady(true);
+
+      // ดึงข้อมูลจาก MongoDB หากมี userId
+      if (currentUserId) {
+        try {
+          const res = await fetch(`/api/user?userId=${currentUserId}`);
+          const result = await res.json();
+
+          if (result.success && result.data) {
+            setProfile({
+              userId: currentUserId,
+              name: result.data.name || localProfile?.name || "ผู้เล่นใหม่",
+              avatar: result.data.avatarId || localProfile?.avatar || "01",
+            });
+            setSaved(result.data.savedEvents || []);
+          }
+        } catch (error) {
+          console.error("Failed to load user data from API:", error);
+        }
+      }
+      setReady(true);
+    }
+
+    loadProfileAndData();
+
+    // ฟัง event จากระบบ เผื่อมีการ Login หรือเปลี่ยน Profile ในหน้าอื่น
+    const handleStorageChange = () => loadProfileAndData();
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  function saveProfile(p: Profile) {
+  // 2. บันทึกข้อมูล Profile ลง LocalStorage และ MongoDB Atlas
+  async function saveProfile(p: Profile) {
     setProfile(p);
-    // TODO: ส่งไปบันทึกกับบัญชีผู้ใช้จริงทีหลัง (ตอนนี้เก็บในเบราว์เซอร์)
-    try {
-      localStorage.setItem("profile", JSON.stringify(p));
-    } catch {}
     setProfOpen(false);
+
+    // บันทึกลง LocalStorage
+    localStorage.setItem(
+      "profile",
+      JSON.stringify({
+        userId: p.userId,
+        name: p.name,
+        avatarId: p.avatar,
+      })
+    );
+
+    // Sync ไปยัง MongoDB
+    if (p.userId) {
+      try {
+        await fetch("/api/user", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: p.userId,
+            name: p.name,
+            avatarId: p.avatar,
+          }),
+        });
+      } catch (error) {
+        console.error("Failed to sync profile with database:", error);
+      }
+    }
   }
 
   function logout() {
+    localStorage.removeItem("profile");
     setProfile(null);
-    try {
-      localStorage.removeItem("profile");
-    } catch {}
     setProfOpen(false);
   }
 
-  function toggleSave(id: string) {
-    setSaved((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      // TODO: ส่งไปบันทึกกับบัญชีผู้ใช้จริงทีหลัง (ตอนนี้เก็บในเบราว์เซอร์)
+  // 3. บันทึกรายการโปรด (Saved Events) ลง MongoDB Atlas ผ่าน API
+  async function toggleSave(id: string) {
+    const nextSaved = saved.includes(id) ? saved.filter((x) => x !== id) : [...saved, id];
+    
+    // Optimistic Update ปรับ UI ทันที
+    setSaved(nextSaved);
+
+    if (profile?.userId) {
       try {
-        localStorage.setItem("savedEvents", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+        await fetch("/api/user", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: profile.userId,
+            savedEvents: nextSaved,
+          }),
+        });
+      } catch (error) {
+        console.error("Failed to sync favorites with database:", error);
+      }
+    }
   }
+
   const list = GAMES.filter((g) => cat === "ทั้งหมด" || g.category === cat);
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
-      {/* ===== เมนู ===== */}
+      {/* ===== เมนู / NAVBAR ===== */}
       <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
         <a href="#" aria-label="COM7 หน้าแรก" className="flex items-center">
           <Image
@@ -894,7 +987,7 @@ export default function Home() {
             )}
           </button>
           {!ready ? (
-            <span className="h-10 w-10" />
+            <span className="h-10 w-10 animate-pulse rounded-full bg-zinc-200" />
           ) : profile ? (
             <button
               onClick={() => setProfOpen(true)}
@@ -908,12 +1001,12 @@ export default function Home() {
               <span className="hidden max-w-28 truncate text-sm font-medium sm:block">{profile.name}</span>
             </button>
           ) : (
-            <a
+            <Link
               href="/login"
               className="flex h-10 items-center rounded-full bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-700"
             >
               เข้าสู่ระบบ
-            </a>
+            </Link>
           )}
         </div>
       </header>
@@ -1038,9 +1131,9 @@ export default function Home() {
             <h2 className="text-3xl font-semibold tracking-tight">พร้อมเล่นรอบแรกหรือยัง</h2>
             <p className="mt-2 text-sm opacity-70">สมัครใช้เวลาไม่ถึงหนึ่งนาที</p>
           </div>
-          <a href="/login#signup" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-black">
+          <Link href="/login#signup" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-black">
             สมัครเข้าร่วม
-          </a>
+          </Link>
         </section>
       </main>
 
