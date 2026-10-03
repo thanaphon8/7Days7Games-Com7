@@ -167,7 +167,13 @@ export default function Login() {
     // TODO: เชื่อมระบบสมัคร/เข้าสู่ระบบจริงตรงนี้ (ตอนนี้จำลองการโหลด)
     await new Promise((r) => setTimeout(r, 800));
     setBusy(false);
-    if (mode === "in") router.push("/");
+    if (mode === "in") {
+      // TODO: ดึงชื่อ/รูปโปรไฟล์จากระบบจริง (ตอนนี้ถ้ายังไม่เคยมีโปรไฟล์ในเบราว์เซอร์ จะสร้างจากอีเมลให้ก่อน)
+      try {
+        if (!localStorage.getItem("profile")) localStorage.setItem("profile", JSON.stringify({ name: email.split("@")[0], avatar: "01" }));
+      } catch {}
+      router.push("/");
+    }
     else setStep("avatar"); // สมัครเสร็จ ไปเลือกรูปโปรไฟล์ต่อ
   }
 
@@ -336,4 +342,4 @@ export default function Login() {
       </div>
     </div>
   );
-}   
+}
