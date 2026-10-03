@@ -207,7 +207,7 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
 }
 
 // ===== ผู้ใช้ =====
-type RankUser = { name: string; avatarId?: string; games: number; score: number };
+type RankUser = { userId?: string; name: string; avatarId?: string; games: number; score: number };
 
 export default function Home() {
   const [cat, setCat] = useState("ทั้งหมด");
@@ -246,6 +246,7 @@ export default function Home() {
             }
 
             return {
+              userId: u.userId || u._id,
               name: u.name || "ผู้เล่นไม่ระบุชื่อ",
               avatarId: u.avatarId || u.avatar || "p01",
               games: playedGamesCount,
@@ -276,7 +277,7 @@ export default function Home() {
         try {
           const parsed = JSON.parse(localData);
           localProfile = {
-            userId: parsed.userId || parsed.id,
+            userId: parsed.userId || parsed.id || parsed._id,
             name: parsed.name || "ผู้เล่นใหม่",
             avatar: parsed.avatar || parsed.avatarId || "p01",
           };
@@ -337,6 +338,11 @@ export default function Home() {
 
   const list = GAMES.filter((g) => cat === "ทั้งหมด" || g.category === cat);
 
+  const isFirst =
+    !!profile?.userId &&
+    (topUsers[0]?.score ?? 0) > 0 &&
+    topUsers[0]?.userId === profile.userId;
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
       {/* ===== เมนู / NAVBAR ===== */}
@@ -344,6 +350,7 @@ export default function Home() {
         saved={saved}
         profile={profile}
         ready={ready}
+        isFirst={isFirst}
         onOpenFavorites={() => setFavOpen(true)}
       />
 

@@ -28,14 +28,26 @@ export function getAvatarSrc(avatar?: string) {
   return `/img/${avatar}.png`;
 }
 
+function Crown({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 24" aria-hidden className={`drop-shadow ${className}`}>
+      <path d="M3 9l6 5 7-10 7 10 6-5-3 13H6L3 9z" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" strokeLinejoin="round" />
+      {[[3, 9], [16, 4], [29, 9]].map(([x, y]) => (
+        <circle key={x} cx={x} cy={y} r="2" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" />
+      ))}
+    </svg>
+  );
+}
+
 type NavbarProps = {
   saved: string[];
   profile: Profile | null;
   ready: boolean;
+  isFirst: boolean;
   onOpenFavorites: () => void;
 };
 
-export default function Navbar({ saved, profile, ready, onOpenFavorites }: NavbarProps) {
+export default function Navbar({ saved, profile, ready, isFirst, onOpenFavorites }: NavbarProps) {
   return (
     <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
       <a href="#" aria-label="COM7 หน้าแรก" className="flex items-center">
@@ -82,14 +94,17 @@ export default function Navbar({ saved, profile, ready, onOpenFavorites }: Navba
             className="flex items-center gap-3 rounded-full border border-black/[.08] p-1 transition-colors hover:bg-black/[.04] sm:pr-4"
           >
             {/* ใช้ <img> เผื่อกรณีไฟล์ไม่มีอยู่จริงจะติด Fallback onerror */}
-            <img
-              src={getAvatarSrc(profile.avatar)}
-              alt={profile.name}
-              className="h-10 w-10 shrink-0 rounded-full object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = "/img/p01.png";
-              }}
-            />
+            <span className="relative shrink-0">
+              {isFirst && <Crown className="absolute -top-4 left-1/2 w-6 -translate-x-1/2 -rotate-6" />}
+              <img
+                src={getAvatarSrc(profile.avatar)}
+                alt={profile.name}
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/img/p01.png";
+                }}
+              />
+            </span>
             <span className="hidden max-w-28 truncate text-sm font-medium sm:block">{profile.name}</span>
           </Link>
         ) : (
