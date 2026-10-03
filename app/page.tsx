@@ -711,7 +711,29 @@ function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onCl
 
 // ===== ผู้ใช้ =====
 type Profile = { userId?: string; name: string; avatar: string };
-type RankUser = { name: string; games: number; score: number };
+type RankUser = { name: string; avatarId?: string; games: number; score: number };
+
+// Helper สำหรับดึง URL ของ Avatar จาก public/img/ โดยตรง
+function getAvatarSrc(avatar?: string) {
+  if (!avatar) return "/img/p01.png"; // Default รูปถ้าไม่มีข้อมูล
+
+  // หากเป็น URL เต็ม หรือ Data URL (Base64)
+  if (avatar.startsWith("http") || avatar.startsWith("data:")) {
+    return avatar;
+  }
+
+  // หากมี Path นำหน้าเป็น /img/ หรือ / แล้ว ให้ใช้นั้นเลย
+  if (avatar.startsWith("/")) {
+    return avatar;
+  }
+
+  // ถ้าส่งมาเป็น "p24.png" หรือ "p24" หรือ "24"
+  if (avatar.endsWith(".png") || avatar.endsWith(".jpg") || avatar.endsWith(".jpeg") || avatar.endsWith(".webp")) {
+    return `/img/${avatar}`;
+  }
+
+  return `/img/${avatar}.png`;
+}
 
 export default function Home() {
   const [cat, setCat] = useState("ทั้งหมด");
@@ -751,6 +773,7 @@ export default function Home() {
 
             return {
               name: u.name || "ผู้เล่นไม่ระบุชื่อ",
+              avatarId: u.avatarId || u.avatar || "p01",
               games: playedGamesCount,
               score: totalScore,
             };
@@ -768,7 +791,7 @@ export default function Home() {
     fetchRanking();
   }, []);
 
-  // 2. ดึงข้อมูล Profile และ Saved Events จาก LocalStorage และ MongoDB
+  // 2. ดึงข้อมูล Profile และ Saved Events จาก LocalStorage และ API
   useEffect(() => {
     async function loadProfileAndData() {
       const localData = localStorage.getItem("profile");
@@ -781,7 +804,7 @@ export default function Home() {
           localProfile = {
             userId: parsed.userId || parsed.id,
             name: parsed.name || "ผู้เล่นใหม่",
-            avatar: parsed.avatarId || parsed.avatar || "01",
+            avatar: parsed.avatar || parsed.avatarId || "p01",
           };
           setProfile(localProfile);
           currentUserId = localProfile.userId || null;
@@ -799,7 +822,7 @@ export default function Home() {
             setProfile({
               userId: currentUserId,
               name: result.data.name || localProfile?.name || "ผู้เล่นใหม่",
-              avatar: result.data.avatarId || localProfile?.avatar || "01",
+              avatar: result.data.avatar || result.data.avatarId || localProfile?.avatar || "p01",
             });
             setSaved(result.data.savedEvents || []);
           }
@@ -887,12 +910,14 @@ export default function Home() {
               aria-label="โปรไฟล์ของฉัน"
               className="flex items-center gap-3 rounded-full border border-black/[.08] p-1 transition-colors hover:bg-black/[.04] sm:pr-4"
             >
-              <Image
-                src={`/img/avatars/${profile.avatar}.png`}
-                alt=""
-                width={40}
-                height={40}
+              {/* ใช้ <img> เผื่อกรณีไฟล์ไม่มีอยู่จริงจะติด Fallback onerror */}
+              <img
+                src={getAvatarSrc(profile.avatar)}
+                alt={profile.name}
                 className="h-10 w-10 shrink-0 rounded-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/img/p01.png";
+                }}
               />
               <span className="hidden max-w-28 truncate text-sm font-medium sm:block">{profile.name}</span>
             </Link>
@@ -999,7 +1024,15 @@ export default function Home() {
             ) : (
               topUsers.map((r, i) => (
                 <li key={r.name + i} className={`flex items-center gap-4 rounded-full p-3 text-zinc-900 ${PODIUM[i]}`}>
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/70 text-base font-semibold">{i + 1}</span>
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/70 text-base font-semibold">{i + 1}</span>
+                  <img
+                    src={getAvatarSrc(r.avatarId)}
+                    alt={r.name}
+                    className="h-10 w-10 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-white/80"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "/img/p01.png";
+                    }}
+                  />
                   <span className="flex-1 truncate text-lg font-medium">{r.name}</span>
                   <span className="text-sm opacity-60">{r.games} เกม</span>
                   <span className="w-20 pr-3 text-right text-xl font-semibold tabular-nums">{r.score}</span>
@@ -1031,7 +1064,7 @@ export default function Home() {
             <h2 className="text-3xl font-semibold tracking-tight">พร้อมเล่นรอบแรกหรือยัง</h2>
             <p className="mt-2 text-sm opacity-70">สมัครใช้เวลาไม่ถึงหนึ่งนาที</p>
           </div>
-          <Link href="/login#signup" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-[#1F2A5C]/80">
+          <Link href="/login/register" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-[#1F2A5C]/80">
             สมัครเข้าร่วม
           </Link>
         </section>

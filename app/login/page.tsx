@@ -9,7 +9,8 @@ type Mode = "in" | "up";
 type Step = "form" | "avatar" | "welcome";
 
 const AVATAR_COUNT = 25;
-const AVATAR_IDS = Array.from({ length: AVATAR_COUNT }, (_, i) => String(i + 1).padStart(2, "0"));
+// เปลี่ยนรูปแบบ ID ให้ตรงกับชื่อไฟล์จริง p1 - p25
+const AVATAR_IDS = Array.from({ length: AVATAR_COUNT }, (_, i) => `p${i + 1}`);
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
 
 type Piece = { id: number; dx: number; dy: number; rot: number; color: string; shape: string; w: number; h: number; delay: number; fall: number; dur: number };
@@ -23,6 +24,16 @@ const SHAPES: Record<string, React.CSSProperties> = {
   tri: { clipPath: "polygon(50% 0, 0 100%, 100% 100%)" },
   star: { clipPath: "polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)" },
 };
+
+function getAvatarSrc(idOrUrl: string) {
+  if (!idOrUrl) return "/img/p1.png";
+  if (idOrUrl.startsWith("http") || idOrUrl.startsWith("/") || idOrUrl.startsWith("data:")) {
+    return idOrUrl;
+  }
+  // ดึงเฉพาะตัวเลขออกมา เช่น "01", "p1", "1" -> ชี้ไปที่ /img/p1.png
+  const num = idOrUrl.replace(/\D/g, "") || "1";
+  return `/img/p${num}.png`;
+}
 
 function makePieces(n: number, angle: number, spread: number, vmin: number, vmax: number, fall: number): Piece[] {
   const names = Object.keys(SHAPES);
@@ -88,18 +99,28 @@ function ConfettiLayer({ bursts }: { bursts: Burst[] }) {
 
 function Avatar({ id, size }: { id: string; size: string }) {
   const [failed, setFailed] = useState(false);
-  if (failed)
+  const src = getAvatarSrc(id);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [id]);
+
+  if (failed) {
+    const num = Number(id.replace(/\D/g, ""));
+    const bg = isNaN(num) || num === 0 ? FALLBACK_BG[0] : FALLBACK_BG[(num - 1) % 4];
     return (
       <span
-        style={{ backgroundColor: FALLBACK_BG[(Number(id) - 1) % 4] }}
+        style={{ backgroundColor: bg }}
         className={`flex items-center justify-center rounded-full font-light text-zinc-900 ${size}`}
       >
-        {id}
+        {id.length <= 3 ? id.toUpperCase() : id.charAt(0).toUpperCase()}
       </span>
     );
+  }
+
   return (
     <Image
-      src={`/img/avatars/${id}.png`}
+      src={src}
       alt=""
       width={216}
       height={216}
@@ -117,7 +138,8 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [avatar, setAvatar] = useState("01");
+  const [avatar, setAvatar] = useState("p1");
+  const [customAvatar, setCustomAvatar] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -180,8 +202,17 @@ export default function Login() {
           throw new Error(data.message || "เข้าสู่ระบบไม่สำเร็จ");
         }
 
-        localStorage.setItem("profile", JSON.stringify(data.data));
-        localStorage.setItem("userId", data.data.userId);
+        const profileData = {
+          userId: data.data.userId || data.data.id || data.data._id,
+          name: data.data.name || name,
+          avatar: data.data.avatarId || data.data.avatar || "p1",
+          avatarId: data.data.avatarId || data.data.avatar || "p1",
+          email: data.data.email || email,
+        };
+
+        localStorage.setItem("profile", JSON.stringify(profileData));
+        localStorage.setItem("userId", profileData.userId);
+        window.dispatchEvent(new Event("storage"));
         router.push("/");
       } else {
         const res = await fetch("/api/auth/register", {
@@ -200,8 +231,9 @@ export default function Login() {
           throw new Error(data.message || "สมัครสมาชิกไม่สำเร็จ");
         }
 
-        setUserId(data.data.userId);
-        localStorage.setItem("userId", data.data.userId);
+        const uId = data.data.userId || data.data.id || data.data._id;
+        setUserId(uId);
+        localStorage.setItem("userId", uId);
         setStep("avatar");
       }
     } catch (err: any) {
@@ -213,7 +245,8 @@ export default function Login() {
 
   async function confirmAvatar() {
     setBusy(true);
-    const updatedProfile = { userId, name, avatarId: avatar };
+    const selectedAvatar = customAvatar.trim() ? customAvatar.trim() : avatar;
+    const updatedProfile = { userId, name, avatarId: selectedAvatar, avatar: selectedAvatar, email };
 
     try {
       const res = await fetch("/api/user", {
@@ -221,14 +254,20 @@ export default function Login() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          avatarId: avatar,
+          avatarId: selectedAvatar,
           name,
         }),
       });
 
       const data = await res.json();
       if (data.success && data.data) {
-        localStorage.setItem("profile", JSON.stringify(data.data));
+        const savedData = {
+          ...data.data,
+          userId: data.data.userId || userId,
+          avatar: data.data.avatarId || selectedAvatar,
+          avatarId: data.data.avatarId || selectedAvatar,
+        };
+        localStorage.setItem("profile", JSON.stringify(savedData));
       } else {
         localStorage.setItem("profile", JSON.stringify(updatedProfile));
       }
@@ -237,12 +276,15 @@ export default function Login() {
       localStorage.setItem("profile", JSON.stringify(updatedProfile));
     } finally {
       localStorage.setItem("userId", userId);
+      window.dispatchEvent(new Event("storage"));
       setBusy(false);
       setStep("welcome");
     }
   }
 
   if (step === "avatar") {
+    const activeAvatar = customAvatar.trim() ? customAvatar.trim() : avatar;
+
     return (
       <div className="min-h-screen bg-[#E6E8EC] px-4 pb-28 pt-10 font-sans text-zinc-900">
         <h1 className="text-center text-xl font-semibold tracking-tight">เลือก Avatar ของคุณ</h1>
@@ -251,14 +293,18 @@ export default function Login() {
         <div className="mx-auto mt-8 max-w-3xl rounded-[2rem] bg-white p-6 sm:p-10">
           <div role="radiogroup" aria-label="รูปโปรไฟล์" className="grid grid-cols-3 gap-5 sm:grid-cols-5 sm:gap-6">
             {AVATAR_IDS.map((id) => {
-              const on = avatar === id;
+              const on = !customAvatar && avatar === id;
               return (
                 <button
                   key={id}
+                  type="button"
                   role="radio"
                   aria-checked={on}
                   aria-label={`รูปโปรไฟล์ ${id}`}
-                  onClick={() => setAvatar(id)}
+                  onClick={() => {
+                    setAvatar(id);
+                    setCustomAvatar("");
+                  }}
                   className={`rounded-full transition-transform duration-150 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 ${
                     on ? "scale-110 shadow-xl ring-4 ring-[#2B7FFF]" : "hover:scale-105"
                   }`}
@@ -268,6 +314,17 @@ export default function Login() {
               );
             })}
           </div>
+
+          <div className="mt-8 border-t border-zinc-100 pt-6">
+            <label className="block text-sm font-medium text-zinc-700">หรือระบุ URL รูปภาพโปรไฟล์ของคุณเอง</label>
+            <input
+              type="url"
+              placeholder="https://example.com/my-avatar.png"
+              value={customAvatar}
+              onChange={(e) => setCustomAvatar(e.target.value)}
+              className="mt-2 h-11 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none transition-colors focus:border-zinc-900 focus:bg-white"
+            />
+          </div>
         </div>
 
         <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#E6E8EC] via-[#E6E8EC]/90 to-transparent px-4 pb-6 pt-10">
@@ -276,7 +333,7 @@ export default function Login() {
             disabled={busy}
             className="flex h-12 w-full max-w-xs items-center justify-center gap-3 rounded-full bg-zinc-900 text-sm font-medium text-white shadow-lg transition-colors hover:bg-zinc-700 disabled:opacity-50"
           >
-            <Avatar id={avatar} size="h-8 w-8" />
+            <Avatar id={activeAvatar} size="h-8 w-8" />
             {busy ? "กำลังบันทึก..." : "ใช้รูปนี้"}
           </button>
         </div>
@@ -403,7 +460,7 @@ export default function Login() {
 
           {step === "welcome" && (
             <div className="flex flex-col items-start">
-              <Avatar id={avatar} size="h-28 w-28 text-6xl" />
+              <Avatar id={customAvatar.trim() ? customAvatar.trim() : avatar} size="h-28 w-28 text-6xl" />
               <h2 className="mt-8 text-4xl font-semibold tracking-tight">ยินดีต้อนรับ {name}</h2>
               <p className="mt-3 max-w-sm text-base leading-7 text-zinc-500">
                 บัญชีพร้อมแล้ว ลองเล่นเกมแรกเพื่อเริ่มสะสมแต้ม แล้วดูว่าคุณอยู่อันดับไหน

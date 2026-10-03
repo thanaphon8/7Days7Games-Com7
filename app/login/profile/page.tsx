@@ -7,34 +7,36 @@ import { useRouter } from "next/navigation";
 export type Profile = {
   userId?: string;
   name: string;
-  avatar: string;
+  avatar: string; // เช่น 'p1', 'p2', ...
 };
 
-const AVATAR_IDS = Array.from({ length: 25 }, (_, i) =>
-  String(i + 1).padStart(2, "0")
-);
+// สร้างรายการ ID รูปภาพ p1 ถึง p25
+const AVATAR_IDS = Array.from({ length: 25 }, (_, i) => `p${i + 1}`);
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
 
-function Avatar({ id, size }: { id: string; size: string }) {
+export function Avatar({ id, size }: { id: string; size: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [id]);
+
+  // ดึงเฉพาะตัวเลขจาก ID เช่น p1 -> 1 เพื่อใช้คำนวณสีสลับ
+  const numId = Number(id.replace(/\D/g, "")) || 1;
 
   if (failed) {
     return (
       <span
         style={{
-          backgroundColor: FALLBACK_BG[((Number(id) || 1) - 1) % 4],
+          backgroundColor: FALLBACK_BG[(numId - 1) % FALLBACK_BG.length],
         }}
         className={`flex shrink-0 items-center justify-center rounded-full font-light text-zinc-900 ${size}`}
       >
-        {id}
+        {id.toUpperCase()}
       </span>
     );
   }
 
   return (
     <Image
-      src={`/img/avatars/${id}.png`}
+      src={`/img/${id}.png`}
       alt=""
       width={216}
       height={216}
@@ -65,7 +67,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("01");
+  const [avatar, setAvatar] = useState("p1");
   const [savedCount, setSavedCount] = useState(0);
   const [isTop, setIsTop] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -81,10 +83,17 @@ export default function ProfilePage() {
       try {
         const parsed = JSON.parse(localData);
         const currentUserId = parsed.userId || parsed.id;
+        
+        // ตรวจสอบพาธ/ฟอร์แมตเดิมกรณีมีค่าตัวเลขธรรมดาติดมา
+        let rawAvatar = parsed.avatarId || parsed.avatar || "p1";
+        if (/^\d+$/.test(rawAvatar)) {
+          rawAvatar = `p${Number(rawAvatar)}`;
+        }
+
         const initialProfile: Profile = {
           userId: currentUserId,
           name: parsed.name || "ผู้เล่นใหม่",
-          avatar: parsed.avatarId || parsed.avatar || "01",
+          avatar: rawAvatar,
         };
 
         setProfile(initialProfile);
@@ -95,10 +104,15 @@ export default function ProfilePage() {
           const res = await fetch(`/api/user?userId=${currentUserId}`);
           const result = await res.json();
           if (result.success && result.data) {
+            let fetchedAvatar = result.data.avatarId || initialProfile.avatar;
+            if (/^\d+$/.test(fetchedAvatar)) {
+              fetchedAvatar = `p${Number(fetchedAvatar)}`;
+            }
+
             const fetchedProfile = {
               userId: currentUserId,
               name: result.data.name || initialProfile.name,
-              avatar: result.data.avatarId || initialProfile.avatar,
+              avatar: fetchedAvatar,
             };
             setProfile(fetchedProfile);
             setName(fetchedProfile.name);
@@ -106,7 +120,7 @@ export default function ProfilePage() {
             setSavedCount(result.data.savedEvents?.length || 0);
           }
 
-          // ตรวจสอบอันดับผู้ใช้เพื่อแสดง มงกุฎ (Crown)
+          // ตรวจสอบอันดับผู้ใช้เพื่อแสดงมงกุฎ
           const rankRes = await fetch("/api/user");
           const rankResult = await rankRes.json();
           if (rankResult.success && Array.isArray(rankResult.data)) {

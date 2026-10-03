@@ -16,24 +16,44 @@ interface PlayerRank {
   score: number;
 }
 
+// Helper แปลง Path รูปภาพให้อยู่ใน public/img/
+function getAvatarSrc(id?: string) {
+  if (!id) return "/img/p01.png";
+
+  // หากเป็น URL เต็ม หรือ Data URL
+  if (id.startsWith("http") || id.startsWith("data:")) return id;
+
+  // หากมี / นำหน้าแล้ว
+  if (id.startsWith("/")) return id;
+
+  // ถ้าส่งมาแบบมี นามสกุลไฟล์ เช่น "p24.png"
+  if (id.endsWith(".png") || id.endsWith(".jpg") || id.endsWith(".jpeg") || id.endsWith(".webp")) {
+    return `/img/${id}`;
+  }
+
+  // กรณีเป็น "p24" หรือ "24" หรือ "01"
+  return `/img/${id.startsWith("p") ? id : `p${id}`}.png`;
+}
+
 function Avatar({ id, size }: { id: string; size: string }) {
   const [failed, setFailed] = useState(false);
-  
-  const cleanId = id ? String(parseInt(id, 10)) : "1";
+  const imgSrc = getAvatarSrc(id);
 
-  if (failed || !id)
+  if (failed) {
+    const num = Number(id?.replace(/\D/g, "")) || 1;
     return (
       <span
-        style={{ backgroundColor: FALLBACK_BG[((Number(cleanId) || 1) - 1) % 4] }}
+        style={{ backgroundColor: FALLBACK_BG[(num - 1) % 4] }}
         className={`flex shrink-0 items-center justify-center rounded-full font-light text-zinc-900 ${size}`}
       >
-        {cleanId}
+        {num}
       </span>
     );
+  }
 
   return (
     <Image
-      src={`/img/avatars/${cleanId}.png`}
+      src={imgSrc}
       alt=""
       width={216}
       height={216}
@@ -104,7 +124,7 @@ export default function RankPage() {
             return {
               userId: user.userId || user._id,
               name: userName,
-              avatar: user.avatarId || user.avatar || "1",
+              avatar: user.avatarId || user.avatar || "p01",
               games: playedGames,
               score: totalScore,
             };
