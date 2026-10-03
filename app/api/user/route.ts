@@ -10,7 +10,6 @@ export async function GET(request: Request) {
     const userId = searchParams.get("userId");
 
     const client = await clientPromise;
-    // 🔴 เปลี่ยนจุดนี้จาก "com7_game" เป็น "7days7games"
     const db = client.db("7days7games");
 
     if (userId) {
@@ -54,10 +53,10 @@ export async function PATCH(request: Request) {
     }
 
     const client = await clientPromise;
-    // 🔴 เปลี่ยนจุดนี้จาก "com7_game" เป็น "7days7games"
     const db = client.db("7days7games");
 
     const updateFields: Record<string, any> = { updatedAt: new Date() };
+    const incFields: Record<string, any> = {};
 
     if (name !== undefined) updateFields.name = name;
     if (avatarId !== undefined) updateFields.avatarId = avatarId;
@@ -65,17 +64,24 @@ export async function PATCH(request: Request) {
 
     if (gameScores && typeof gameScores === "object") {
       for (const [key, val] of Object.entries(gameScores)) {
-        updateFields[`gameScores.${key}`] = val;
+        if (typeof val === "number") {
+          incFields[`gameScores.${key}`] = val;
+        }
       }
     }
 
     if (gameKey && typeof score === "number") {
-      updateFields[`gameScores.${gameKey}`] = score;
+      incFields[`gameScores.${gameKey}`] = score;
+    }
+
+    const updateQuery: Record<string, any> = { $set: updateFields };
+    if (Object.keys(incFields).length > 0) {
+      updateQuery.$inc = incFields;
     }
 
     const result = await db.collection("users").findOneAndUpdate(
       { userId },
-      { $set: updateFields },
+      updateQuery,
       { returnDocument: "after", upsert: true }
     );
 

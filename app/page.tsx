@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { RANKING } from "../lib/ranking";
 import { useEffect, useState } from "react";
 
 // ===== ข้อมูลตัวอย่าง =====
@@ -59,8 +58,6 @@ const GAMES: Game[] = [
     rules: ["ผลัดกันวาง X และ O บนตาราง 3×3 โดยคุณเป็นฝ่ายเริ่ม", "เรียงได้ 3 ช่องติดกันก่อนคือผู้ชนะ", "บอทจะเก่งขึ้นเรื่อยๆ เมื่อคุณชนะ", "คะแนนคิดจากจำนวนรอบที่ชนะติดต่อกัน"],
   },
 ];
-
-const TOP = RANKING.slice(0, 3);
 
 const STEPS = [
   { title: "สมัครเข้าร่วม", desc: "ใช้อีเมลบริษัทและตั้งชื่อที่จะแสดงบนอันดับ" },
@@ -725,6 +722,8 @@ function Crown({ className = "" }: { className?: string }) {
 
 // ===== โปรไฟล์ผู้ใช้ =====
 type Profile = { userId?: string; name: string; avatar: string };
+type RankUser = { name: string; games: number; score: number };
+
 const AVATAR_IDS = Array.from({ length: 25 }, (_, i) => String(i + 1).padStart(2, "0"));
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
 
@@ -829,12 +828,58 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profOpen, setProfOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const isTop = !!profile && profile.name === RANKING[0].name;
+  
+  // State สำหรับเก็บข้อมูลอันดับจาก API
+  const [topUsers, setTopUsers] = useState<RankUser[]>([]);
+  const [totalParticipants, setTotalParticipants] = useState<number>(0);
 
-  // 1. ดึงข้อมูล Profile และ Saved Events จากทั้ง LocalStorage และ MongoDB Atlas
+  const isTop = !!profile && topUsers.length > 0 && profile.name === topUsers[0].name;
+
+  // 1. ดึงข้อมูล Leaderboard 3 อันดับแรก
+  useEffect(() => {
+    async function fetchRanking() {
+      try {
+        const res = await fetch("/api/user");
+        const result = await res.json();
+
+        if (result.success && Array.isArray(result.data)) {
+          setTotalParticipants(result.data.length);
+
+          const list: RankUser[] = result.data.map((u: any) => {
+            const scoresObj = u.gameScores || {};
+            let totalScore = 0;
+            let playedGamesCount = 0;
+
+            for (const val of Object.values(scoresObj)) {
+              const num = Number(val) || 0;
+              if (num > 0) {
+                totalScore += num;
+                playedGamesCount += 1;
+              }
+            }
+
+            return {
+              name: u.name || "ผู้เล่นไม่ระบุชื่อ",
+              games: playedGamesCount,
+              score: totalScore,
+            };
+          });
+
+          // เรียงตามคะแนนรวมมากไปน้อย
+          list.sort((a, b) => b.score - a.score);
+          setTopUsers(list.slice(0, 3));
+        }
+      } catch (error) {
+        console.error("Failed to fetch rankings:", error);
+      }
+    }
+
+    fetchRanking();
+  }, []);
+
+  // 2. ดึงข้อมูล Profile และ Saved Events จาก LocalStorage และ MongoDB
   useEffect(() => {
     async function loadProfileAndData() {
-      // ดึง local profile
       const localData = localStorage.getItem("profile");
       let currentUserId: string | null = null;
       let localProfile: Profile | null = null;
@@ -854,7 +899,6 @@ export default function Home() {
         }
       }
 
-      // ดึงข้อมูลจาก MongoDB หากมี userId
       if (currentUserId) {
         try {
           const res = await fetch(`/api/user?userId=${currentUserId}`);
@@ -877,18 +921,16 @@ export default function Home() {
 
     loadProfileAndData();
 
-    // ฟัง event จากระบบ เผื่อมีการ Login หรือเปลี่ยน Profile ในหน้าอื่น
     const handleStorageChange = () => loadProfileAndData();
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  // 2. บันทึกข้อมูล Profile ลง LocalStorage และ MongoDB Atlas
+  // 3. บันทึกข้อมูล Profile ลง LocalStorage และ MongoDB
   async function saveProfile(p: Profile) {
     setProfile(p);
     setProfOpen(false);
 
-    // บันทึกลง LocalStorage
     localStorage.setItem(
       "profile",
       JSON.stringify({
@@ -898,7 +940,6 @@ export default function Home() {
       })
     );
 
-    // Sync ไปยัง MongoDB
     if (p.userId) {
       try {
         await fetch("/api/user", {
@@ -922,11 +963,9 @@ export default function Home() {
     setProfOpen(false);
   }
 
-  // 3. บันทึกรายการโปรด (Saved Events) ลง MongoDB Atlas ผ่าน API
+  // 4. บันทึกรายการโปรด (Saved Events)
   async function toggleSave(id: string) {
     const nextSaved = saved.includes(id) ? saved.filter((x) => x !== id) : [...saved, id];
-    
-    // Optimistic Update ปรับ UI ทันที
     setSaved(nextSaved);
 
     if (profile?.userId) {
@@ -1018,7 +1057,7 @@ export default function Home() {
         {/* ===== ตัวเลขสรุป ===== */}
         <section className="grid grid-cols-3 gap-3">
           {[
-            ["50", "ผู้เข้าร่วม"],
+            [totalParticipants > 0 ? String(totalParticipants) : "0", "ผู้เข้าร่วม"],
             ["4/7", "เกมที่เปิดแล้ว"],
             ["4", "วันที่เหลือ"],
           ].map(([n, label]) => (
@@ -1086,7 +1125,7 @@ export default function Home() {
           })}
         </section>
 
-        {/* ===== อันดับ ===== */}
+        {/* ===== อันดับ (ดึงข้อมูล Dynamic จาก API) ===== */}
         <section id="ranking" className="grid gap-6 pt-10 md:grid-cols-[1fr_1.4fr]">
           <div className="flex flex-col justify-between gap-6">
             <div>
@@ -1098,14 +1137,18 @@ export default function Home() {
             <Link href="/rank" className="inline-flex h-11 w-fit items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]">ดูอันดับทั้งหมด</Link>
           </div>
           <ol className="flex flex-col gap-3">
-            {TOP.map((r, i) => (
-              <li key={r.name} className={`flex items-center gap-4 rounded-full p-3 text-zinc-900 ${PODIUM[i]}`}>
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/70 text-base font-semibold">{i + 1}</span>
-                <span className="flex-1 truncate text-lg font-medium">{r.name}</span>
-                <span className="text-sm opacity-60">{r.games} เกม</span>
-                <span className="w-20 pr-3 text-right text-xl font-semibold tabular-nums">{r.score}</span>
-              </li>
-            ))}
+            {topUsers.length === 0 ? (
+              <p className="py-6 text-center text-sm text-zinc-400">ยังไม่มีข้อมูลอันดับ</p>
+            ) : (
+              topUsers.map((r, i) => (
+                <li key={r.name + i} className={`flex items-center gap-4 rounded-full p-3 text-zinc-900 ${PODIUM[i]}`}>
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/70 text-base font-semibold">{i + 1}</span>
+                  <span className="flex-1 truncate text-lg font-medium">{r.name}</span>
+                  <span className="text-sm opacity-60">{r.games} เกม</span>
+                  <span className="w-20 pr-3 text-right text-xl font-semibold tabular-nums">{r.score}</span>
+                </li>
+              ))
+            )}
           </ol>
         </section>
 

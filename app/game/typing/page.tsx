@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
-// ===== ธีมของเกม (โทนเดียวกับการ์ดกิจกรรม) =====
 const BG = "#F4D35E";
 const FG = "#4A3B00";
 const RED = "#C4262E";
-const GAME_ID = "typing"; // ID อ้างอิงของเกมนี้
+const GAME_ID = "typing";
 
 const WORDS = [
   "the", "be", "of", "and", "a", "to", "in", "he", "have", "it", "that", "for", "they", "I", "with", "as", "not", "on", "she", "at",
@@ -187,12 +186,10 @@ export default function TypingGame() {
   const accuracy = keys > 0 ? Math.round(((keys - wrong) / keys) * 100) : 100;
   const shownWpm = useCountUp(wpm, phase === "done");
 
-  // ฟังก์ชันส่งคะแนนบันทึกลง MongoDB Atlas (ปรับแก้ให้รองรับทุกล็อกอิน)
   const saveScoreToUser = useCallback(async (finalWpm: number) => {
     try {
       let userId = "";
-      
-      // อ่านข้อมูลจาก LocalStorage
+
       const profileStr = localStorage.getItem("profile");
       if (profileStr) {
         const profile = JSON.parse(profileStr);
@@ -208,40 +205,25 @@ export default function TypingGame() {
         return;
       }
 
-      // 1. ดึงข้อมูลคะแนนปัจจุบันของผู้ใช้
-      const res = await fetch(`/api/user?userId=${encodeURIComponent(userId)}`);
-      const result = await res.json();
-
-      let currentScores = {};
-      if (result.success && result.data) {
-        currentScores = result.data.gameScores || {};
-      }
-
-      const oldScore = (currentScores as Record<string, number>)[GAME_ID] || 0;
-
-      // 2. บันทึกใหม่เมื่อทำคะแนนได้มากกว่าเดิม หรือยังไม่เคยมีคะแนน
-      if (finalWpm > oldScore || oldScore === 0) {
-        const updatedScores = { ...currentScores, [GAME_ID]: finalWpm };
-        
+      if (finalWpm > 0) {
         const patchRes = await fetch("/api/user", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId,
-            _id: userId,
-            gameScores: updatedScores,
+            gameKey: GAME_ID,
+            score: finalWpm,
           }),
         });
 
         const patchData = await patchRes.json();
-        console.log("บันทึกคะแนนสำเร็จ:", patchData);
+        console.log("บันทึกคะแนนสะสมสำเร็จ:", patchData);
       }
     } catch (err) {
       console.error("เกิดข้อผิดพลาดในการบันทึกคะแนนลง MongoDB:", err);
     }
   }, []);
 
-  // จบเกม: บันทึกทั้ง LocalStorage และ MongoDB
   useEffect(() => {
     if (phase !== "done") return;
 
@@ -330,7 +312,6 @@ export default function TypingGame() {
       `}</style>
 
       <div className="flex min-h-full flex-col">
-        {/* ===== ส่วนบน: ชื่อเกม + ปุ่มปิด + ตัวเลข ===== */}
         <div className="mx-auto w-full max-w-5xl px-6 pt-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -358,7 +339,6 @@ export default function TypingGame() {
           </div>
         </div>
 
-        {/* ===== กลางจอ: เทปคำศัพท์ / ผลลัพธ์ ===== */}
         <div className="flex flex-1 flex-col justify-center py-10" onClick={() => inputRef.current?.focus()}>
           {phase === "done" ? (
             <div className="mx-auto w-full max-w-3xl px-6">
@@ -470,7 +450,6 @@ export default function TypingGame() {
           )}
         </div>
 
-        {/* ===== ส่วนล่าง: เลือกเวลา + เริ่มใหม่ ===== */}
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 pb-8">
           <div className="flex flex-wrap items-center gap-2">
             {DURATIONS.map((d) => (
