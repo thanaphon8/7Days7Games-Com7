@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { HEART_PATH } from "../events/page";
 
 export type Profile = { userId?: string; name: string; avatar: string };
@@ -44,12 +45,94 @@ type NavbarProps = {
   profile: Profile | null;
   ready: boolean;
   isFirst: boolean;
+  score: number | null; // คะแนนรวมของผู้ใช้ (null = ยังไม่มีข้อมูล)
   onOpenFavorites: () => void;
 };
 
-export default function Navbar({ saved, profile, ready, isFirst, onOpenFavorites }: NavbarProps) {
+const COUNT_MS = 1200; // ระยะเวลาเลขไล่ขึ้น
+const START_DELAY_MS = 500; // หน่วงก่อนเริ่มเอฟเฟกต์ ให้ผู้เล่นเห็นหน้าก่อน
+
+export default function Navbar({ saved, profile, ready, isFirst, score, onOpenFavorites }: NavbarProps) {
+  const userId = profile?.userId;
+  const [shown, setShown] = useState<number | null>(null); // คะแนนที่แสดงอยู่ (ไล่ขึ้นทีละน้อย)
+  const [gain, setGain] = useState<number | null>(null); // คะแนนที่เพิ่มมา ใช้โชว์ +N
+  const [bump, setBump] = useState(false);
+
+  // เทียบกับคะแนนที่เห็นครั้งล่าสุด (เก็บใน localStorage) ถ้าเพิ่มขึ้นให้เล่นเอฟเฟกต์
+  useEffect(() => {
+    if (score === null || !userId) {
+      setShown(null);
+      return;
+    }
+
+    const key = `lastScore:${userId}`;
+    let prev: number | null = null;
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null && Number.isFinite(Number(v))) prev = Number(v);
+    } catch {}
+
+    const remember = () => {
+      try {
+        localStorage.setItem(key, String(score));
+      } catch {}
+    };
+
+    // ครั้งแรก หรือคะแนนไม่เพิ่ม: แสดงเลยโดยไม่มีเอฟเฟกต์
+    if (prev === null || score <= prev) {
+      setShown(score);
+      remember();
+      return;
+    }
+
+    const from = prev;
+    const diff = score - from;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    let raf = 0;
+    setShown(from);
+
+    const startTimer = setTimeout(() => {
+      remember();
+      setGain(diff);
+      setBump(true);
+      if (reduce) {
+        setShown(score);
+        return;
+      }
+      const t0 = performance.now();
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - t0) / COUNT_MS);
+        setShown(Math.round(from + diff * (1 - Math.pow(1 - t, 3)))); // ease-out
+        if (t < 1) raf = requestAnimationFrame(tick);
+        else setBump(false);
+      };
+      raf = requestAnimationFrame(tick);
+    }, START_DELAY_MS);
+
+    const hideTimer = setTimeout(() => {
+      setGain(null);
+      setBump(false);
+    }, START_DELAY_MS + 2600);
+
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(hideTimer);
+      cancelAnimationFrame(raf);
+    };
+  }, [score, userId]);
+
   return (
     <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
+      <style>{`
+        @keyframes score-gain {
+          0%   { opacity: 0; transform: translateY(-10px) scale(.6); }
+          20%  { opacity: 1; transform: translateY(2px) scale(1.15); }
+          75%  { opacity: 1; transform: translateY(12px) scale(1); }
+          100% { opacity: 0; transform: translateY(22px) scale(1); }
+        }
+        .score-gain { animation: score-gain 2400ms cubic-bezier(.2,.8,.2,1) both; }
+        @media (prefers-reduced-motion: reduce) { .score-gain { animation: none; } }
+      `}</style>
       <a href="#" aria-label="COM7 หน้าแรก" className="flex items-center">
         <Image
           src="/img/com7logo.png"
@@ -85,6 +168,26 @@ export default function Navbar({ saved, profile, ready, isFirst, onOpenFavorites
             <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-900 px-1 text-xs font-semibold text-white">{saved.length}</span>
           )}
         </button>
+        {ready && profile && shown !== null && (
+          <div className="relative" title="คะแนนรวมของคุณ">
+            <span
+              aria-label={`คะแนนรวม ${shown} แต้ม`}
+              className={`flex h-10 items-center gap-1.5 rounded-full bg-[#F4D35E] px-3.5 text-sm font-semibold tabular-nums text-[#4A3B00] transition-all duration-300 ${bump ? "scale-110 ring-4 ring-[#F4D35E]/40" : ""}`}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden fill="currentColor">
+                <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
+              </svg>
+              {shown.toLocaleString()}
+            </span>
+            {gain !== null && (
+              <span aria-hidden className="pointer-events-none absolute inset-x-0 top-full z-30 mt-1 flex justify-center">
+                <span className="score-gain rounded-full bg-[#1F9D55] px-2.5 py-0.5 text-xs font-bold text-white shadow-md">
+                  +{gain.toLocaleString()}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
         {!ready ? (
           <span className="h-10 w-10 animate-pulse rounded-full bg-zinc-200" />
         ) : profile ? (

@@ -221,12 +221,15 @@ export default function Home() {
   // State สำหรับเก็บข้อมูลอันดับจาก API
   const [topUsers, setTopUsers] = useState<RankUser[]>([]);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
+  // คะแนนรวมของผู้ใช้ที่ล็อกอินอยู่ (ใช้โชว์บน Navbar)
+  const [score, setScore] = useState<number | null>(null);
+  const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
 
   // 1. ดึงข้อมูล Leaderboard 3 อันดับแรก
   useEffect(() => {
     async function fetchRanking() {
       try {
-        const res = await fetch("/api/user");
+        const res = await fetch("/api/user", { cache: "no-store" });
         const result = await res.json();
 
         if (result.success && Array.isArray(result.data)) {
@@ -257,6 +260,9 @@ export default function Home() {
           // เรียงตามคะแนนรวมมากไปน้อย
           list.sort((a, b) => b.score - a.score);
           setTopUsers(list.slice(0, 3));
+          setScoreMap(
+            Object.fromEntries(list.filter((u) => u.userId).map((u) => [u.userId as string, u.score]))
+          );
         }
       } catch (error) {
         console.error("Failed to fetch rankings:", error);
@@ -290,7 +296,7 @@ export default function Home() {
 
       if (currentUserId) {
         try {
-          const res = await fetch(`/api/user?userId=${currentUserId}`);
+          const res = await fetch(`/api/user?userId=${currentUserId}`, { cache: "no-store" });
           const result = await res.json();
 
           if (result.success && result.data) {
@@ -300,6 +306,11 @@ export default function Home() {
               avatar: result.data.avatar || result.data.avatarId || localProfile?.avatar || "p01",
             });
             setSaved(result.data.savedEvents || []);
+
+            const gs = result.data.gameScores;
+            if (gs && typeof gs === "object") {
+              setScore((Object.values(gs) as unknown[]).reduce<number>((sum, v) => sum + Math.max(0, Number(v) || 0), 0));
+            }
           }
         } catch (error) {
           console.error("Failed to load user data from API:", error);
@@ -343,6 +354,9 @@ export default function Home() {
     (topUsers[0]?.score ?? 0) > 0 &&
     topUsers[0]?.userId === profile.userId;
 
+  // ถ้า API ผู้ใช้ไม่ส่ง gameScores มา ให้ใช้คะแนนจากรายการอันดับแทน
+  const myScore = score ?? (profile?.userId ? scoreMap[profile.userId] ?? null : null);
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
       {/* ===== เมนู / NAVBAR ===== */}
@@ -351,6 +365,7 @@ export default function Home() {
         profile={profile}
         ready={ready}
         isFirst={isFirst}
+        score={myScore}
         onOpenFavorites={() => setFavOpen(true)}
       />
 
