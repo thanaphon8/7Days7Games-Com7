@@ -168,7 +168,7 @@ export default function RankPage() {
           <p className="text-sm text-zinc-500">7 Days 7 Games</p>
           <h1 className="mt-1 text-6xl font-semibold tracking-tight md:text-7xl">อันดับ</h1>
           <p className="mt-3 max-w-md text-base leading-7 text-zinc-500">
-            แต้มรวมจากคะแนนสูงสุดของแต่ละเกม มีผู้เข้าร่วมทั้งหมด {ranking.length} คน
+            แต้มสะสมจากทุกรอบที่เล่น มีผู้เข้าร่วมทั้งหมด {ranking.length} คน
           </p>
         </div>
 
@@ -232,7 +232,7 @@ export default function RankPage() {
         <div className="mt-12 flex flex-col items-start justify-between gap-6 rounded-[2rem] bg-[#A8B5E8] p-8 text-[#1F2A5C] sm:flex-row sm:items-center md:p-10">
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">อยากขึ้นอันดับ</h2>
-            <p className="mt-2 text-sm opacity-70">เล่นเกมเพิ่มเพื่อทำคะแนนสูงสุดของแต่ละเกมให้ดีขึ้น</p>
+            <p className="mt-2 text-sm opacity-70">เล่นเกมเพิ่มเพื่อสะสมแต้มให้มากขึ้น</p>
           </div>
           <Link href="/#games" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-black">
             เลือกเกม

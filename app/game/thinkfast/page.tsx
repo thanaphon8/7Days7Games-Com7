@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 const GAME_ID = "thinkfast";
 const TOTAL = 10; // จำนวนข้อต่อรอบ
@@ -54,6 +54,29 @@ const BANK: Raw[] = [
   { tag: "คณิตกวนๆ", q: "คุณลบเลข 5 ออกจากเลข 25 ได้กี่ครั้ง", options: ["ครั้งเดียว เพราะหลังจากนั้นมันไม่ใช่ 25 แล้ว", "5 ครั้ง", "4 ครั้ง", "25 ครั้ง"], explain: "ลบครั้งแรกแล้วเหลือ 20 หลังจากนั้นก็ไม่ใช่เลข 25 อีกแล้ว จึงลบ 5 ออกจาก 25 ได้ครั้งเดียว" },
 ];
 
+type Player = { id: string; name: string };
+
+// อ่านบัญชีที่ล็อกอินอยู่ ณ ตอนนี้ (ใช้ตอนกดเริ่มเล่น เพื่อจดว่าใครคือคนเล่นรอบนี้)
+function getStoredPlayer(): Player | null {
+  try {
+    const v = localStorage.getItem("profile");
+    if (!v) return null;
+    const p = JSON.parse(v);
+    const id = p?.userId || p?.id || p?._id;
+    return id ? { id: String(id), name: p?.name || "ผู้เล่น" } : null;
+  } catch {
+    return null;
+  }
+}
+
+// จดแต้มที่เพิ่มขึ้นจริงจากเกมนี้ไว้ ให้ Navbar แสดง +N ตรงกับที่ได้รับ
+function addPendingGain(userId: string, gain: number) {
+  try {
+    const key = `scoreGain:${userId}`;
+    localStorage.setItem(key, String((Number(localStorage.getItem(key)) || 0) + gain));
+  } catch {}
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -92,16 +115,21 @@ export default function ThinkFastPage() {
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "guest" | "error">("idle");
-  const [best, setBest] = useState<number | null>(null);
+  const [saveErr, setSaveErr] = useState("");
+  const [gameTotal, setGameTotal] = useState<number | null>(null); // แต้มสะสมของเกมนี้ทั้งหมด
+  const savedRound = useRef(false); // กันบันทึกซ้ำในรอบเดียว (แต้มสะสมถ้าบันทึกซ้ำจะบวกเบิ้ล)
+  const [player, setPlayer] = useState<Player | null>(null); // บัญชีที่เริ่มเล่นรอบนี้
 
   function start() {
+    setPlayer(getStoredPlayer()); // จดบัญชีตอนเริ่มเล่น ไม่ไปอ่านใหม่ตอนจบเกม
     setQs(buildRound());
     setIdx(0);
     setPicked(null);
     setTimeLeft(TIME_PER_Q);
     setScore(0);
     setCorrect(0);
-    setBest(null);
+    setGameTotal(null);
+    savedRound.current = false;
     setSaveState("idle");
     setPhase("play");
   }
@@ -148,42 +176,38 @@ export default function ThinkFastPage() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  // บันทึกคะแนนสูงสุดเมื่อจบเกม
+  // บันทึกแต้มเมื่อจบเกม: แต้มของทุกรอบ "สะสม" บวกเข้าไปเรื่อยๆ
+  // (บันทึกให้บัญชีที่เริ่มเล่น ไม่ใช่บัญชีที่ล็อกอินล่าสุดในเบราว์เซอร์)
   useEffect(() => {
     if (phase !== "end") return;
+    if (!player) {
+      setSaveState("guest");
+      return;
+    }
+    if (savedRound.current) return;
+    savedRound.current = true;
+
     (async () => {
-      let userId: string | null = null;
-      try {
-        const v = localStorage.getItem("profile");
-        if (v) {
-          const p = JSON.parse(v);
-          userId = p?.userId || p?.id || p?._id || null;
-        }
-      } catch {}
-
-      if (!userId) {
-        setSaveState("guest");
-        return;
-      }
-
       setSaveState("saving");
       try {
-        const res = await fetch(`/api/user?userId=${userId}`, { cache: "no-store" });
-        const result = await res.json();
-        const old: Record<string, number> = result?.data?.gameScores || {};
-        const prev = Number(old[GAME_ID]) || 0;
-        setBest(Math.max(prev, score));
-
-        if (score > prev) {
-          await fetch("/api/user", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, gameScores: { ...old, [GAME_ID]: score } }),
-          });
+        // ส่งแค่แต้มของรอบนี้ ฝั่ง API จะ $inc เข้า gameScores.thinkfast ให้เอง (บวกสะสม ไม่ทับของเดิม)
+        const res = await fetch("/api/user", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: player.id, gameKey: GAME_ID, score }),
+        });
+        const result = await res.json().catch(() => null);
+        if (!res.ok || !result?.success) {
+          throw new Error(result?.message || result?.error || `PATCH failed: ${res.status}`);
         }
+        // แต้มสะสมของเกมนี้หลังบวกแล้ว (API ส่งเอกสารผู้ใช้ที่อัปเดตแล้วกลับมา)
+        const total = Number(result.data?.gameScores?.[GAME_ID]);
+        if (Number.isFinite(total)) setGameTotal(total);
+        if (score > 0) addPendingGain(player.id, score); // ให้ Navbar โชว์ +N เท่ากับแต้มรอบนี้
         setSaveState("saved");
       } catch (err) {
         console.error("Failed to save score:", err);
+        setSaveErr(err instanceof Error ? err.message : String(err));
         setSaveState("error");
       }
     })();
@@ -191,6 +215,15 @@ export default function ThinkFastPage() {
   }, [phase]);
 
   const q = qs[idx];
+  // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นหน้าแรกจะโหลดคะแนนเก่ามาแสดง
+  const lockNav = phase === "end" && (saveState === "idle" || saveState === "saving");
+  const lockProps = {
+    "aria-disabled": lockNav,
+    onClick: (e: MouseEvent) => {
+      if (lockNav) e.preventDefault();
+    },
+  };
+  const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
   const revealed = picked !== null;
   const isRight = revealed && q && picked === q.answer;
   const gained = BASE_POINT + timeLeft * BONUS_PER_SEC;
@@ -203,10 +236,10 @@ export default function ThinkFastPage() {
       `}</style>
 
       <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
-        <Link href="/" aria-label="COM7 หน้าแรก" className="flex items-center">
+        <Link href="/" aria-label="COM7 หน้าแรก" className={`flex items-center${lockCls}`} {...lockProps}>
           <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto origin-left scale-[2.1]" />
         </Link>
-        <Link href="/" className="flex h-10 items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]">
+        <Link href="/" className={`flex h-10 items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]${lockCls}`} {...lockProps}>
           กลับหน้าแรก
         </Link>
       </header>
@@ -239,7 +272,7 @@ export default function ThinkFastPage() {
                   `ตอบถูกได้ ${BASE_POINT} แต้ม บวกโบนัส ${BONUS_PER_SEC} แต้มต่อทุกวินาทีที่เหลือ`,
                   "ตอบผิดหรือหมดเวลาไม่ได้แต้ม แต่จะเฉลยให้ทุกข้อ",
                   "กดปุ่ม 1–4 บนคีย์บอร์ดเพื่อเลือกคำตอบ และกด Enter เพื่อไปข้อถัดไป",
-                  "ระบบนับคะแนนสูงสุดของคุณเข้าอันดับรวม",
+                  "แต้มของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
                 ].map((r) => (
                   <li key={r} className="flex gap-3 text-base leading-7 text-zinc-600">
                     <span className="mt-2.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#F4A58A]" />
@@ -355,33 +388,34 @@ export default function ThinkFastPage() {
                 <p className="mt-1 text-sm text-zinc-500">ตอบถูก</p>
               </div>
               <div className="rounded-3xl bg-zinc-50 px-5 py-6 text-center">
-                <p className="text-4xl font-semibold tabular-nums tracking-tight">{best !== null ? best.toLocaleString() : "–"}</p>
-                <p className="mt-1 text-sm text-zinc-500">สถิติสูงสุดของคุณ</p>
+                <p className="text-4xl font-semibold tabular-nums tracking-tight">{gameTotal !== null ? gameTotal.toLocaleString() : "–"}</p>
+                <p className="mt-1 text-sm text-zinc-500">แต้มสะสมของเกมนี้</p>
               </div>
             </section>
 
             <p className="mt-4 text-center text-sm text-zinc-500" aria-live="polite">
               {saveState === "saving" && "กำลังบันทึกคะแนน..."}
-              {saveState === "saved" && "บันทึกคะแนนเรียบร้อยแล้ว"}
+              {saveState === "saved" && `สะสม +${score.toLocaleString()} แต้มให้บัญชี ${player?.name} เรียบร้อยแล้ว`}
               {saveState === "guest" && (
                 <>
                   <Link href="/login" className="font-medium text-zinc-900 underline underline-offset-4">เข้าสู่ระบบ</Link> เพื่อบันทึกคะแนนเข้าอันดับ
                 </>
               )}
-              {saveState === "error" && "บันทึกคะแนนไม่สำเร็จ ลองเล่นใหม่อีกครั้ง"}
+              {saveState === "error" && `บันทึกคะแนนไม่สำเร็จ${saveErr ? `: ${saveErr}` : ""}`}
             </p>
 
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <button
                 onClick={start}
-                className="h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+                disabled={lockNav}
+                className="h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50"
               >
                 เล่นอีกครั้ง
               </button>
-              <Link href="/rank" className="inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]">
+              <Link href="/rank" className={`inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]${lockCls}`} {...lockProps}>
                 ดูอันดับ
               </Link>
-              <Link href="/" className="inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]">
+              <Link href="/" className={`inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]${lockCls}`} {...lockProps}>
                 กลับหน้าแรก
               </Link>
             </div>

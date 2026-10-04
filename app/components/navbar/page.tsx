@@ -58,41 +58,39 @@ export default function Navbar({ saved, profile, ready, isFirst, score, onOpenFa
   const [gain, setGain] = useState<number | null>(null); // คะแนนที่เพิ่มมา ใช้โชว์ +N
   const [bump, setBump] = useState(false);
 
-  // เทียบกับคะแนนที่เห็นครั้งล่าสุด (เก็บใน localStorage) ถ้าเพิ่มขึ้นให้เล่นเอฟเฟกต์
+  // ถ้าเพิ่งเล่นเกมจบแล้วมีแต้มเพิ่ม (หน้าเกมจดไว้ที่ scoreGain:<userId>) ให้เล่นเอฟเฟกต์ตามแต้มนั้น
   useEffect(() => {
     if (score === null || !userId) {
       setShown(null);
       return;
     }
 
-    const key = `lastScore:${userId}`;
-    let prev: number | null = null;
+    const key = `scoreGain:${userId}`;
+    let pending = 0;
     try {
-      const v = localStorage.getItem(key);
-      if (v !== null && Number.isFinite(Number(v))) prev = Number(v);
+      pending = Number(localStorage.getItem(key)) || 0;
     } catch {}
 
-    const remember = () => {
-      try {
-        localStorage.setItem(key, String(score));
-      } catch {}
-    };
-
-    // ครั้งแรก หรือคะแนนไม่เพิ่ม: แสดงเลยโดยไม่มีเอฟเฟกต์
-    if (prev === null || score <= prev) {
+    const diff = Math.min(pending, score);
+    if (diff <= 0) {
+      if (pending > 0) {
+        try {
+          localStorage.removeItem(key);
+        } catch {}
+      }
       setShown(score);
-      remember();
       return;
     }
 
-    const from = prev;
-    const diff = score - from;
+    const from = score - diff;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     let raf = 0;
     setShown(from);
 
     const startTimer = setTimeout(() => {
-      remember();
+      try {
+        localStorage.removeItem(key); // ใช้แล้วลบทิ้ง จะได้ไม่เล่นซ้ำ
+      } catch {}
       setGain(diff);
       setBump(true);
       if (reduce) {
