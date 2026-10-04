@@ -27,6 +27,7 @@ type Game = {
   glyph: string;
   href?: string;
   image?: string;
+  video?: string; // วิดีโอพรีวิวเกม (ถ้ามี จะแสดงแทนรูป)
   scoring: string;
   rules: string[];
 };
@@ -48,9 +49,9 @@ const GAMES: Game[] = [
     rules: ["คนแรกสร้างห้องแล้วส่งรหัสห้องให้เพื่อน คนที่สองกดเข้าร่วมด้วยรหัสนั้น", "ระบบสุ่มว่าใครได้ยิงก่อน ใครได้เฝ้าประตู แล้วสลับบทบาทกันทุกลูก", "ผู้ยิงและผู้รับเลือกซ้าย กลาง หรือขวาพร้อมกัน ถ้าตรงกันผู้รับเซฟและได้ 100 แต้ม ถ้าไม่ตรงผู้ยิงได้ 100 แต้ม", "เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ผู้ชนะรับโบนัสเพิ่ม 200 แต้ม และแต้มทั้งหมดจะถูกบวกสะสมเข้าคะแนนรวม"],
   },
   {
-    id: "reaction", name: "วัดปฏิกิริยา", desc: "กดให้ไวที่สุดเมื่อสีเปลี่ยน", category: "อาร์เคด", status: "NOW", time: "1 นาที", tone: "bg-[#B7CBB0]", glyph: "◉",
-    scoring: "เวลาตอบสนองที่ไวที่สุด",
-    rules: ["รอจนหน้าจอเปลี่ยนสี แล้วกดให้เร็วที่สุด", "กดก่อนสีเปลี่ยนนับว่าพลาดและต้องเริ่มรอบใหม่", "เล่นได้หลายรอบ ระบบนับรอบที่ไวที่สุด", "ยิ่งตอบสนองไว ยิ่งได้คะแนนมาก"],
+    id: "basketball", name: "Basketball", desc: "ปัดลูกบาสให้เข้าห่วงใน 1 นาที ยิงเข้าติดกันคะแนนคูณ ลูกบาสติดไฟ!", category: "อาร์เคด", status: "NOW", time: "1 นาที", tone: "bg-[#F2B27A]", glyph: "🏀", href: "/game/basketball", video: "/video/basketball/previewbasketball.mp4",
+    scoring: "10 แต้มต่อลูก คูณตามจำนวนลูกที่เข้าติดกัน (สูงสุด ×10)",
+    rules: ["ลากลูกบาสแล้วปัดขึ้นไปทางห่วง ยิ่งปัดแรงลูกยิ่งลอยสูง", "เวลา 60 วินาที เริ่มนับถอยหลังหลังขึ้นคำว่า GO!!!", "ลูกเข้าได้ 10 แต้ม ถ้าเข้าติดกันจะคูณ ×2, ×3 ... สูงสุด ×10 พลาดแล้วคอมโบหลุด", "เข้าติดกัน 3 ลูกขึ้นไป ลูกบาสจะติดไฟ และแต้มทั้งหมดจะถูกบวกสะสมเข้าคะแนนรวม"],
   },
   {
     id: "quiz", name: "ควิซประจำวัน", desc: "คำถามใหม่ทุกวัน สะสมสถิติตอบถูกต่อเนื่อง", category: "ความจำ", status: "SOON", time: "2 นาที", tone: "", glyph: "？",
@@ -110,7 +111,21 @@ function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void 
             <h2 className="text-6xl font-semibold leading-[1.05] tracking-tight md:text-8xl">{game.name}</h2>
             <p className="mt-6 max-w-md text-lg leading-8 opacity-80">{game.desc}</p>
           </div>
-          {game.image ? (
+          {game.video ? (
+            <div className="relative min-h-72 overflow-hidden rounded-[2rem] bg-zinc-900 lg:min-h-80">
+              <video
+                key={game.video}
+                src={game.video}
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-label={`ตัวอย่างเกม ${game.name}`}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            </div>
+          ) : game.image ? (
             <div className="relative min-h-72 overflow-hidden rounded-[2rem] bg-zinc-900 lg:min-h-80">
               <Image src={game.image} alt={game.name} fill sizes="(min-width: 1024px) 480px, 100vw" className="object-cover" />
             </div>

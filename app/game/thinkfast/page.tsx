@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 const GAME_ID = "thinkfast";
 const TOTAL = 10; // จำนวนข้อต่อรอบ
@@ -12,6 +12,7 @@ const BONUS_PER_SEC = 5; // โบนัสต่อวินาทีที่�
 
 type Raw = { tag: string; q: string; options: string[]; explain: string }; // options[0] คือคำตอบที่ถูก
 type Question = { tag: string; q: string; options: string[]; answer: number; explain: string };
+type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number };
 
 // ===== คลังคำถามกวนๆ (ตัวเลือกแรกของแต่ละข้อคือคำตอบที่ถูก ระบบจะสลับลำดับให้เอง) =====
 const BANK: Raw[] = [
@@ -106,6 +107,74 @@ function rating(correct: number) {
   return "โดนหลอกจนหมดตัว";
 }
 
+// คำชมตามคอมโบ
+function streakLabel(n: number) {
+  if (n >= 6) return "สมองระเบิด!";
+  if (n >= 4) return "ไฟลุกแล้ว!";
+  if (n >= 2) return "คอมโบ";
+  return "";
+}
+
+// ===== พื้นหลังลอยๆ (ตำแหน่งตายตัว กัน hydration mismatch) =====
+const GLYPHS = [
+  { c: "?", l: "6%", t: "14%", s: 6, d: 0, du: 9 },
+  { c: "!", l: "86%", t: "10%", s: 5, d: 1.2, du: 11 },
+  { c: "∴", l: "14%", t: "72%", s: 8, d: 0.6, du: 13 },
+  { c: "?", l: "78%", t: "66%", s: 9, d: 2, du: 10 },
+  { c: "!", l: "46%", t: "6%", s: 4, d: 3, du: 12 },
+  { c: "∴", l: "92%", t: "40%", s: 6, d: 1.8, du: 14 },
+  { c: "?", l: "3%", t: "44%", s: 5, d: 2.6, du: 9 },
+  { c: "!", l: "58%", t: "84%", s: 7, d: 0.3, du: 11 },
+  { c: "∴", l: "30%", t: "30%", s: 4, d: 3.6, du: 15 },
+  { c: "?", l: "68%", t: "26%", s: 4, d: 1, du: 12 },
+];
+
+const CONFETTI_COLORS = ["#F4D35E", "#B7CBB0", "#FFFFFF", "#4A2412", "#F4A58A", "#FF6B6B"];
+
+// ระเบิดคอนเฟตติตรงกลางจอ
+function Burst({ count, power = 1 }: { count: number; power?: number }) {
+  const parts = useMemo(
+    () =>
+      Array.from({ length: count }).map((_, i) => {
+        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+        const dist = (140 + Math.random() * 220) * power;
+        return {
+          dx: Math.cos(ang) * dist,
+          dy: Math.sin(ang) * dist - 80 * power,
+          rot: Math.round(Math.random() * 720 - 360),
+          w: 6 + Math.round(Math.random() * 8),
+          h: 8 + Math.round(Math.random() * 10),
+          color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+          delay: Math.round(Math.random() * 120),
+          round: Math.random() > 0.6,
+        };
+      }),
+    [count, power],
+  );
+  return (
+    <div aria-hidden className="pointer-events-none fixed left-1/2 top-[38%] z-40 h-0 w-0">
+      {parts.map((p, i) => (
+        <span
+          key={i}
+          className="fx-burst absolute block"
+          style={
+            {
+              width: p.w,
+              height: p.round ? p.w : p.h,
+              backgroundColor: p.color,
+              borderRadius: p.round ? "9999px" : "2px",
+              animationDelay: `${p.delay}ms`,
+              "--dx": `${p.dx}px`,
+              "--dy": `${p.dy}px`,
+              "--rot": `${p.rot}deg`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function ThinkFastPage() {
   const [phase, setPhase] = useState<"intro" | "play" | "end">("intro");
   const [qs, setQs] = useState<Question[]>([]);
@@ -114,6 +183,11 @@ export default function ThinkFastPage() {
   const [timeLeft, setTimeLeft] = useState(TIME_PER_Q);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const [fx, setFx] = useState<Fx | null>(null); // เอฟเฟกต์ของข้อปัจจุบัน
+  const [shown, setShown] = useState(0); // แต้มที่แสดง (นับขึ้นแบบแอนิเมชัน)
+  const shownRef = useRef(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "guest" | "error">("idle");
   const [saveErr, setSaveErr] = useState("");
   const [gameTotal, setGameTotal] = useState<number | null>(null); // แต้มสะสมของเกมนี้ทั้งหมด
@@ -128,6 +202,11 @@ export default function ThinkFastPage() {
     setTimeLeft(TIME_PER_Q);
     setScore(0);
     setCorrect(0);
+    setStreak(0);
+    setBestStreak(0);
+    setFx(null);
+    shownRef.current = 0;
+    setShown(0);
     setGameTotal(null);
     savedRound.current = false;
     setSaveState("idle");
@@ -138,8 +217,18 @@ export default function ThinkFastPage() {
     if (phase !== "play" || picked !== null) return;
     setPicked(i);
     if (i === qs[idx].answer) {
-      setScore((s) => s + BASE_POINT + timeLeft * BONUS_PER_SEC);
+      const gain = BASE_POINT + timeLeft * BONUS_PER_SEC;
+      setScore((s) => s + gain);
       setCorrect((c) => c + 1);
+      setStreak((s) => {
+        const n = s + 1;
+        setBestStreak((b) => Math.max(b, n));
+        return n;
+      });
+      setFx({ id: Date.now(), kind: "win", gain });
+    } else {
+      setStreak(0);
+      setFx({ id: Date.now(), kind: "lose", gain: 0 });
     }
   }
 
@@ -150,6 +239,7 @@ export default function ThinkFastPage() {
     }
     setIdx(idx + 1);
     setPicked(null);
+    setFx(null);
     setTimeLeft(TIME_PER_Q);
   }
 
@@ -158,11 +248,32 @@ export default function ThinkFastPage() {
     if (phase !== "play" || picked !== null) return;
     if (timeLeft <= 0) {
       setPicked(-1);
+      setStreak(0);
+      setFx({ id: Date.now(), kind: "timeout", gain: 0 });
       return;
     }
     const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [phase, picked, timeLeft]);
+
+  // นับแต้มขึ้นแบบแอนิเมชัน
+  useEffect(() => {
+    const from = shownRef.current;
+    const to = score;
+    if (from === to) return;
+    const t0 = performance.now();
+    const dur = 700;
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const v = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)));
+      shownRef.current = v;
+      setShown(v);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [score]);
 
   // คีย์ลัด: 1-4 เลือกคำตอบ, Enter ไปข้อถัดไป / เริ่มเล่น
   useEffect(() => {
@@ -226,25 +337,157 @@ export default function ThinkFastPage() {
   const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
   const revealed = picked !== null;
   const isRight = revealed && q && picked === q.answer;
-  const gained = BASE_POINT + timeLeft * BONUS_PER_SEC;
+  const playing = phase === "play";
+  const panic = playing && !revealed && timeLeft <= 5;
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
+    <div className={`relative flex min-h-screen flex-col items-center font-sans text-zinc-900 ${playing ? "bg-[#F4A58A]" : "bg-white"}`}>
       <style>{`
         @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } }
+        @keyframes burst {
+          0% { opacity: 1; transform: translate(0,0) rotate(0deg) scale(.4); }
+          70% { opacity: 1; }
+          100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 120px)) rotate(var(--rot)) scale(1); }
+        }
+        @keyframes floatUp {
+          0% { opacity: 0; transform: translate(-50%, 20px) scale(.5); }
+          18% { opacity: 1; transform: translate(-50%, -10px) scale(1.25); }
+          35% { transform: translate(-50%, -20px) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -150px) scale(1); }
+        }
+        @keyframes flash { 0% { opacity: .65; } 100% { opacity: 0; } }
+        @keyframes shake {
+          0%,100% { transform: translateX(0); }
+          15% { transform: translateX(-12px) rotate(-.6deg); }
+          30% { transform: translateX(10px) rotate(.5deg); }
+          45% { transform: translateX(-8px); }
+          60% { transform: translateX(6px); }
+          80% { transform: translateX(-3px); }
+        }
+        @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.22); } 100% { transform: scale(1); } }
+        @keyframes ring { 0% { opacity: .9; transform: scale(.6); } 100% { opacity: 0; transform: scale(1.5); } }
+        @keyframes drift {
+          0%,100% { transform: translateY(0) rotate(-6deg); }
+          50% { transform: translateY(-28px) rotate(8deg); }
+        }
+        @keyframes panic { 0%,100% { opacity: .15; } 50% { opacity: .5; } }
+        @keyframes glow { 0%,100% { box-shadow: 0 0 0 0 rgba(183,203,176,.0); } 50% { box-shadow: 0 0 0 10px rgba(183,203,176,.55); } }
+        @keyframes bgshift { 0% { background-position: 0% 50%; } 100% { background-position: 100% 50%; } }
+        @media (prefers-reduced-motion: reduce) {
+          .rise, .fx-burst, .fx-float, .fx-flash, .fx-shake, .fx-pop, .fx-ring, .fx-drift, .fx-panic, .fx-glow, .fx-bg { animation: none !important; }
+          .fx-burst, .fx-float { display: none; }
+        }
+        .fx-burst { animation: burst 1100ms cubic-bezier(.15,.7,.3,1) both; }
+        .fx-float { animation: floatUp 1300ms cubic-bezier(.2,.8,.2,1) both; }
+        .fx-flash { animation: flash 700ms ease-out both; }
+        .fx-shake { animation: shake 450ms ease-in-out both; }
+        .fx-pop { animation: pop 420ms cubic-bezier(.2,.9,.3,1.4) both; }
+        .fx-ring { animation: ring 700ms ease-out both; }
+        .fx-drift { animation: drift var(--du, 10s) ease-in-out var(--dl, 0s) infinite; }
+        .fx-panic { animation: panic 800ms ease-in-out infinite; }
+        .fx-glow { animation: glow 900ms ease-in-out 2; }
+        .fx-bg { background-size: 200% 200%; animation: bgshift 14s ease-in-out infinite alternate; }
       `}</style>
 
-      <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
+      {/* ===== พื้นหลังเต็มจอ (เฉพาะตอนเล่น) ===== */}
+      {playing && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+          <div
+            className="fx-bg absolute inset-0"
+            style={{ backgroundImage: "linear-gradient(135deg, #F4A58A 0%, #F7B9A0 35%, #F4C7A8 60%, #F4A58A 100%)" }}
+          />
+          {GLYPHS.map((g, i) => (
+            <span
+              key={i}
+              className="fx-drift absolute select-none font-light leading-none text-[#4A2412] opacity-[.12]"
+              style={
+                {
+                  left: g.l,
+                  top: g.t,
+                  fontSize: `${g.s}rem`,
+                  "--du": `${g.du}s`,
+                  "--dl": `${g.d}s`,
+                } as React.CSSProperties
+              }
+            >
+              {g.c}
+            </span>
+          ))}
+          {/* เวลาใกล้หมด: ขอบจอกะพริบแดง */}
+          {panic && (
+            <div
+              className="fx-panic absolute inset-0"
+              style={{ boxShadow: "inset 0 0 160px 30px rgba(229,72,77,.85)" }}
+            />
+          )}
+          {/* วาบสีตามผลคำตอบ */}
+          {fx && (
+            <div
+              key={fx.id}
+              className="fx-flash absolute inset-0"
+              style={{ backgroundColor: fx.kind === "win" ? "#B7CBB0" : fx.kind === "lose" ? "#E5484D" : "#71717A" }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ===== เอฟเฟกต์ตอบถูก: คอนเฟตติ + แต้มลอยขึ้น ===== */}
+      {playing && fx?.kind === "win" && (
+        <>
+          <Burst key={`b${fx.id}`} count={fx.gain >= 180 ? 44 : 30} power={fx.gain >= 180 ? 1.2 : 1} />
+          <div aria-hidden className="pointer-events-none fixed left-1/2 top-[38%] z-40">
+            <span className="fx-ring absolute -left-24 -top-24 block h-48 w-48 rounded-full border-4 border-white" />
+          </div>
+          <div
+            key={`f${fx.id}`}
+            aria-hidden
+            className="fx-float pointer-events-none fixed left-1/2 top-[34%] z-50 text-center"
+          >
+            <p
+              className="text-7xl font-black tabular-nums tracking-tight text-white md:text-8xl"
+              style={{ textShadow: "0 4px 0 #4A2412, 0 0 28px rgba(244,211,94,.9)" }}
+            >
+              +{fx.gain}
+            </p>
+            {streak >= 2 && (
+              <p className="mt-1 text-xl font-bold text-[#4A2412]" style={{ textShadow: "0 2px 0 rgba(255,255,255,.7)" }}>
+                {streakLabel(streak)} ×{streak}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ตอบผิด / หมดเวลา: ข้อความสั้นๆ เด้งกลางจอ */}
+      {playing && fx && fx.kind !== "win" && (
+        <div
+          key={`l${fx.id}`}
+          aria-hidden
+          className="fx-float pointer-events-none fixed left-1/2 top-[34%] z-50 text-center"
+        >
+          <p
+            className="text-6xl font-black tracking-tight text-white md:text-7xl"
+            style={{ textShadow: "0 4px 0 #4A2412" }}
+          >
+            {fx.kind === "lose" ? "✕ พลาด" : "⏱ หมดเวลา"}
+          </p>
+        </div>
+      )}
+
+      <header className="relative z-10 flex w-full max-w-5xl items-center justify-between px-6 py-6">
         <Link href="/" aria-label="COM7 หน้าแรก" className={`flex items-center${lockCls}`} {...lockProps}>
           <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto origin-left scale-[2.1]" />
         </Link>
-        <Link href="/" className={`flex h-10 items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]${lockCls}`} {...lockProps}>
+        <Link
+          href="/"
+          className={`flex h-10 items-center rounded-full border px-5 text-sm font-medium transition-colors ${playing ? "border-[#4A2412]/20 bg-white/40 hover:bg-white/70" : "border-black/[.08] hover:bg-black/[.04]"}${lockCls}`}
+          {...lockProps}
+        >
           กลับหน้าแรก
         </Link>
       </header>
 
-      <main className="w-full max-w-3xl px-6 pb-24">
+      <main className="relative z-10 w-full max-w-3xl px-6 pb-24">
         {/* ===== หน้าเริ่มเกม ===== */}
         {phase === "intro" && (
           <div className="rise" style={{ animation: "rise 500ms both cubic-bezier(.2,.8,.2,1)" }}>
@@ -270,6 +513,7 @@ export default function ThinkFastPage() {
                   `สุ่มคำถามกวนๆ ${TOTAL} ข้อจากคลังทั้งหมด ${BANK.length} ข้อ แต่ละข้อมี 4 ตัวเลือกและเวลา ${TIME_PER_Q} วินาที`,
                   "คำตอบที่ดูชัดเจนที่สุดมักเป็นกับดัก อ่านโจทย์ให้ดี",
                   `ตอบถูกได้ ${BASE_POINT} แต้ม บวกโบนัส ${BONUS_PER_SEC} แต้มต่อทุกวินาทีที่เหลือ`,
+                  "ตอบถูกติดกันหลายข้อจะได้เอฟเฟกต์คอมโบสุดเดือด",
                   "ตอบผิดหรือหมดเวลาไม่ได้แต้ม แต่จะเฉลยให้ทุกข้อ",
                   "กดปุ่ม 1–4 บนคีย์บอร์ดเพื่อเลือกคำตอบ และกด Enter เพื่อไปข้อถัดไป",
                   "แต้มของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
@@ -286,39 +530,62 @@ export default function ThinkFastPage() {
 
         {/* ===== กำลังเล่น ===== */}
         {phase === "play" && q && (
-          <div className="mt-6">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-zinc-500">
-                ข้อ <span className="font-semibold text-zinc-900 tabular-nums">{idx + 1}</span> / {TOTAL}
+          <div
+            className={`mt-2 ${fx?.kind === "lose" ? "fx-shake" : ""}`}
+            // key ผูกกับ id เอฟเฟกต์ที่ผิด เพื่อให้สั่นใหม่ทุกครั้งโดยไม่รีเซ็ตเนื้อหา
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="rounded-full bg-white/60 px-4 py-2 text-sm text-[#4A2412]">
+                ข้อ <span className="font-semibold tabular-nums">{idx + 1}</span> / {TOTAL}
               </p>
-              <p className="rounded-full bg-zinc-50 px-4 py-2 text-sm font-medium tabular-nums">
-                {score.toLocaleString()} <span className="text-zinc-500">แต้ม</span>
+
+              {streak >= 2 && (
+                <p
+                  key={streak}
+                  className="fx-pop rounded-full bg-[#4A2412] px-4 py-2 text-sm font-bold text-[#F4D35E]"
+                >
+                  {streakLabel(streak)} ×{streak}
+                </p>
+              )}
+
+              <p
+                key={score}
+                className={`rounded-full bg-white/80 px-4 py-2 text-sm font-semibold tabular-nums text-[#4A2412] ${score > 0 ? "fx-pop" : ""}`}
+              >
+                {shown.toLocaleString()} <span className="font-medium opacity-60">แต้ม</span>
               </p>
             </div>
 
             <div className="mt-4 flex gap-1.5" aria-hidden>
               {Array.from({ length: TOTAL }).map((_, i) => (
-                <span key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${i < idx ? "bg-[#F4A58A]" : i === idx ? "bg-zinc-900" : "bg-zinc-100"}`} />
+                <span
+                  key={i}
+                  className={`h-2 flex-1 rounded-full transition-colors ${i < idx ? "bg-[#4A2412]" : i === idx ? "bg-white" : "bg-white/40"}`}
+                />
               ))}
             </div>
 
             <div
               key={idx}
-              className="rise relative mt-6 rounded-[2rem] bg-[#F4A58A] p-8 text-[#4A2412] md:p-10"
+              className="rise relative mt-6 rounded-[2rem] bg-[#4A2412] p-8 text-[#FFF3EC] shadow-[0_20px_50px_-20px_rgba(74,36,18,.7)] md:p-10"
               style={{ animation: "rise 400ms both cubic-bezier(.2,.8,.2,1)" }}
             >
               <div className="flex items-center justify-between gap-4">
-                <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold">{q.tag}</span>
-                <span className="flex items-center gap-2 text-sm font-semibold tabular-nums" role="timer" aria-label={`เหลือเวลา ${timeLeft} วินาที`}>
+                <span className="rounded-full bg-[#F4A58A] px-3 py-1 text-xs font-semibold text-[#4A2412]">{q.tag}</span>
+                <span
+                  className={`flex items-center gap-2 text-sm font-semibold tabular-nums ${panic ? "text-[#FF8A8E]" : ""}`}
+                  role="timer"
+                  aria-label={`เหลือเวลา ${timeLeft} วินาที`}
+                >
                   {timeLeft} วิ
                 </span>
               </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/50" aria-hidden>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/20" aria-hidden>
                 <div
                   className="h-full rounded-full"
                   style={{
                     width: `${(timeLeft / TIME_PER_Q) * 100}%`,
-                    backgroundColor: timeLeft <= 5 ? "#E5484D" : "#4A2412",
+                    backgroundColor: timeLeft <= 5 ? "#E5484D" : "#F4A58A",
                     transition: "width 1s linear, background-color 300ms",
                   }}
                 />
@@ -328,24 +595,26 @@ export default function ThinkFastPage() {
 
             <ol className="mt-4 flex flex-col gap-3">
               {q.options.map((opt, i) => {
+                const isAns = revealed && i === q.answer;
+                const isWrongPick = revealed && i === picked && i !== q.answer;
                 const state = !revealed
-                  ? "bg-zinc-50 hover:bg-zinc-100"
-                  : i === q.answer
-                    ? "bg-[#B7CBB0] text-[#1F3D1A]"
-                    : i === picked
+                  ? "bg-white/90 hover:-translate-y-0.5 hover:bg-white active:scale-[.98]"
+                  : isAns
+                    ? "scale-[1.02] bg-[#B7CBB0] text-[#1F3D1A]"
+                    : isWrongPick
                       ? "bg-[#E5484D] text-white"
-                      : "bg-zinc-50 opacity-50";
+                      : "bg-white/40 opacity-60";
                 return (
                   <li key={i}>
                     <button
                       onClick={() => choose(i)}
                       disabled={revealed}
-                      className={`flex w-full items-center gap-4 rounded-full p-3 pr-6 text-left text-lg font-medium outline-none transition-colors focus-visible:ring-4 focus-visible:ring-blue-400 ${state} ${revealed ? "cursor-default" : ""}`}
+                      className={`flex w-full items-center gap-4 rounded-full p-3 pr-6 text-left text-lg font-medium outline-none transition-all duration-200 focus-visible:ring-4 focus-visible:ring-blue-400 ${state} ${isAns ? "fx-glow" : ""} ${revealed ? "cursor-default" : ""}`}
                     >
                       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-zinc-900 ring-1 ring-black/5">{i + 1}</span>
                       <span className="flex-1">{opt}</span>
-                      {revealed && i === q.answer && <span aria-hidden className="text-xl">✓</span>}
-                      {revealed && i === picked && i !== q.answer && <span aria-hidden className="text-xl">✕</span>}
+                      {isAns && <span aria-hidden className="fx-pop text-xl">✓</span>}
+                      {isWrongPick && <span aria-hidden className="fx-pop text-xl">✕</span>}
                     </button>
                   </li>
                 );
@@ -353,18 +622,22 @@ export default function ThinkFastPage() {
             </ol>
 
             {revealed && (
-              <div aria-live="polite" className="rise mt-4 rounded-[2rem] bg-zinc-50 p-6 md:p-8" style={{ animation: "rise 300ms both cubic-bezier(.2,.8,.2,1)" }}>
+              <div
+                aria-live="polite"
+                className="rise mt-4 rounded-[2rem] bg-white/90 p-6 backdrop-blur md:p-8"
+                style={{ animation: "rise 300ms both cubic-bezier(.2,.8,.2,1)" }}
+              >
                 <p className="text-xl font-semibold tracking-tight">
                   {picked === -1
                     ? TIMEOUT_MSG
                     : isRight
-                      ? `${WIN_MSG[idx % WIN_MSG.length]} +${gained} แต้ม`
+                      ? `${WIN_MSG[idx % WIN_MSG.length]} +${fx?.gain ?? 0} แต้ม`
                       : LOSE_MSG[idx % LOSE_MSG.length]}
                 </p>
                 <p className="mt-2 text-base leading-7 text-zinc-600">{q.explain}</p>
                 <button
                   onClick={next}
-                  className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+                  className="mt-6 h-12 rounded-full bg-[#4A2412] px-6 text-sm font-medium text-white transition-colors hover:opacity-85"
                 >
                   {idx + 1 >= TOTAL ? "ดูผลคะแนน" : "ข้อถัดไป"}
                 </button>
@@ -376,20 +649,26 @@ export default function ThinkFastPage() {
         {/* ===== สรุปผล ===== */}
         {phase === "end" && (
           <div className="rise" style={{ animation: "rise 500ms both cubic-bezier(.2,.8,.2,1)" }}>
+            {correct >= 7 && <Burst count={60} power={1.5} />}
+
             <section className="mt-6 rounded-[2rem] bg-[#F4D35E] p-8 text-center text-[#4A3B00] md:p-12">
               <p className="text-sm opacity-70">{rating(correct)}</p>
-              <p className="mt-2 text-8xl font-semibold tabular-nums tracking-tight md:text-9xl">{score.toLocaleString()}</p>
+              <p className="fx-pop mt-2 text-8xl font-semibold tabular-nums tracking-tight md:text-9xl">{score.toLocaleString()}</p>
               <p className="mt-1 text-sm opacity-70">แต้มรอบนี้</p>
             </section>
 
-            <section className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-3xl bg-zinc-50 px-5 py-6 text-center">
-                <p className="text-4xl font-semibold tabular-nums tracking-tight">{correct}/{TOTAL}</p>
+            <section className="mt-4 grid grid-cols-3 gap-3">
+              <div className="rounded-3xl bg-zinc-50 px-3 py-6 text-center">
+                <p className="text-3xl font-semibold tabular-nums tracking-tight md:text-4xl">{correct}/{TOTAL}</p>
                 <p className="mt-1 text-sm text-zinc-500">ตอบถูก</p>
               </div>
-              <div className="rounded-3xl bg-zinc-50 px-5 py-6 text-center">
-                <p className="text-4xl font-semibold tabular-nums tracking-tight">{gameTotal !== null ? gameTotal.toLocaleString() : "–"}</p>
-                <p className="mt-1 text-sm text-zinc-500">แต้มสะสมของเกมนี้</p>
+              <div className="rounded-3xl bg-zinc-50 px-3 py-6 text-center">
+                <p className="text-3xl font-semibold tabular-nums tracking-tight md:text-4xl">×{bestStreak}</p>
+                <p className="mt-1 text-sm text-zinc-500">คอมโบสูงสุด</p>
+              </div>
+              <div className="rounded-3xl bg-zinc-50 px-3 py-6 text-center">
+                <p className="text-3xl font-semibold tabular-nums tracking-tight md:text-4xl">{gameTotal !== null ? gameTotal.toLocaleString() : "–"}</p>
+                <p className="mt-1 text-sm text-zinc-500">แต้มสะสมเกมนี้</p>
               </div>
             </section>
 
