@@ -242,39 +242,45 @@ function flick(pts: Pt[], now: number, h: number) {
 /* =========================================================
    การวาด
    ========================================================= */
-// ลายร่องลูกบาสจริง: วงกลมใหญ่ตัดกันเป็นกากบาท 2 เส้น + เส้นโค้งข้างอีก 4 เส้น (มองจากหน้าตรงจะเห็นเป็น ")(" )
+// ลายร่องลูกบาส (ออกแบบให้ไม่มีเส้นไหนซ้อนทับหรือมาบรรจบกัน)
+//  - เส้นรอบวงนอน 1 เส้น และเส้นตั้งผ่านกลางลูก 1 เส้น ตัดกันที่กึ่งกลางเพียงจุดเดียว
+//  - เส้นโค้งซ้าย/ขวาอย่างละ 1 เส้น เป็นวงกลมเล็กที่ห่างจากเส้นตั้งและห่างจากกันเอง
+//    จึงไม่ไปรวมกันที่ขั้วลูกเหมือนเดิม
 const SEAMS: number[][][] = (() => {
-  const out: number[][][] = [];
-  const N = 40;
-  const eq: number[][] = [], mer: number[][] = [];
-  for (let i = 0; i <= N; i++) {
-    const a = (i / N) * Math.PI * 2;
-    eq.push([Math.cos(a), 0, Math.sin(a)]);
-    mer.push([0, Math.cos(a), Math.sin(a)]);
-  }
-  out.push(eq, mer);
-  const l0 = (24 * Math.PI) / 180, l1 = (130 * Math.PI) / 180;
+  const N = 48;
+  const ring = (f: (a: number) => number[]) => {
+    const c: number[][] = [];
+    for (let i = 0; i <= N; i++) c.push(f((i / N) * Math.PI * 2));
+    return c;
+  };
+  const out: number[][][] = [
+    ring((a) => [Math.cos(a), 0, Math.sin(a)]), // เส้นรอบวงนอน
+    ring((a) => [0, Math.cos(a), Math.sin(a)]), // เส้นตั้ง
+  ];
+  const dl = (25 * Math.PI) / 180; // เอียงศูนย์กลางไปด้านหลังลูก
+  const rho = (62 * Math.PI) / 180; // รัศมีเชิงมุมของเส้นโค้ง (น้อยกว่า 65° จึงไม่แตะเส้นตั้ง)
   for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const c: number[][] = [];
-      for (let i = 0; i <= N; i++) {
-        const th = -Math.PI / 2 + (i / N) * Math.PI;
-        const rho = Math.cos(th), y = Math.sin(th);
-        const lam = l0 + (l1 - l0) * y * y;
-        c.push([sx * rho * Math.sin(lam), y, sz * rho * Math.cos(lam)]);
-      }
-      out.push(c);
-    }
+    const cx = sx * Math.cos(dl), cz = Math.sin(dl);
+    out.push(
+      ring((a) => [
+        Math.cos(rho) * cx - Math.sin(rho) * cz * Math.sin(a),
+        Math.sin(rho) * Math.cos(a),
+        Math.cos(rho) * cz + Math.sin(rho) * cx * Math.sin(a),
+      ])
+    );
   }
   return out;
 })();
 
-// ร่องจะหนาและชัดตรงกลางลูก แล้วเรียวและจางลงเมื่อโค้งไปที่ขอบ ให้ดูเป็นร่องบนผิวทรงกลม ไม่ใช่เส้นแปะ
-function drawSeams(ctx: CanvasRenderingContext2D, cx: number, cy: number, rs: number, R: number[], color: string) {
-  const baseA = ctx.globalAlpha;
-  const lw = Math.max(1, rs * 0.058);
-  ctx.lineCap = "butt";
-  ctx.strokeStyle = color;
+const hexRgb = (h: string) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+
+// วาดเส้นทึบทีละช่วง (ไม่ใช้ความโปร่งใส เส้นเลยไม่เป็นเม็ด/ไม่ดูซ้อนกันตรงรอยต่อ)
+// ตรงกลางลูกสีเข้มและหนา ใกล้ขอบลูกสีจางลงและเรียวลง ให้ดูเป็นร่องบนผิวทรงกลม
+function drawSeams(ctx: CanvasRenderingContext2D, cx: number, cy: number, rs: number, R: number[], skin: Skin) {
+  const A = hexRgb(skin.shade), B = hexRgb(skin.line);
+  const lw = Math.max(1, rs * 0.06);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   for (const line of SEAMS) {
     let prev: { X: number; Y: number; pz: number } | null = null;
     for (const q of line) {
@@ -285,7 +291,8 @@ function drawSeams(ctx: CanvasRenderingContext2D, cx: number, cy: number, rs: nu
       if (prev && pz < 0.02 && prev.pz < 0.02) {
         const f = clamp(-(pz + prev.pz) / 2, 0, 1); // 1 = หันตรงเข้าหากล้อง, 0 = ที่ขอบลูก
         if (f > 0.04) {
-          ctx.globalAlpha = baseA * 0.66 * Math.pow(f, 0.6);
+          const t = 0.8 * Math.pow(f, 0.6);
+          ctx.strokeStyle = `rgb(${Math.round(A[0] + (B[0] - A[0]) * t)},${Math.round(A[1] + (B[1] - A[1]) * t)},${Math.round(A[2] + (B[2] - A[2]) * t)})`;
           ctx.lineWidth = lw * (0.45 + 0.55 * f);
           ctx.beginPath();
           ctx.moveTo(prev.X, prev.Y);
@@ -296,7 +303,6 @@ function drawSeams(ctx: CanvasRenderingContext2D, cx: number, cy: number, rs: nu
       prev = cur;
     }
   }
-  ctx.globalAlpha = baseA;
 }
 
 function drawBallObj(ctx: CanvasRenderingContext2D, v: View, b: Ball, skin: Skin, g: Game) {
@@ -342,7 +348,7 @@ function drawBallObj(ctx: CanvasRenderingContext2D, v: View, b: Ball, skin: Skin
   gr.addColorStop(1, skin.shade);
   ctx.fillStyle = gr;
   ctx.fill();
-  drawSeams(ctx, p.x, p.y, rs, b.R, skin.line);
+  drawSeams(ctx, p.x, p.y, rs, b.R, skin);
   const sh = ctx.createRadialGradient(p.x - rs * 0.4, p.y - rs * 0.45, rs * 0.05, p.x, p.y, rs * 1.05);
   sh.addColorStop(0, "rgba(255,255,255,0.35)");
   sh.addColorStop(0.5, "rgba(255,255,255,0)");
@@ -765,12 +771,13 @@ function FireText({ text, size }: { text: string; size: string }) {
   );
 }
 
-const BTN_SM =
-  "inline-flex h-10 items-center justify-center rounded-full border border-black/[.08] px-4 text-sm font-medium transition-colors hover:bg-black/[.04]";
 const BTN_MAIN =
   "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85";
 const BTN_SUB =
   "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] text-sm font-medium transition-colors hover:bg-black/[.04]";
+// ปุ่มกลมลอยบนจอเกม (โหมดเต็มจอบนมือถือ)
+const BTN_ROUND =
+  "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
 
 /* =========================================================
    หน้าเกม
@@ -861,26 +868,29 @@ export default function BasketballPage() {
     );
   }
 
-  // ปรับขนาด canvas ให้ใหญ่เต็มจอที่เหลือ (มือถือ = เต็มความกว้าง/สูง, คอม = กว้างสุดแนวนอน)
+  // ปรับขนาด canvas ให้เต็มหน้าจอทุกอุปกรณ์ (มือถือและคอม)
   useEffect(() => {
-    const el = wrapRef.current!;
     const calc = () => {
-      const avail = Math.max(280, el.clientWidth - 8);
-      const portrait = avail < 640;
-      const maxH = Math.max(420, window.innerHeight - 96);
-      let w = avail;
-      let h = maxH;
-      if (!portrait) {
-        h = Math.min(maxH, Math.floor(avail / 1.2));
-        w = Math.min(avail, Math.floor(h * 1.8));
-      }
-      setDims({ w: Math.floor(w), h: Math.floor(h) });
+      const vw = window.innerWidth;
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      setDims({ w: Math.floor(vw), h: Math.floor(vh) });
     };
     calc();
-    const ro = new ResizeObserver(calc);
-    ro.observe(el);
     window.addEventListener("resize", calc);
-    return () => { ro.disconnect(); window.removeEventListener("resize", calc); };
+    window.addEventListener("orientationchange", calc);
+    window.visualViewport?.addEventListener("resize", calc);
+    return () => {
+      window.removeEventListener("resize", calc);
+      window.removeEventListener("orientationchange", calc);
+      window.visualViewport?.removeEventListener("resize", calc);
+    };
+  }, []);
+
+  // ล็อกไม่ให้หน้าเว็บเลื่อนขณะอยู่ในเกม
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
   }, []);
 
   useEffect(() => {
@@ -1313,7 +1323,7 @@ export default function BasketballPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
+    <div className="fixed inset-0 z-50 overflow-hidden overscroll-none bg-zinc-50 font-sans text-zinc-900" style={{ touchAction: "none" }}>
       <style>{`
         @keyframes bb-pop { 0% { transform: scale(0) rotate(-25deg); opacity: 0 } 70% { transform: scale(1.2) rotate(6deg); opacity: 1 } 100% { transform: scale(1) rotate(0); opacity: 1 } }
         @keyframes bb-rise { from { opacity: 0; transform: translateY(20px) scale(.97) } to { opacity: 1; transform: none } }
@@ -1326,17 +1336,9 @@ export default function BasketballPage() {
         @media (prefers-reduced-motion: reduce) { .bb-anim, .bb-anim * { animation: none !important } }
       `}</style>
 
-      <main className="flex w-full max-w-[1500px] flex-col gap-3 px-3 py-3 md:px-5">
-        <header className="flex items-center justify-between">
-          <Link href="/#games" className={BTN_SM}>← กลับ</Link>
-          <h1 className="text-xl font-semibold tracking-tight">Basketball</h1>
-          <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={`${BTN_SM} min-w-20`}>
-            {isMuted ? "🔇 ปิด" : "🔊 เปิด"}
-          </button>
-        </header>
-
-        <div ref={wrapRef} className="flex w-full justify-center">
-          <div className="relative overflow-hidden rounded-[2rem] bg-zinc-50" style={{ width: dims.w, height: dims.h }}>
+      <main className="h-full w-full">
+        <div ref={wrapRef} className="flex h-full w-full items-center justify-center">
+          <div className="relative overflow-hidden bg-zinc-50" style={{ width: dims.w, height: dims.h }}>
             <canvas
               ref={canvasRef}
               onPointerDown={onDown}
@@ -1348,80 +1350,93 @@ export default function BasketballPage() {
               style={{ width: dims.w, height: dims.h, cursor: "grab" }}
             />
 
-            {/* HUD ขณะเล่น: ซ้อนบนจอเกม ไม่กินพื้นที่ */}
+            {/* HUD ขณะเล่น: ซ้อนบนจอเกม ไม่กินพื้นที่ (เว้นขอบ notch/แถบล่างของมือถือด้วย safe-area) */}
             {phase !== "over" && (
-              <>
-                {/* หลอดเวลา มุมบนซ้าย */}
-                <div className="pointer-events-none absolute left-3 top-3 w-36 sm:left-4 sm:top-4 sm:w-48">
-                  <div className="rounded-2xl bg-white/90 px-3 py-2 shadow-sm ring-1 ring-black/5 backdrop-blur">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[11px] text-zinc-500">เวลา</span>
-                      <span className={`text-lg font-semibold leading-none tabular-nums ${timeLow ? "text-[#E8643C]" : "text-zinc-900"}`}>{timeLeft}</span>
-                    </div>
-                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-100">
-                      <div
-                        className={`h-full rounded-full ${timeLow ? "animate-pulse bg-[#F4806A]" : "bg-[#7FC8A9]"}`}
-                        style={{ width: `${clamp(timeLeft / DURATION, 0, 1) * 100}%`, transition: "width 1s linear, background-color .3s" }}
-                      />
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{ padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)" }}
+              >
+                <div className="relative h-full w-full">
+                  {/* หลอดเวลา มุมบนซ้าย */}
+                  <div className="absolute left-3 top-3 w-36 sm:left-4 sm:top-4 sm:w-48">
+                    <div className="rounded-2xl bg-white/90 px-3 py-2 shadow-sm ring-1 ring-black/5 backdrop-blur">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-[11px] text-zinc-500">เวลา</span>
+                        <span className={`text-lg font-semibold leading-none tabular-nums ${timeLow ? "text-[#E8643C]" : "text-zinc-900"}`}>{timeLeft}</span>
+                      </div>
+                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-100">
+                        <div
+                          className={`h-full rounded-full ${timeLow ? "animate-pulse bg-[#F4806A]" : "bg-[#7FC8A9]"}`}
+                          style={{ width: `${clamp(timeLeft / DURATION, 0, 1) * 100}%`, transition: "width 1s linear, background-color .3s" }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* ป้ายคะแนน มุมบนขวา */}
-                <div className="pointer-events-none absolute right-3 top-3 flex flex-col items-end gap-1 sm:right-4 sm:top-4">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-[#F4D35E] px-4 py-2 shadow-sm sm:px-5 sm:py-2.5">
-                    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" fill="#4A3700" aria-hidden>
-                      <path d="M12 2l2.9 6.9 7.5.6-5.7 4.9 1.8 7.3L12 17.8 5.5 21.7l1.8-7.3L1.6 9.5l7.5-.6z" strokeLinejoin="round" />
-                    </svg>
-                    <span
-                      key={hud.score}
-                      className="text-2xl font-bold leading-none tabular-nums tracking-tight text-[#2E2300] sm:text-3xl"
-                      style={{ animation: "bb-bump .35s ease-out" }}
-                    >
-                      {hud.score.toLocaleString("en-US")}
+                  {/* ป้ายคะแนน มุมบนขวา */}
+                  <div className="absolute right-3 top-3 flex flex-col items-end gap-1 sm:right-4 sm:top-4">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-[#F4D35E] px-4 py-2 shadow-sm sm:px-5 sm:py-2.5">
+                      <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" fill="#4A3700" aria-hidden>
+                        <path d="M12 2l2.9 6.9 7.5.6-5.7 4.9 1.8 7.3L12 17.8 5.5 21.7l1.8-7.3L1.6 9.5l7.5-.6z" strokeLinejoin="round" />
+                      </svg>
+                      <span
+                        key={hud.score}
+                        className="text-2xl font-bold leading-none tabular-nums tracking-tight text-[#2E2300] sm:text-3xl"
+                        style={{ animation: "bb-bump .35s ease-out" }}
+                      >
+                        {hud.score.toLocaleString("en-US")}
+                      </span>
+                    </div>
+                    <span className="pr-2 text-xs font-semibold text-zinc-600" style={{ textShadow: "0 1px 0 rgba(255,255,255,.9)" }}>
+                      เลเวล {hud.level}
                     </span>
                   </div>
-                  <span className="pr-2 text-xs font-semibold text-zinc-600" style={{ textShadow: "0 1px 0 rgba(255,255,255,.9)" }}>
-                    เลเวล {hud.level}
-                  </span>
-                </div>
 
-                {/* ตัวคูณคอมโบ มุมล่างขวา ไม่มีกรอบ ติดไฟเมื่อ onFire */}
-                <div className="pointer-events-none absolute bottom-3 right-3 select-none text-right sm:bottom-5 sm:right-5">
-                  <div className="relative inline-block px-4 pt-7">
-                    {onFire && (
-                      <>
-                        {/* แสงเรืองด้านหลัง แยกเป็นอีกชั้น เพื่อไม่ให้ถูกตัดด้วยกรอบของตัวอักษร */}
-                        <span
-                          aria-hidden
-                          className="absolute bottom-0 right-4 text-7xl font-black italic leading-[1.05] tracking-tighter text-[#FF7A1A] blur-md sm:text-8xl"
-                          style={{ animation: "bb-glow .5s ease-in-out infinite alternate" }}
-                        >
-                          ×{nextMult}
-                        </span>
-                        <span className="absolute left-4 top-3 text-2xl" style={{ animation: "bb-rise-fire 1s ease-out infinite" }} aria-hidden>🔥</span>
-                        <span className="absolute left-1/2 top-1 text-3xl" style={{ animation: "bb-rise-fire .85s .25s ease-out infinite" }} aria-hidden>🔥</span>
-                        <span className="absolute right-5 top-3 text-2xl" style={{ animation: "bb-rise-fire 1.1s .5s ease-out infinite" }} aria-hidden>🔥</span>
-                      </>
-                    )}
-                    <p
-                      key={nextMult}
-                      className={`relative px-3 py-1 text-7xl font-black italic leading-[1.05] tabular-nums tracking-tighter sm:text-8xl ${
-                        onFire ? "bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text text-transparent" : "text-zinc-900"
-                      }`}
-                      style={{
-                        animation: "bb-bump .3s ease-out",
-                        ...(onFire ? {} : { textShadow: "0 2px 0 rgba(255,255,255,.9), 0 0 12px rgba(255,255,255,.9)" }),
-                      }}
-                    >
-                      ×{nextMult}
+                  {/* ตัวคูณคอมโบ มุมล่างขวา ไม่มีกรอบ ติดไฟเมื่อ onFire */}
+                  <div className="absolute bottom-3 right-3 select-none text-right sm:bottom-5 sm:right-5">
+                    <div className="relative inline-block px-4 pt-7">
+                      {onFire && (
+                        <>
+                          {/* แสงเรืองด้านหลัง แยกเป็นอีกชั้น เพื่อไม่ให้ถูกตัดด้วยกรอบของตัวอักษร */}
+                          <span
+                            aria-hidden
+                            className="absolute bottom-0 right-4 text-7xl font-black italic leading-[1.05] tracking-tighter text-[#FF7A1A] blur-md sm:text-8xl"
+                            style={{ animation: "bb-glow .5s ease-in-out infinite alternate" }}
+                          >
+                            ×{nextMult}
+                          </span>
+                          <span className="absolute left-4 top-3 text-2xl" style={{ animation: "bb-rise-fire 1s ease-out infinite" }} aria-hidden>🔥</span>
+                          <span className="absolute left-1/2 top-1 text-3xl" style={{ animation: "bb-rise-fire .85s .25s ease-out infinite" }} aria-hidden>🔥</span>
+                          <span className="absolute right-5 top-3 text-2xl" style={{ animation: "bb-rise-fire 1.1s .5s ease-out infinite" }} aria-hidden>🔥</span>
+                        </>
+                      )}
+                      <p
+                        key={nextMult}
+                        className={`relative px-3 py-1 text-7xl font-black italic leading-[1.05] tabular-nums tracking-tighter sm:text-8xl ${
+                          onFire ? "bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text text-transparent" : "text-zinc-900"
+                        }`}
+                        style={{
+                          animation: "bb-bump .3s ease-out",
+                          ...(onFire ? {} : { textShadow: "0 2px 0 rgba(255,255,255,.9), 0 0 12px rgba(255,255,255,.9)" }),
+                        }}
+                      >
+                        ×{nextMult}
+                      </p>
+                    </div>
+                    <p className={`-mt-1 pr-4 text-sm font-semibold ${onFire ? "text-[#FFB347]" : "text-zinc-500"}`}>
+                      {onFire ? "ติดไฟ!" : `ติดกัน ${hud.streak}`}
                     </p>
                   </div>
-                  <p className={`-mt-1 pr-4 text-sm font-semibold ${onFire ? "text-[#FFB347]" : "text-zinc-500"}`}>
-                    {onFire ? "ติดไฟ!" : `ติดกัน ${hud.streak}`}
-                  </p>
+
+                  {/* ปุ่มกลับ/เสียง ลอยมุมล่างซ้าย (กด M เพื่อเปิด/ปิดเสียงบนคอมได้) */}
+                  <div className="absolute bottom-3 left-3 flex gap-2">
+                    <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND}>←</Link>
+                    <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={BTN_ROUND}>
+                      {isMuted ? "🔇" : "🔊"}
+                    </button>
+                  </div>
                 </div>
-              </>
+              </div>
             )}
 
             {/* READY → GO!!! */}
@@ -1441,62 +1456,62 @@ export default function BasketballPage() {
                 </div>
               </div>
             )}
-      {/* ===== หน้าสรุปคะแนน: เต็มพอดีกรอบจอเกม ไม่ต้องเลื่อน (ย่อ/ขยายเนื้อหาตามขนาดกรอบ) ===== */}
-      {over && (
-        <div className="bb-anim absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
-          <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 590, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
-            <div className="text-center" style={{ animation: "bb-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
-              <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${newRecord ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
-                {newRecord ? "🏆 สถิติใหม่!" : "หมดเวลา!"}
-              </span>
 
-              <div className="mt-4 flex items-end justify-center gap-1">
-                {STAR_AT.map((_, i) => (
-                  <div key={i} className={i === 1 ? "-translate-y-2" : ""}>
-                    <Star on={i < stars} delay={0.3 + i * 0.22} />
+            {/* ===== หน้าสรุปคะแนน: เต็มพอดีกรอบจอเกม ไม่ต้องเลื่อน (ย่อ/ขยายเนื้อหาตามขนาดกรอบ) ===== */}
+            {over && (
+              <div className="bb-anim absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
+                <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 590, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
+                  <div className="text-center" style={{ animation: "bb-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
+                    <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${newRecord ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
+                      {newRecord ? "🏆 สถิติใหม่!" : "หมดเวลา!"}
+                    </span>
+
+                    <div className="mt-4 flex items-end justify-center gap-1">
+                      {STAR_AT.map((_, i) => (
+                        <div key={i} className={i === 1 ? "-translate-y-2" : ""}>
+                          <Star on={i < stars} delay={0.3 + i * 0.22} />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-sm font-medium text-zinc-500">{RANKS[stars]}</p>
+
+                    <div className="mt-4 rounded-3xl bg-[#F4D35E] px-4 py-5">
+                      <p className="text-xs text-zinc-700">คะแนนรอบนี้</p>
+                      <p className="text-7xl font-semibold leading-none tabular-nums tracking-tight">{shownScore}</p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-2xl bg-[#B7CBB0]/60 py-3">
+                        <p className="text-xl font-semibold tabular-nums">{hud.made}/{hud.shots}</p>
+                        <p className="text-xs text-zinc-600">ลูกที่เข้า</p>
+                      </div>
+                      <div className="rounded-2xl bg-[#A8B5E8]/50 py-3">
+                        <p className="text-xl font-semibold tabular-nums">{accuracy}%</p>
+                        <p className="text-xs text-zinc-600">แม่นยำ</p>
+                      </div>
+                      <div className="rounded-2xl bg-[#F4A58A]/50 py-3">
+                        <p className="text-xl font-semibold tabular-nums">{hud.swishes}</p>
+                        <p className="text-xs text-zinc-600">SWISH</p>
+                      </div>
+                      <div className="rounded-2xl bg-[#F2994A]/40 py-3">
+                        <p className="text-xl font-semibold tabular-nums">×{Math.min(MAX_MULT, hud.best)}</p>
+                        <p className="text-xs text-zinc-600">คอมโบสูงสุด</p>
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
+                    <p className="h-4 text-xs text-zinc-500">{saveText[saveState]}</p>
+
+                    <button onClick={beginRound} className={`${BTN_MAIN} mt-4`}>เล่นอีกครั้ง</button>
+                    <Link href="/rank" className={`${BTN_SUB} mt-3`}>ดูอันดับ</Link>
+                    <Link href="/#games" className="mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
                   </div>
-                ))}
-              </div>
-              <p className="mt-1 text-sm font-medium text-zinc-500">{RANKS[stars]}</p>
-
-              <div className="mt-4 rounded-3xl bg-[#F4D35E] px-4 py-5">
-                <p className="text-xs text-zinc-700">คะแนนรอบนี้</p>
-                <p className="text-7xl font-semibold leading-none tabular-nums tracking-tight">{shownScore}</p>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-2xl bg-[#B7CBB0]/60 py-3">
-                  <p className="text-xl font-semibold tabular-nums">{hud.made}/{hud.shots}</p>
-                  <p className="text-xs text-zinc-600">ลูกที่เข้า</p>
-                </div>
-                <div className="rounded-2xl bg-[#A8B5E8]/50 py-3">
-                  <p className="text-xl font-semibold tabular-nums">{accuracy}%</p>
-                  <p className="text-xs text-zinc-600">แม่นยำ</p>
-                </div>
-                <div className="rounded-2xl bg-[#F4A58A]/50 py-3">
-                  <p className="text-xl font-semibold tabular-nums">{hud.swishes}</p>
-                  <p className="text-xs text-zinc-600">SWISH</p>
-                </div>
-                <div className="rounded-2xl bg-[#F2994A]/40 py-3">
-                  <p className="text-xl font-semibold tabular-nums">×{Math.min(MAX_MULT, hud.best)}</p>
-                  <p className="text-xs text-zinc-600">คอมโบสูงสุด</p>
                 </div>
               </div>
-
-              <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
-              <p className="h-4 text-xs text-zinc-500">{saveText[saveState]}</p>
-
-              <button onClick={beginRound} className={`${BTN_MAIN} mt-4`}>เล่นอีกครั้ง</button>
-              <Link href="/rank" className={`${BTN_SUB} mt-3`}>ดูอันดับ</Link>
-              <Link href="/#games" className="mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
-            </div>
-          </div>
-        </div>
-      )}
+            )}
           </div>
         </div>
       </main>
-
     </div>
   );
 }

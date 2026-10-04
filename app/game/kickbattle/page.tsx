@@ -37,8 +37,14 @@ const TB_SHOTS = 3; // ต่อเวลา สูงสุด 3 ลูก
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
 const COLORS = ["#F4D35E", "#A8B5E8"]; // ผู้เล่น 1 / 2
 const CONF = ["#F4D35E", "#A8B5E8", "#F4A58A", "#FFFFFF"];
-const BALL_X: Record<Dir, number> = { L: 24.7, C: 50, R: 75.3 }; // ตำแหน่งในสนาม (%)
 const KEEP_X: Record<Dir, number> = { L: 16.7, C: 50, R: 83.3 }; // ตำแหน่งในกรอบประตู (%)
+// ตำแหน่งสนาม (% ของพื้นที่เล่น)
+const GOAL_TOP = 17;
+const GOAL_H = 45;
+const LINE_Y = GOAL_TOP + GOAL_H; // เส้นหน้าประตู
+const GRASS = "repeating-linear-gradient(90deg,#8DB885 0 12.5%,#9CC593 12.5% 25%)";
+
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 const CSS = `
 @keyframes kb-pop{0%{transform:scale(.2) rotate(-6deg);opacity:0}60%{transform:scale(1.18) rotate(2deg);opacity:1}100%{transform:scale(1) rotate(0)}}
@@ -53,6 +59,8 @@ const CSS = `
 @keyframes kb-coin{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}15%{opacity:1}100%{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1) rotate(540deg);opacity:0}}
 @keyframes kb-float{0%{transform:translateY(8px) scale(.5);opacity:0}25%{transform:translateY(-8px) scale(1.25);opacity:1}100%{transform:translateY(-46px) scale(1);opacity:0}}
 @keyframes kb-score{0%{transform:scale(1)}35%{transform:scale(1.4)}100%{transform:scale(1)}}
+@keyframes kb-glow{0%{opacity:.65;transform:scale(1)}100%{opacity:1;transform:scale(1.06)}}
+@keyframes kb-go{0%{transform:scale(.4);opacity:0}25%{transform:scale(1.18);opacity:1}65%{transform:scale(1);opacity:1}100%{transform:scale(1.6);opacity:0}}
 .kb-coin{position:absolute;left:50%;top:50%;display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:9999px;background:#F4D35E;border:3px solid #4A3B00;color:#4A3B00;font-size:15px;font-weight:700;animation:kb-coin 1100ms cubic-bezier(.2,.8,.3,1) forwards;pointer-events:none}
 .kb-gain{animation:kb-float 1500ms ease-out forwards;pointer-events:none}
 .kb-score{animation:kb-score 450ms ease-out}
@@ -67,6 +75,12 @@ const CSS = `
 .kb-dot{animation:kb-dots 1.2s infinite}
 @media (prefers-reduced-motion:reduce){.kb-coin,.kb-score,.kb-gain{animation:none}.kb-sway,.kb-bob,.kb-dot{animation:none}.kb-shake,.kb-net,.kb-conf{animation:none}}
 `;
+
+const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-40";
+const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white text-sm font-medium transition-colors hover:bg-black/[.04]";
+const BTN_ROUND =
+  "pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
+const PILL = "rounded-full bg-white/90 px-4 py-2 text-sm text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur";
 
 // ===== ผู้เล่น (ใช้ profile เดิมของเว็บ ถ้าไม่มีสร้างผู้เล่นชั่วคราว) =====
 function useMe() {
@@ -139,6 +153,24 @@ function Coins() {
   );
 }
 
+// ข้อความไล่สีส้ม-เหลืองแบบเดียวกับเกม Basketball (แยกชั้นแสงเรืองไว้ด้านหลัง)
+function FireText({ text, size }: { text: string; size: string }) {
+  return (
+    <div className="relative inline-block px-6 py-2">
+      <span
+        aria-hidden
+        className={`absolute inset-0 flex items-center justify-center font-black italic leading-[1.05] tracking-tighter text-[#FF7A1A] blur-xl ${size}`}
+        style={{ animation: "kb-glow .5s ease-in-out infinite alternate" }}
+      >
+        {text}
+      </span>
+      <span className={`relative block bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text px-3 py-1 font-black italic leading-[1.05] tracking-tighter text-transparent ${size}`}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
 // ตัวเลขแต้มที่นับขึ้นทีละน้อยและเด้งเมื่อเปลี่ยน
 function CountUp({ value }: { value: number }) {
   const [v, setV] = useState(value);
@@ -182,36 +214,57 @@ function Keeper() {
   );
 }
 
-// ===== สนามยิงจุดโทษ =====
+// ===== สนามยิงจุดโทษ (ไม่มีพื้นหลังของตัวเอง ใช้สนามหญ้าเต็มจอด้านหลัง) =====
 function Pitch({
   anim,
   you,
   sel,
   canPick,
+  iShoot,
+  inset,
+  aspect,
   onSel,
+  onFlick,
 }: {
   anim: Anim | null;
   you: 0 | 1;
   sel: Dir | null;
   canPick: boolean;
+  iShoot: boolean;
+  inset: number; // ระยะขอบประตูซ้าย/ขวา (%)
+  aspect: string;
   onSel: (d: Dir) => void;
+  onFlick: (d: Dir) => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<Dir | null>(null);
+
   const step = anim?.step ?? -1;
   const e = anim?.entry;
   const reveal = step >= 2 && !!e;
   const iScored = !!e && (e.goal ? e.shooter === you : e.shooter !== you);
   const iShot = !!e && e.shooter === you;
 
+  const bx = (d: Dir) => inset + (100 - 2 * inset) * (d === "L" ? 1 / 6 : d === "C" ? 0.5 : 5 / 6);
+  const dirAt = (x: number): Dir => {
+    const t = (x - inset) / (100 - 2 * inset);
+    return t < 1 / 3 ? "L" : t < 2 / 3 ? "C" : "R";
+  };
+
   // ลูกบอล
-  let ball = { left: 50, bottom: 7, scale: 1, rot: 0, ms: 0 };
-  if (e && step === 1) ball = { left: BALL_X[e.shot], bottom: 58, scale: 0.55, rot: 720, ms: 720 };
+  let ball = { left: 50, bottom: 10, scale: 1, rot: 0, ms: 0 };
+  if (e && step === 1) ball = { left: bx(e.shot), bottom: 55, scale: 0.55, rot: 720, ms: 720 };
   if (e && step === 2) {
-    if (e.goal) ball = { left: BALL_X[e.shot], bottom: 55, scale: 0.5, rot: 780, ms: 300 };
+    if (e.goal) ball = { left: bx(e.shot), bottom: 52, scale: 0.5, rot: 780, ms: 300 };
     else {
       const away = e.shot === "R" ? -1 : e.shot === "L" ? 1 : e.round % 2 ? 1 : -1;
-      ball = { left: Math.min(94, Math.max(6, BALL_X[e.shot] + away * 24)), bottom: 26, scale: 0.85, rot: 1200, ms: 520 };
+      ball = { left: clamp(bx(e.shot) + away * 24, 6, 94), bottom: 26, scale: 0.85, rot: 1200, ms: 520 };
     }
   }
+  const dragging = !!drag && canPick && !anim;
+  if (dragging && iShoot) ball = { left: drag!.x, bottom: 100 - drag!.y, scale: 0.85, rot: 0, ms: 0 };
 
   // ผู้รักษาประตู
   let kx = 50;
@@ -224,27 +277,55 @@ function Pitch({
         : `translate(-50%,-12%) rotate(${e.keep === "L" ? -62 : 62}deg)`;
   }
 
-  const banner = !reveal
-    ? null
+  const sub = !reveal
+    ? ""
     : e!.goal
-      ? { t: "GOAL!", s: iShot ? "ยิงเข้าเต็มๆ" : "เสียประตู คู่แข่งยิงเข้า" }
-      : { t: "เซฟ!", s: iShot ? "โดนอ่านทางขาด" : "ปัดออกได้ทัน" };
+      ? iShot ? "ยิงเข้าเต็มๆ" : "คู่แข่งยิงเข้า"
+      : iShot ? "โดนอ่านทางขาด" : "ปัดออกได้ทัน";
+
+  // ลากลูก (หรือถุงมือ) ไปที่มุมแล้วปล่อยเพื่อยืนยัน
+  const pct = (ev: React.PointerEvent) => {
+    const r = rootRef.current!.getBoundingClientRect();
+    return { x: ((ev.clientX - r.left) / r.width) * 100, y: ((ev.clientY - r.top) / r.height) * 100 };
+  };
+  const onDown = (ev: React.PointerEvent) => {
+    if (!canPick) return;
+    start.current = { x: ev.clientX, y: ev.clientY };
+  };
+  const onMove = (ev: React.PointerEvent) => {
+    if (!start.current || !canPick) return;
+    if (!drag && Math.hypot(ev.clientX - start.current.x, ev.clientY - start.current.y) < 14) return;
+    if (!drag) rootRef.current?.setPointerCapture(ev.pointerId);
+    const p = pct(ev);
+    setDrag({ x: clamp(p.x, 2, 98), y: clamp(p.y, 6, 98) });
+    setHover(dirAt(p.x));
+  };
+  const onUp = () => {
+    if (drag && hover && canPick) onFlick(hover);
+    start.current = null;
+    setDrag(null);
+    setHover(null);
+  };
 
   return (
     <div
-      className={`relative aspect-[16/11] w-full select-none overflow-hidden rounded-[2rem] ${
-        reveal && (!e!.goal || !iShot) ? "kb-shake" : ""
-      }`}
-      style={{ background: "repeating-linear-gradient(90deg,#8DB885 0 12.5%,#9CC593 12.5% 25%)" }}
+      ref={rootRef}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      className="relative w-full select-none"
+      style={{ aspectRatio: aspect, touchAction: "none" }}
     >
-      {/* เส้นสนาม */}
-      <div className="absolute inset-x-0 top-[59%] h-[3px] bg-white/70" />
-      <div className="absolute left-1/2 top-[88%] h-3 w-3 -translate-x-1/2 rounded-full bg-white/80" />
+      <div className={`absolute inset-0 ${reveal && (!e!.goal || !iShot) ? "kb-shake" : ""}`}>
+      {/* เส้นหน้าประตู (ยาวเกินกรอบเพื่อให้เต็มจอ) */}
+      <div className="absolute h-[3px] bg-white/70" style={{ top: `${LINE_Y}%`, left: "-100vw", right: "-100vw" }} />
+      <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-white/80" style={{ top: "86%" }} />
 
       {/* ประตู */}
       <div
         className={`absolute ${reveal && e!.goal ? "kb-net" : ""}`}
-        style={{ left: "12%", right: "12%", top: "9%", height: "50%", transformOrigin: "50% 0" }}
+        style={{ left: `${inset}%`, right: `${inset}%`, top: `${GOAL_TOP}%`, height: `${GOAL_H}%`, transformOrigin: "50% 0" }}
       >
         <div
           className="absolute inset-0 rounded-t-md border-x-[6px] border-t-[6px] border-white"
@@ -258,7 +339,7 @@ function Pitch({
         {/* โซนเลือกทิศ */}
         <div className="absolute inset-0 z-10 grid grid-cols-3">
           {(["L", "C", "R"] as Dir[]).map((d) => {
-            const active = sel === d;
+            const active = sel === d || hover === d;
             return (
               <button
                 key={d}
@@ -266,7 +347,7 @@ function Pitch({
                 disabled={!canPick}
                 onClick={() => onSel(d)}
                 aria-label={`เลือก${SIDE[d]}`}
-                aria-pressed={active}
+                aria-pressed={sel === d}
                 className={`m-1.5 flex items-end justify-center rounded-xl pb-2 text-sm font-semibold outline-none transition-all focus-visible:ring-4 focus-visible:ring-blue-400 ${
                   canPick
                     ? active
@@ -287,7 +368,7 @@ function Pitch({
           style={{
             left: `${kx}%`,
             bottom: "2%",
-            width: "11%",
+            width: inset < 8 ? "15%" : "11%",
             transform: kTf,
             transformOrigin: "50% 100%",
             transition: step >= 1 ? "left 380ms cubic-bezier(.3,.9,.3,1) 120ms, transform 380ms cubic-bezier(.3,.9,.3,1) 120ms" : "none",
@@ -299,10 +380,18 @@ function Pitch({
         </div>
       </div>
 
+      {/* ถุงมือที่ลากตามนิ้ว (ฝั่งผู้รับ) */}
+      {dragging && !iShoot && (
+        <div className="pointer-events-none absolute z-30 text-5xl" style={{ left: `${drag!.x}%`, top: `${drag!.y}%`, transform: "translate(-50%,-50%)" }}>
+          🧤
+        </div>
+      )}
+
       {/* ลูกบอล */}
       <div
-        className="pointer-events-none absolute z-20 text-[clamp(28px,6vw,46px)] leading-none"
+        className="pointer-events-none absolute z-20 leading-none"
         style={{
+          fontSize: "clamp(32px,5vw,64px)",
           left: `${ball.left}%`,
           bottom: `${ball.bottom}%`,
           transform: `translateX(-50%) scale(${ball.scale}) rotate(${ball.rot}deg)`,
@@ -312,23 +401,28 @@ function Pitch({
           filter: "drop-shadow(0 6px 4px rgba(0,0,0,.25))",
         }}
       >
-        <span className={!anim ? "kb-bob inline-block" : "inline-block"}>⚽</span>
+        <span className={!anim && !dragging ? "kb-bob inline-block" : "inline-block"}>⚽</span>
+      </div>
+
       </div>
 
       {/* แฟลชตอนบอลถึงเป้า */}
-      {reveal && e!.goal && <div className="kb-flash pointer-events-none absolute inset-0 z-20 bg-white" />}
+      {reveal && e!.goal && <div className="kb-flash pointer-events-none fixed inset-0 z-20 bg-white" />}
 
       {/* ผลลัพธ์ */}
-      {banner && (
-        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
-          <div
-            className="kb-pop rounded-[2rem] px-8 py-5 text-center shadow-xl"
-            style={{ background: iScored ? "#F4D35E" : "#27272A", color: iScored ? "#27272A" : "#fff" }}
-          >
-            <p className="text-5xl font-semibold tracking-tight md:text-7xl">{banner.t}</p>
-            <p className="mt-1 text-sm opacity-80 md:text-base">{banner.s}</p>
+      {reveal && (
+        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">
+          <div className="kb-pop flex flex-col items-center text-center">
+            {iScored ? (
+              <FireText text={e!.goal ? "GOAL!" : "SAVE!"} size="text-7xl sm:text-9xl" />
+            ) : (
+              <span className="rounded-[2rem] bg-zinc-900 px-8 py-4 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+                {e!.goal ? "เสียประตู" : "โดนเซฟ"}
+              </span>
+            )}
+            <p className="mt-2 rounded-full bg-white/90 px-4 py-1 text-sm font-medium text-zinc-700 shadow-sm">{sub}</p>
             <p
-              className="mt-3 inline-block rounded-full px-5 py-1.5 text-2xl font-semibold tabular-nums md:text-3xl"
+              className="mt-3 inline-block rounded-full px-5 py-1.5 text-2xl font-semibold tabular-nums sm:text-3xl"
               style={{ background: iScored ? "#27272A" : "#F4D35E", color: iScored ? "#F4D35E" : "#27272A" }}
             >
               {iScored ? "+100 แต้ม" : "คู่แข่ง +100"}
@@ -336,15 +430,19 @@ function Pitch({
           </div>
         </div>
       )}
-      {reveal && iScored && <Confetti />}
-      {reveal && iScored && <Coins />}
+      {reveal && iScored && (
+        <div className="pointer-events-none fixed inset-0 z-30">
+          <Confetti />
+          <Coins />
+        </div>
+      )}
     </div>
   );
 }
 
 // จุดผลทุกลูกบนป้ายผู้เล่น: ได้แต้ม (ยิงเข้าหรือเซฟได้) เป็น ✓ เขียว ไม่ได้แต้มเป็น ✕ แดง
 function ShotDot({ state, next, hint }: { state: "win" | "lose" | "pending"; next: boolean; hint: string }) {
-  const base = "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white sm:h-7 sm:w-7 sm:text-sm";
+  const base = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white sm:h-6 sm:w-6 sm:text-xs";
   if (state === "win")
     return (
       <span className={`${base} kb-pop`} style={{ background: "#5FA35A" }} aria-label="ได้แต้ม">
@@ -358,7 +456,7 @@ function ShotDot({ state, next, hint }: { state: "win" | "lose" | "pending"; nex
       </span>
     );
   return (
-    <span className={`${base} bg-white/60 !text-[11px] ${next ? "ring-2 ring-zinc-900" : ""}`} title={hint} aria-label={hint}>
+    <span className={`${base} bg-white/60 !text-[10px] ${next ? "ring-2 ring-zinc-900" : ""}`} title={hint} aria-label={hint}>
       <span className="opacity-70">{hint === "ยิง" ? "⚽" : "🧤"}</span>
     </span>
   );
@@ -367,15 +465,15 @@ function ShotDot({ state, next, hint }: { state: "win" | "lose" | "pending"; nex
 function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Player; score: number; idx: 0 | 1; role: "ยิง" | "รับ" | null; active: boolean; gain: string | null; isYou: boolean; dots: React.ReactNode }) {
   return (
     <div
-      className={`relative flex flex-1 flex-col gap-3 rounded-[2rem] p-3 pb-4 pr-5 text-zinc-900 transition-transform ${active ? "scale-[1.02]" : ""}`}
+      className={`relative flex min-w-0 flex-1 flex-col gap-2 rounded-3xl p-2.5 pr-3.5 text-zinc-900 shadow-sm transition-transform ${active ? "scale-[1.03]" : ""}`}
       style={{ background: COLORS[idx] }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={getAvatarSrc(p.avatar)}
           alt=""
-          className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white/80"
+          className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-white/80 sm:h-11 sm:w-11"
           onError={(ev) => ((ev.target as HTMLImageElement).src = "/img/p01.png")}
         />
         <div className="min-w-0 flex-1">
@@ -385,11 +483,11 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
           </p>
           <p className="text-xs opacity-60">{role ? `${role === "ยิง" ? "⚽" : "🧤"} ${role}` : "—"}</p>
         </div>
-        <span className="text-2xl font-semibold tabular-nums md:text-3xl">
+        <span className="text-2xl font-semibold tabular-nums sm:text-3xl">
           <CountUp value={score} />
         </span>
       </div>
-      <div className="flex items-center gap-1.5 pl-1 sm:gap-2" aria-label="ผลแต่ละลูก">
+      <div className="flex flex-wrap items-center gap-1 pl-0.5 sm:gap-1.5" aria-label="ผลแต่ละลูก">
         {dots}
       </div>
       {gain && (
@@ -413,17 +511,35 @@ export default function KickBattle() {
   const [shown, setShown] = useState(0); // จำนวนผลที่แสดงให้ผู้เล่นเห็นแล้ว
   const [anim, setAnim] = useState<Anim | null>(null);
   const [intro, setIntro] = useState<0 | 1 | 2>(0);
+  const [go, setGo] = useState(false);
   const [flip, setFlip] = useState(false);
   const [tbIntro, setTbIntro] = useState(false);
+  const [portrait, setPortrait] = useState(false);
   const initRef = useRef(false);
   const introKey = useRef("");
   const tbKey = useRef("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // ข้อมูลล่าสุดสำหรับคีย์ลัด (ตั้งค่าใหม่ทุกครั้งที่เรนเดอร์หน้าเกม)
+  const pickRef = useRef<{ canPick: boolean; sel: Dir | null; confirm: (d?: Dir) => void }>({ canPick: false, sel: null, confirm: () => {} });
+  pickRef.current.canPick = false;
 
   const later = (fn: () => void, ms: number) => {
     timers.current.push(setTimeout(fn, ms));
   };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  // จอแนวตั้ง/แนวนอน และล็อกการเลื่อนของหน้าเว็บ
+  useEffect(() => {
+    const f = () => setPortrait(window.innerWidth < window.innerHeight);
+    f();
+    window.addEventListener("resize", f);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("resize", f);
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   function leave() {
     // แจ้งเซิร์ฟเวอร์ว่าเราออกจากห้องแล้ว เพื่อให้อีกฝั่งเห็นสถานะ (ไม่ต้องรอผล)
@@ -448,6 +564,7 @@ export default function KickBattle() {
     setShown(0);
     setAnim(null);
     setIntro(0);
+    setGo(false);
   }
 
   // กลับเข้าห้องเดิมเมื่อรีเฟรช
@@ -515,7 +632,7 @@ export default function KickBattle() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, shown, anim]);
 
-  // สุ่มบทบาทตอนเริ่มแมตช์
+  // สุ่มบทบาทตอนเริ่มแมตช์ แล้วขึ้น GO!!!
   useEffect(() => {
     if (!view || view.status !== "playing" || view.history.length > 0) return;
     const key = `${view.code}-${view.match}`;
@@ -523,7 +640,11 @@ export default function KickBattle() {
     introKey.current = key;
     setIntro(1);
     later(() => setIntro(2), 1800);
-    later(() => setIntro(0), 3700);
+    later(() => {
+      setIntro(0);
+      setGo(true);
+    }, 3700);
+    later(() => setGo(false), 4600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -545,6 +666,25 @@ export default function KickBattle() {
     return () => clearInterval(t);
   }, [intro]);
 
+  // คีย์ลัดบนคอม: ← ↓ → (หรือ A S D) เลือกทิศ, Enter/Space ยืนยัน
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const p = pickRef.current;
+      if (!p.canPick) return;
+      const k = e.key;
+      if (k === "ArrowLeft" || k === "a" || k === "A") setSel("L");
+      else if (k === "ArrowDown" || k === "ArrowUp" || k === "s" || k === "S" || k === "w" || k === "W") setSel("C");
+      else if (k === "ArrowRight" || k === "d" || k === "D") setSel("R");
+      else if ((k === "Enter" || k === " ") && p.sel) {
+        if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
+        e.preventDefault();
+        p.confirm(p.sel);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   async function enter(action: "create" | "join") {
     if (!me || busy) return;
     setError("");
@@ -561,11 +701,13 @@ export default function KickBattle() {
     }
   }
 
-  async function confirmPick() {
-    if (!me || !code || !sel || busy) return;
+  async function confirmPick(dir?: Dir) {
+    const d = dir ?? sel;
+    if (!me || !code || !d || busy) return;
+    setSel(d);
     setBusy(true);
     try {
-      const v: View = await api({ action: "pick", code, playerId: me.id, dir: sel });
+      const v: View = await api({ action: "pick", code, playerId: me.id, dir: d });
       // ถ้าผลลูกนี้ออกแล้ว ปล่อยให้การดึงสถานะรอบถัดไปพาทั้งสองฝั่งเล่นแอนิเมชันพร้อมกัน
       setView((cur) => (cur && v.history.length > cur.history.length ? { ...cur, youPicked: true } : v));
     } catch (e: any) {
@@ -593,15 +735,15 @@ export default function KickBattle() {
     } catch {}
   }
 
-  const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-white font-sans text-zinc-900">
+  // เมนู (ล็อบบี้/รอเพื่อน): เต็มจอ เลื่อนได้
+  const menu = (children: React.ReactNode) => (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-white font-sans text-zinc-900">
       <style>{CSS}</style>
       <div className="mx-auto max-w-3xl px-6 pb-16 pt-6">
         <div className="flex items-center justify-between">
           <Link href="/" className="inline-flex h-10 items-center rounded-full border border-black/[.08] px-4 text-sm font-medium transition-colors hover:bg-black/[.04]">
             กลับหน้าหลัก
           </Link>
-          {/* ซ่อนปุ่มออกจากห้องระหว่างเล่น (ออกได้ตอนรอเพื่อน หรือจากหน้าจบเกม) */}
           {code && view?.status !== "playing" && (
             <button onClick={leave} className="h-10 rounded-full px-4 text-sm text-zinc-500 transition-colors hover:bg-black/[.04]">
               ออกจากห้อง
@@ -613,11 +755,11 @@ export default function KickBattle() {
     </div>
   );
 
-  if (!me) return shell(<p className="mt-20 text-center text-sm text-zinc-400">กำลังโหลด…</p>);
+  if (!me) return menu(<p className="mt-20 text-center text-sm text-zinc-400">กำลังโหลด…</p>);
 
   // ===== ล็อบบี้ =====
   if (!code) {
-    return shell(
+    return menu(
       <>
         <h1 className="mt-10 text-5xl font-semibold leading-[1.05] tracking-tight md:text-7xl">Kick Battle</h1>
         <p className="mt-4 max-w-md text-lg leading-8 text-zinc-500">
@@ -671,6 +813,7 @@ export default function KickBattle() {
             <li>ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
             <li>ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 100 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 100 แต้ม และแต้มบวกเข้าคะแนนรวมทันที</li>
             <li>สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ผู้ชนะรับโบนัสเพิ่ม 200 แต้ม</li>
+            <li>วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
       </>
@@ -679,7 +822,7 @@ export default function KickBattle() {
 
   // ===== รอเพื่อน =====
   if (!view || view.status === "waiting") {
-    return shell(
+    return menu(
       <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center">
         <p className="text-sm opacity-70">รหัสห้องของคุณ</p>
         <p className="mt-2 text-7xl font-semibold tracking-[.2em] md:text-8xl">{code}</p>
@@ -698,7 +841,7 @@ export default function KickBattle() {
     );
   }
 
-  // ===== ในเกม =====
+  // ===== ในเกม (เต็มจอ) =====
   const you = view.you;
   const opp = (1 - you) as 0 | 1;
   const revealed = shown + (anim && anim.step >= 2 ? 1 : 0);
@@ -722,157 +865,201 @@ export default function KickBattle() {
   };
   const dotsFor = (i: 0 | 1) => [
     ...Array.from({ length: view.total }).map((_, k) => dot(i, k)),
-    ...(tiebreak ? [<span key="tb" className="mx-0.5 h-6 w-px bg-black/20" />, ...Array.from({ length: TB_SHOTS }).map((_, k) => dot(i, view.total + k))] : []),
+    ...(tiebreak ? [<span key="tb" className="mx-0.5 h-5 w-px bg-black/20" />, ...Array.from({ length: TB_SHOTS }).map((_, k) => dot(i, view.total + k))] : []),
   ];
   // ป้าย +100 ลอยขึ้นเหนือผู้ที่เพิ่งได้แต้ม
   const scorer = anim && anim.step >= 2 ? (anim.entry.goal ? anim.entry.shooter : 1 - anim.entry.shooter) : -1;
   const gainFor = (i: 0 | 1) => (scorer === i && anim ? `${view.match}-${anim.entry.round}` : null);
   const roleOf = (i: 0 | 1) => (done ? null : i === curShooter ? "ยิง" : "รับ");
+  const statusText = done
+    ? "จบเกม"
+    : sudden
+      ? `ต่อเวลา · ใครได้ ${TB_TARGET} แต้มก่อนชนะ · คุณ ${tbSc[you]} : ${tbSc[opp]}`
+      : `ลูกที่ ${Math.min(shown + 1, view.total)} จาก ${view.total}`;
 
-  return shell(
-    <>
-      {/* ลำดับเหมือนกันทั้งสองฝั่ง: ผู้สร้างห้องก่อน ผู้เข้าร่วมถัดมา */}
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <PlayerPill p={view.players[0]} score={sc[0] * 100} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou={you === 0} dots={dotsFor(0)} />
-        <PlayerPill p={view.players[1]} score={sc[1] * 100} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
+  pickRef.current = { canPick, sel, confirm: confirmPick };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden overscroll-none font-sans text-zinc-900" style={{ background: GRASS, touchAction: "none" }}>
+      <style>{CSS}</style>
+
+      {/* สนาม: อัตราส่วนคงที่ อยู่กลางจอ ส่วนที่เหลือเป็นสนามหญ้าเต็มจอ */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div style={{ width: portrait ? "100vw" : "min(100vw, 160vh)" }}>
+          <Pitch
+            anim={anim}
+            you={you}
+            sel={sel}
+            canPick={canPick}
+            iShoot={iShoot}
+            inset={portrait ? 4 : 12}
+            aspect={portrait ? "100 / 120" : "16 / 10"}
+            onSel={setSel}
+            onFlick={(d) => {
+              setSel(d);
+              confirmPick(d);
+            }}
+          />
+        </div>
       </div>
 
-      <p className="mt-4 text-sm text-zinc-500">
-        {done
-          ? "จบเกม"
-          : sudden
-            ? `ต่อเวลา ใครได้ ${TB_TARGET} แต้มก่อนชนะ · คุณ ${tbSc[you]} : ${tbSc[opp]}`
-            : `ลูกที่ ${Math.min(shown + 1, view.total)} จาก ${view.total}`}
-      </p>
+      {/* HUD บน: ป้ายผู้เล่น + สถานะลูกที่ */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 z-30"
+        style={{ padding: "calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px)" }}
+      >
+        <div className="mx-auto flex max-w-3xl gap-2 sm:gap-3">
+          {/* ลำดับเหมือนกันทั้งสองฝั่ง: ผู้สร้างห้องก่อน ผู้เข้าร่วมถัดมา */}
+          <PlayerPill p={view.players[0]} score={sc[0] * 100} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou={you === 0} dots={dotsFor(0)} />
+          <PlayerPill p={view.players[1]} score={sc[1] * 100} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
+        </div>
+        <div className="mt-2 flex justify-center">
+          <span className={`${PILL} !py-1 text-xs font-medium`}>{statusText}</span>
+        </div>
+      </div>
 
-      <div className="relative mt-4">
-        <Pitch anim={anim} you={you} sel={sel} canPick={canPick} onSel={setSel} />
-
-        {/* สุ่มบทบาท */}
-        {intro > 0 && (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-[2rem] bg-zinc-900/85 text-center text-white">
-            {intro === 1 ? (
-              <>
-                <p className="text-sm opacity-70">กำลังสุ่มว่าใครได้ยิงก่อน</p>
-                <p className="mt-4 text-7xl" style={{ transform: `rotate(${flip ? -12 : 12}deg) scale(${flip ? 1 : 1.15})`, transition: "transform 130ms" }}>
-                  {flip ? "⚽" : "🧤"}
-                </p>
-              </>
+      {/* HUD ล่าง: ปุ่มกลับ + คำสั่ง */}
+      {!done && intro === 0 && !tbIntro && (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end gap-2"
+          style={{ padding: "0 calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px)" }}
+        >
+          <Link href="/" aria-label="กลับหน้าหลัก" title="กลับหน้าหลัก" className={BTN_ROUND}>
+            ←
+          </Link>
+          <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
+            {anim ? (
+              <p className={PILL}>ลุ้นกันหน่อย…</p>
+            ) : view.youPicked ? (
+              <p className={PILL}>
+                ล็อกแล้ว รอคู่แข่ง
+                {[0, 1, 2].map((i) => (
+                  <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
+                    .
+                  </span>
+                ))}
+              </p>
             ) : (
-              <div className="kb-pop">
-                <p className="text-7xl">{view.first === you ? "⚽" : "🧤"}</p>
-                <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">{view.first === you ? "คุณได้ยิงก่อน" : "คุณได้เฝ้าประตู"}</p>
-                <p className="mt-2 text-sm opacity-70">ลูกต่อไปสลับบทบาทกัน</p>
-              </div>
+              <>
+                <p className={PILL}>
+                  {iShoot ? "คุณเป็นผู้ยิง · ลากลูกไปมุมที่จะยิงแล้วปล่อย" : "คุณเป็นผู้รับ · ลากถุงมือไปมุมที่จะรับแล้วปล่อย"}
+                  {view.oppPicked && <span className="ml-2 rounded-full bg-zinc-100 px-3 py-0.5 text-xs">คู่แข่งเลือกแล้ว</span>}
+                </p>
+                <button
+                  onClick={() => confirmPick()}
+                  disabled={!sel || busy}
+                  className="pointer-events-auto h-12 w-full max-w-xs rounded-full bg-zinc-900 text-sm font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-30"
+                >
+                  {sel ? (iShoot ? `ยิง${SIDE[sel]}` : `รับ${SIDE[sel]}`) : iShoot ? "เลือกทิศที่จะยิง" : "เลือกทิศที่จะรับ"}
+                </button>
+              </>
             )}
+            {error && <p className="rounded-full bg-white/90 px-3 py-1 text-sm text-[#C2410C]">{error}</p>}
           </div>
-        )}
+          <span className="w-11 shrink-0" aria-hidden />
+        </div>
+      )}
 
-        {/* ประกาศต่อเวลา */}
-        {tbIntro && (
-          <div className="kb-rise absolute inset-0 z-50 flex flex-col items-center justify-center rounded-[2rem] bg-zinc-900/90 px-6 text-center text-white">
+      {/* สุ่มบทบาท */}
+      {intro > 0 && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#190C28]/60 px-6 text-center text-white backdrop-blur-sm">
+          {intro === 1 ? (
+            <>
+              <p className="text-sm opacity-70">กำลังสุ่มว่าใครได้ยิงก่อน</p>
+              <p className="mt-4 text-7xl" style={{ transform: `rotate(${flip ? -12 : 12}deg) scale(${flip ? 1 : 1.15})`, transition: "transform 130ms" }}>
+                {flip ? "⚽" : "🧤"}
+              </p>
+            </>
+          ) : (
             <div className="kb-pop">
-              <p className="text-7xl">🔥</p>
-              <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">แต้มเสมอ ต่อเวลา!</p>
-              <p className="mt-3 text-sm leading-6 opacity-80">ยิงกันต่ออีกสูงสุด {TB_SHOTS} ลูก ใครได้ {TB_TARGET} แต้มก่อนชนะ</p>
-              <p className="mt-1 text-sm opacity-80">ผู้ชนะรับโบนัส +200 แต้ม</p>
+              <p className="text-7xl">{view.first === you ? "⚽" : "🧤"}</p>
+              <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">{view.first === you ? "คุณได้ยิงก่อน" : "คุณได้เฝ้าประตู"}</p>
+              <p className="mt-2 text-sm opacity-70">ลูกต่อไปสลับบทบาทกัน</p>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {/* จบเกม */}
-        {done && (
-          <div className="kb-rise absolute inset-0 z-50 flex flex-col items-center justify-center rounded-[2rem] bg-zinc-900/90 px-6 text-center text-white">
-            {iWon && <Confetti n={44} />}
-            {iWon && <Coins />}
-            <p className="text-6xl">{iWon ? "🏆" : "🥲"}</p>
-            <p className="mt-3 text-5xl font-semibold tracking-tight md:text-6xl">{iWon ? "คุณชนะ!" : "แพ้ไปนิดเดียว"}</p>
-            <p className="mt-2 text-xl tabular-nums opacity-80">
-              {sc[you] * 100} : {sc[opp] * 100}
-            </p>
-            {view.history.length > view.total && <p className="mt-1 text-sm opacity-70">ตัดสินด้วยการต่อเวลา</p>}
-            {iWon && <p className="kb-pop mt-4 rounded-full bg-white/15 px-4 py-1.5 text-sm font-medium text-[#F4D35E]">โบนัสผู้ชนะ +200 แต้ม</p>}
+      {/* GO!!! */}
+      {go && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+          <div style={{ animation: "kb-go .9s ease-out both" }}>
+            <FireText text="GO!!!" size="text-7xl sm:text-9xl" />
+          </div>
+        </div>
+      )}
+
+      {/* ประกาศต่อเวลา */}
+      {tbIntro && (
+        <div className="kb-rise absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#190C28]/70 px-6 text-center text-white backdrop-blur-sm">
+          <div className="kb-pop">
+            <p className="text-7xl">🔥</p>
+            <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">แต้มเสมอ ต่อเวลา!</p>
+            <p className="mt-3 text-sm leading-6 opacity-80">ยิงกันต่ออีกสูงสุด {TB_SHOTS} ลูก ใครได้ {TB_TARGET} แต้มก่อนชนะ</p>
+            <p className="mt-1 text-sm opacity-80">ผู้ชนะรับโบนัส +200 แต้ม</p>
+          </div>
+        </div>
+      )}
+
+      {/* หน้าสรุป */}
+      {done && (
+        <div className="kb-rise absolute inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-gradient-to-b from-[#F7E9A8] via-white to-white p-4">
+          {iWon && <Confetti n={44} />}
+          {iWon && <Coins />}
+          <div className="my-auto w-full max-w-sm text-center">
+            <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${iWon ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
+              {iWon ? "🏆 ชนะ!" : "จบเกม"}
+            </span>
+            <p className="kb-pop mt-3 text-7xl">{iWon ? "🏆" : "🥲"}</p>
+            <h2 className="mt-2 text-5xl font-semibold tracking-tight">{iWon ? "คุณชนะ!" : "แพ้ไปนิดเดียว"}</h2>
+            {view.history.length > view.total && <p className="mt-1 text-sm text-zinc-500">ตัดสินด้วยการต่อเวลา</p>}
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {[you, opp].map((i, k) => (
+                <div key={i} className="rounded-3xl py-5 text-zinc-900" style={{ background: COLORS[i] }}>
+                  <p className="truncate px-2 text-xs opacity-70">{k === 0 ? "คุณ" : view.players[i]?.name || "คู่แข่ง"}</p>
+                  <p className="text-5xl font-semibold tabular-nums tracking-tight">{sc[i] * 100}</p>
+                </div>
+              ))}
+            </div>
+
+            {iWon && <p className="kb-pop mt-4 inline-block rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-[#F4D35E]">โบนัสผู้ชนะ +200 แต้ม</p>}
             {view.earned[you] > 0 &&
               (view.awardSaved[you] ? (
-                <p className="mt-3 rounded-full bg-[#F4D35E] px-4 py-1.5 text-sm font-medium text-zinc-900">
-                  +{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
-                </p>
+                <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
               ) : (
-                <p className="mt-3 max-w-xs rounded-2xl bg-white/15 px-4 py-2 text-sm">
-                  แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว
-                </p>
+                <p className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว</p>
               ))}
 
             {/* สถานะคู่แข่ง */}
-            <p className="mt-6 inline-flex items-center gap-2 text-sm opacity-90">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: view.oppLeft ? "#E0483B" : "#5FA35A" }}
-                aria-hidden="true"
-              />
+            <p className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-600">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: view.oppLeft ? "#E0483B" : "#5FA35A" }} aria-hidden="true" />
               {view.oppLeft ? "คู่แข่งออกจากห้องแล้ว" : "คู่แข่งยังอยู่ในห้อง"}
             </p>
 
-            <div className="mt-4 flex flex-wrap justify-center gap-3">
+            <div className="mt-4 flex flex-col gap-2">
               {view.oppLeft ? (
                 // คู่แข่งออกแล้ว เล่นอีกรอบไม่ได้ เหลือแค่ปุ่มจบเกม
-                <button
-                  onClick={leave}
-                  className="h-12 rounded-full bg-[#F4D35E] px-6 text-sm font-medium text-zinc-900 transition-opacity hover:opacity-85"
-                >
+                <button onClick={leave} className={BTN_MAIN}>
                   จบเกม
                 </button>
               ) : (
                 <>
-                  <button
-                    onClick={rematch}
-                    disabled={view.youRematch}
-                    className="h-12 rounded-full bg-[#F4D35E] px-6 text-sm font-medium text-zinc-900 transition-opacity hover:opacity-85 disabled:opacity-60"
-                  >
+                  <button onClick={rematch} disabled={view.youRematch} className={BTN_MAIN}>
                     {view.youRematch ? "รอเพื่อนกดเล่นอีกรอบ…" : view.oppRematch ? "เพื่อนขอเล่นอีกรอบ กดเลย" : "เล่นอีกรอบ"}
                   </button>
-                  <button onClick={leave} className="h-12 rounded-full bg-white/15 px-6 text-sm font-medium transition-colors hover:bg-white/25">
+                  <button onClick={leave} className={BTN_SUB}>
                     ออกจากห้อง
                   </button>
                 </>
               )}
+              <Link href="/rank" className={BTN_SUB}>
+                ดูอันดับ
+              </Link>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* แถบคำสั่ง */}
-      {!done && intro === 0 && !tbIntro && (
-        <div className="mt-4 flex flex-col items-center gap-3 text-center">
-          {anim ? (
-            <p className="h-12 text-sm leading-[3rem] text-zinc-500">ลุ้นกันหน่อย…</p>
-          ) : view.youPicked ? (
-            <p className="h-12 text-sm leading-[3rem] text-zinc-500">
-              ล็อกแล้ว รอคู่แข่ง
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-                  .
-                </span>
-              ))}
-            </p>
-          ) : (
-            <>
-              <p className="text-sm text-zinc-600">
-                {iShoot ? "คุณเป็นผู้ยิง เลือกมุมที่จะยิง" : "คุณเป็นผู้รับ เลือกมุมที่จะรับ"}
-                {view.oppPicked && <span className="ml-2 rounded-full bg-zinc-100 px-3 py-1 text-xs">คู่แข่งเลือกแล้ว</span>}
-              </p>
-              <button
-                onClick={confirmPick}
-                disabled={!sel || busy}
-                className="h-12 w-full max-w-xs rounded-full bg-zinc-900 text-sm font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-30"
-              >
-                {sel ? (iShoot ? `ยิง${SIDE[sel]}` : `รับ${SIDE[sel]}`) : iShoot ? "เลือกทิศที่จะยิง" : "เลือกทิศที่จะรับ"}
-              </button>
-            </>
-          )}
-          {error && <p className="text-sm text-[#C2410C]">{error}</p>}
         </div>
       )}
-    </>
+    </div>
   );
 }
