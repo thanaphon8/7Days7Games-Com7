@@ -266,6 +266,10 @@ function Pitch({
   const dragging = !!drag && canPick && !anim;
   if (dragging && iShoot) ball = { left: drag!.x, bottom: 100 - drag!.y, scale: 0.85, rot: 0, ms: 0 };
 
+  // ผู้รับ (และไม่ได้อยู่ระหว่างแอนิเมชัน) จะเห็นถุงมือตรงหน้าแทนลูกบอล
+  const showGlove = !iShoot && !anim;
+  const hideRest = showGlove && dragging; // ขณะลาก ถุงมือจะตามนิ้วแทน
+
   // ผู้รักษาประตู
   let kx = 50;
   let kTf = "translate(-50%,0)";
@@ -382,18 +386,28 @@ function Pitch({
 
       {/* ถุงมือที่ลากตามนิ้ว (ฝั่งผู้รับ) */}
       {dragging && !iShoot && (
-        <div className="pointer-events-none absolute z-30 text-5xl" style={{ left: `${drag!.x}%`, top: `${drag!.y}%`, transform: "translate(-50%,-50%)" }}>
+        <div
+          className="pointer-events-none absolute z-30 leading-none"
+          style={{
+            left: `${drag!.x}%`,
+            top: `${drag!.y}%`,
+            transform: "translate(-50%,-50%)",
+            fontSize: "clamp(72px,11vw,128px)",
+            filter: "drop-shadow(0 6px 4px rgba(0,0,0,.25))",
+          }}
+        >
           🧤
         </div>
       )}
 
-      {/* ลูกบอล */}
+      {/* ลูกบอล (ผู้ยิง) / ถุงมือ (ผู้รับ) ตรงหน้าผู้เล่น */}
       <div
         className="pointer-events-none absolute z-20 leading-none"
         style={{
-          fontSize: "clamp(32px,5vw,64px)",
+          fontSize: "clamp(56px,9vw,112px)",
           left: `${ball.left}%`,
           bottom: `${ball.bottom}%`,
+          opacity: hideRest ? 0 : 1,
           transform: `translateX(-50%) scale(${ball.scale}) rotate(${ball.rot}deg)`,
           transition: ball.ms
             ? `left ${ball.ms}ms cubic-bezier(.2,.7,.3,1), bottom ${ball.ms}ms cubic-bezier(.2,.7,.3,1), transform ${ball.ms}ms cubic-bezier(.2,.7,.3,1)`
@@ -401,7 +415,7 @@ function Pitch({
           filter: "drop-shadow(0 6px 4px rgba(0,0,0,.25))",
         }}
       >
-        <span className={!anim && !dragging ? "kb-bob inline-block" : "inline-block"}>⚽</span>
+        <span className={!anim && !dragging ? "kb-bob inline-block" : "inline-block"}>{showGlove ? "🧤" : "⚽"}</span>
       </div>
 
       </div>
@@ -736,12 +750,40 @@ export default function KickBattle() {
   }
 
   // เมนู (ล็อบบี้/รอเพื่อน): เต็มจอ เลื่อนได้
-  const menu = (children: React.ReactNode) => (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-white font-sans text-zinc-900">
+  const menu = (children: React.ReactNode, hero = false) => (
+    <div className={`fixed inset-0 z-50 overflow-y-auto font-sans text-zinc-900 ${hero ? "bg-[#8DB885]" : "bg-white"}`}>
       <style>{CSS}</style>
-      <div className="mx-auto max-w-3xl px-6 pb-16 pt-6">
+
+      {/* พื้นหลังวิดีโอ + พื้นหลังเขียวไล่ระดับความทึบด้านล่าง (เฉพาะหน้าล็อบบี้) */}
+      {hero && (
+        <div className="pointer-events-none fixed inset-0 z-0" aria-hidden="true">
+          <video
+            src="/video/kickbattle/kickbattlepreview.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to bottom, rgba(0,0,0,.38) 0%, rgba(0,0,0,.12) 30%, rgba(141,184,133,.55) 62%, rgba(141,184,133,.92) 85%, #8DB885 100%)",
+            }}
+          />
+        </div>
+      )}
+
+      <div className="relative z-10 mx-auto max-w-3xl px-6 pb-16 pt-6">
         <div className="flex items-center justify-between">
-          <Link href="/" className="inline-flex h-10 items-center rounded-full border border-black/[.08] px-4 text-sm font-medium transition-colors hover:bg-black/[.04]">
+          <Link
+            href="/"
+            className={`inline-flex h-10 items-center rounded-full border border-black/[.08] px-4 text-sm font-medium transition-colors ${
+              hero ? "bg-white/90 shadow-sm backdrop-blur hover:bg-white" : "hover:bg-black/[.04]"
+            }`}
+          >
             กลับหน้าหลัก
           </Link>
           {code && view?.status !== "playing" && (
@@ -761,12 +803,12 @@ export default function KickBattle() {
   if (!code) {
     return menu(
       <>
-        <h1 className="mt-10 text-5xl font-semibold leading-[1.05] tracking-tight md:text-7xl">Kick Battle</h1>
-        <p className="mt-4 max-w-md text-lg leading-8 text-zinc-500">
+        <h1 className="mt-10 text-5xl font-semibold leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,.45)] md:text-7xl">Kick Battle</h1>
+        <p className="mt-4 max-w-md text-lg leading-8 text-white/90 drop-shadow-[0_1px_8px_rgba(0,0,0,.45)]">
           จุดโทษดวลเดือดสองคน ใครยิงใครรับสุ่มกันหน้าสนาม แล้วสลับบทบาทกันทุกลูก
         </p>
 
-        {error && <p className="mt-6 rounded-2xl bg-[#F4A58A]/30 px-5 py-3 text-sm">{error}</p>}
+        {error && <p className="mt-6 rounded-2xl bg-[#F4A58A] px-5 py-3 text-sm">{error}</p>}
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#F4D35E] p-7">
@@ -807,7 +849,7 @@ export default function KickBattle() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-[2rem] bg-zinc-50 p-7">
+        <div className="mt-4 rounded-[2rem] bg-white/90 p-7 shadow-sm backdrop-blur">
           <h3 className="text-lg font-semibold tracking-tight">กติกา</h3>
           <ul className="mt-3 flex flex-col gap-2 text-sm leading-6 text-zinc-600">
             <li>ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
@@ -816,7 +858,8 @@ export default function KickBattle() {
             <li>วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
-      </>
+      </>,
+      true
     );
   }
 
