@@ -27,6 +27,7 @@ type View = {
   awardSaved: [boolean, boolean];
   youRematch: boolean;
   oppRematch: boolean;
+  oppLeft: boolean; // คู่แข่งออกจากห้องแล้ว (เซิร์ฟเวอร์ต้องส่งมา)
 };
 type Anim = { entry: Shot; step: 0 | 1 | 2 };
 
@@ -425,6 +426,15 @@ export default function KickBattle() {
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   function leave() {
+    // แจ้งเซิร์ฟเวอร์ว่าเราออกจากห้องแล้ว เพื่อให้อีกฝั่งเห็นสถานะ (ไม่ต้องรอผล)
+    if (code && me) {
+      fetch("/api/kickbattle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "leave", code, playerId: me.id }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.removeItem("kb_room");
     timers.current.forEach(clearTimeout);
     timers.current = [];
@@ -448,7 +458,7 @@ export default function KickBattle() {
     }
   }, [me]);
 
-  // ดึงสถานะห้องทุก 1 วินาที
+  // ดึงสถานะห้องทุก 0.5 วินาที
   useEffect(() => {
     if (!code || !me) return;
     let stop = false;
@@ -591,7 +601,8 @@ export default function KickBattle() {
           <Link href="/" className="inline-flex h-10 items-center rounded-full border border-black/[.08] px-4 text-sm font-medium transition-colors hover:bg-black/[.04]">
             กลับหน้าหลัก
           </Link>
-          {code && (
+          {/* ซ่อนปุ่มออกจากห้องระหว่างเล่น (ออกได้ตอนรอเพื่อน หรือจากหน้าจบเกม) */}
+          {code && view?.status !== "playing" && (
             <button onClick={leave} className="h-10 rounded-full px-4 text-sm text-zinc-500 transition-colors hover:bg-black/[.04]">
               ออกจากห้อง
             </button>
@@ -791,17 +802,40 @@ export default function KickBattle() {
                   แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว
                 </p>
               ))}
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <button
-                onClick={rematch}
-                disabled={view.youRematch}
-                className="h-12 rounded-full bg-[#F4D35E] px-6 text-sm font-medium text-zinc-900 transition-opacity hover:opacity-85 disabled:opacity-60"
-              >
-                {view.youRematch ? "รอเพื่อนกดเล่นอีกรอบ…" : view.oppRematch ? "เพื่อนขอเล่นอีกรอบ กดเลย" : "เล่นอีกรอบ"}
-              </button>
-              <button onClick={leave} className="h-12 rounded-full bg-white/15 px-6 text-sm font-medium transition-colors hover:bg-white/25">
-                ออกจากห้อง
-              </button>
+
+            {/* สถานะคู่แข่ง */}
+            <p className="mt-6 inline-flex items-center gap-2 text-sm opacity-90">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: view.oppLeft ? "#E0483B" : "#5FA35A" }}
+                aria-hidden="true"
+              />
+              {view.oppLeft ? "คู่แข่งออกจากห้องแล้ว" : "คู่แข่งยังอยู่ในห้อง"}
+            </p>
+
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              {view.oppLeft ? (
+                // คู่แข่งออกแล้ว เล่นอีกรอบไม่ได้ เหลือแค่ปุ่มจบเกม
+                <button
+                  onClick={leave}
+                  className="h-12 rounded-full bg-[#F4D35E] px-6 text-sm font-medium text-zinc-900 transition-opacity hover:opacity-85"
+                >
+                  จบเกม
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={rematch}
+                    disabled={view.youRematch}
+                    className="h-12 rounded-full bg-[#F4D35E] px-6 text-sm font-medium text-zinc-900 transition-opacity hover:opacity-85 disabled:opacity-60"
+                  >
+                    {view.youRematch ? "รอเพื่อนกดเล่นอีกรอบ…" : view.oppRematch ? "เพื่อนขอเล่นอีกรอบ กดเลย" : "เล่นอีกรอบ"}
+                  </button>
+                  <button onClick={leave} className="h-12 rounded-full bg-white/15 px-6 text-sm font-medium transition-colors hover:bg-white/25">
+                    ออกจากห้อง
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

@@ -16,6 +16,7 @@ type Room = {
   winner: 0 | 1 | null;
   earned: [number, number]; // แต้มที่ได้ในแมตช์นี้ (ไปบวกเข้าคะแนนรวมแล้วทีละลูก)
   awardSaved: [boolean, boolean]; // บันทึกลงบัญชีสำเร็จหรือไม่
+  left: [boolean, boolean]; // ผู้เล่นคนนั้นกดออกจากห้องแล้ว
   updated: number;
 };
 
@@ -102,6 +103,7 @@ function view(room: Room, pid: string) {
     awardSaved: room.awardSaved,
     youRematch: room.rematch.includes(pid),
     oppRematch: !!(opp && room.rematch.includes(opp.id)),
+    oppLeft: you >= 0 && !!room.left[1 - you], // คู่แข่งออกจากห้องแล้วหรือยัง
   };
 }
 
@@ -147,6 +149,7 @@ export async function POST(req: Request) {
       winner: null,
       earned: [0, 0],
       awardSaved: [false, false],
+      left: [false, false],
       updated: Date.now(),
     });
     return NextResponse.json({ code });
@@ -158,7 +161,11 @@ export async function POST(req: Request) {
   room.updated = Date.now();
 
   if (action === "join") {
-    if (room.players.some((p) => p.id === pid)) return NextResponse.json({ code });
+    const existing = room.players.findIndex((p) => p.id === pid);
+    if (existing >= 0) {
+      room.left[existing] = false; // กลับเข้าห้องเดิม
+      return NextResponse.json({ code });
+    }
     if (room.players.length >= 2) return fail("ห้องนี้เต็มแล้ว", 409);
     room.players.push(me);
     room.first = coin(); // สุ่มว่าใครได้ยิงก่อน
@@ -170,8 +177,20 @@ export async function POST(req: Request) {
   const idx = room.players.findIndex((p) => p.id === pid);
   if (idx < 0) return fail("คุณไม่ได้อยู่ในห้องนี้", 403);
 
+  if (action === "leave") {
+    room.left[idx] = true;
+    room.rematch = room.rematch.filter((id) => id !== pid);
+    // ลบห้องเมื่อออกครบทั้งคู่ หรือเจ้าของห้องออกตอนยังไม่มีใครเข้ามา
+    // (ถ้ามีคนเหลืออยู่ ต้องเก็บห้องไว้ เพื่อให้เขาเห็นว่าคู่แข่งออกแล้ว)
+    if (room.status === "waiting" || (room.left[0] && (room.players.length < 2 || room.left[1]))) {
+      rooms.delete(code);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "pick") {
     if (room.status !== "playing") return fail("เกมยังไม่เริ่มหรือจบแล้ว", 409);
+    if (room.left[1 - idx]) return fail("คู่แข่งออกจากห้องแล้ว", 409);
     if (!isDir(body.dir)) return fail("ทิศทางไม่ถูกต้อง", 400);
     if (room.picks[pid]) return fail("คุณเลือกไปแล้ว", 409);
     room.picks[pid] = body.dir;
@@ -214,6 +233,7 @@ export async function POST(req: Request) {
 
   if (action === "rematch") {
     if (room.status !== "finished") return fail("เกมยังไม่จบ", 409);
+    if (room.left[1 - idx]) return fail("คู่แข่งออกจากห้องแล้ว", 409);
     if (!room.rematch.includes(pid)) room.rematch.push(pid);
     if (room.rematch.length >= 2) {
       room.history = [];
