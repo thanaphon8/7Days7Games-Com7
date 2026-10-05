@@ -2,11 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const TONE = ["#F4D35E", "#A8B5E8", "#F4A58A"]; // สีอันดับ 1-3
 const INK = ["#4A3B00", "#1F2A5C", "#4A2412"];
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
+const PAPER = ["#F4D35E", "#A8B5E8", "#F4A58A", "#B7CBB0", "#FFFFFF"]; // สีกระดาษพลุ (โทนเดียวกับธีม)
+const COUNT_MS = 2000; // เวลาที่เลขคะแนนวิ่ง
 
 interface PlayerRank {
   userId: string;
@@ -15,6 +17,8 @@ interface PlayerRank {
   games: number;
   score: number;
 }
+
+type Piece = { id: number; ox: number; oy: number; x: number; y: number; r: number; w: number; h: number; c: string; d: number; dur: number; round: boolean };
 
 // Helper แปลง Path รูปภาพให้อยู่ใน public/img/
 function getAvatarSrc(id?: string) {
@@ -74,10 +78,45 @@ function Crown({ className = "" }: { className?: string }) {
   );
 }
 
+// ตัวเลขวิ่งจาก 0 ไปหยุดที่ค่าจริง (เริ่มเมื่อ run = true) แล้วเรียก onDone ตอนหยุด
+function useCountUp(target: number, run: boolean, ms: number, onDone: () => void) {
+  const [v, setV] = useState(0);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+
+  useEffect(() => {
+    if (!run) return;
+    if (target <= 0) {
+      setV(0);
+      return;
+    }
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      setV(target);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / ms);
+      setV(Math.round(target * (1 - Math.pow(1 - k, 4)))); // เร็วก่อนแล้วค่อยๆ ช้าลงจนหยุด
+      if (k < 1) raf = requestAnimationFrame(step);
+      else doneRef.current();
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, run, ms]);
+
+  return v;
+}
+
 export default function RankPage() {
   const [myId, setMyId] = useState<string | null>(null);
   const [ranking, setRanking] = useState<PlayerRank[]>([]);
   const [loading, setLoading] = useState(true);
+  const [done, setDone] = useState(false);
+  const [pieces, setPieces] = useState<Piece[]>([]);
+  const firstRef = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
     // 1. ดึง ID ผู้ใช้ปัจจุบันจาก LocalStorage
@@ -108,7 +147,7 @@ export default function RankPage() {
           const formatted: PlayerRank[] = result.data.map((user: any) => {
             const scores: Record<string, number> = user.gameScores || {};
             const scoreValues = Object.values(scores);
-            
+
             const playedGames = scoreValues.filter((score) => Number(score) > 0).length;
             const totalScore = scoreValues.reduce((sum: number, score: any) => sum + (Number(score) || 0), 0);
 
@@ -147,12 +186,89 @@ export default function RankPage() {
   const rest = ranking.slice(3);
   const order = ["", "md:order-2 md:-mt-6 md:pb-12 md:pt-14", "md:order-1", "md:order-3"];
 
+  // พลุกระดาษ: ยิงจากมุมบนซ้าย-ขวาของการ์ดอันดับ 1 พุ่งขึ้นเฉียงเข้าหากลาง แล้วค่อยๆ ร่วงลง
+  function fire() {
+    setDone(true);
+    const el = firstRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const out: Piece[] = [];
+    const per = 22;
+    (["L", "R"] as const).forEach((side, s) => {
+      const ox = side === "L" ? rect.left + 24 : rect.right - 24;
+      const oy = rect.top + 36;
+      // มุมยิง: ซ้ายยิงขึ้นขวา ขวายิงขึ้นซ้าย (องศาจากแกน x, ลบ = ขึ้นบน)
+      const base = side === "L" ? -62 : -118;
+      for (let i = 0; i < per; i++) {
+        const ang = ((base + (Math.random() - 0.5) * 46) * Math.PI) / 180;
+        const speed = 150 + Math.random() * 170;
+        const round = Math.random() < 0.3;
+        out.push({
+          id: s * per + i,
+          ox,
+          oy,
+          x: Math.cos(ang) * speed,
+          y: Math.sin(ang) * speed,
+          r: (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 480),
+          w: round ? 7 : 6 + Math.random() * 3,
+          h: round ? 7 : 10 + Math.random() * 6,
+          c: PAPER[Math.floor(Math.random() * PAPER.length)],
+          d: Math.random() * 120,
+          dur: 1500 + Math.random() * 900,
+          round,
+        });
+      }
+    });
+    setPieces(out);
+    setTimeout(() => setPieces([]), 3200);
+  }
+
+  const champ = top[0];
+  const champScore = useCountUp(champ?.score ?? 0, !loading && !!champ, COUNT_MS, () => {
+    if ((champ?.score ?? 0) > 0) fire();
+  });
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
       <style>{`
         @keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } }
+        @keyframes score-pop { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
+        @keyframes paper {
+          0% { transform: translate(-50%, -50%) translate(0, 0) rotate(0); opacity: 1; animation-timing-function: cubic-bezier(.1, .8, .3, 1); }
+          36% { transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(calc(var(--r) * .4)); opacity: 1; animation-timing-function: cubic-bezier(.45, 0, .9, .55); }
+          100% { transform: translate(-50%, -50%) translate(calc(var(--x) * 1.3), calc(var(--y) + 460px)) rotate(var(--r)); opacity: 0; }
+        }
+        .paper { position: absolute; animation: paper var(--dur) linear var(--d) forwards; will-change: transform, opacity; }
+        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } .paper { display: none; } .score-pop { animation: none !important; } }
       `}</style>
+
+      {/* ชั้นพลุกระดาษ (ไม่รับการคลิก) */}
+      {pieces.length > 0 && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+          {pieces.map((p) => (
+            <span
+              key={p.id}
+              className="paper"
+              style={
+                {
+                  left: p.ox,
+                  top: p.oy,
+                  width: p.w,
+                  height: p.h,
+                  background: p.c,
+                  borderRadius: p.round ? "9999px" : 2,
+                  boxShadow: p.c === "#FFFFFF" ? "0 0 0 1px rgba(0,0,0,.08)" : undefined,
+                  "--x": `${p.x}px`,
+                  "--y": `${p.y}px`,
+                  "--r": `${p.r}deg`,
+                  "--d": `${p.d}ms`,
+                  "--dur": `${p.dur}ms`,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+        </div>
+      )}
 
       <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
         <Link href="/" aria-label="COM7 หน้าแรก" className="flex items-center">
@@ -186,6 +302,7 @@ export default function RankPage() {
                 return (
                   <li
                     key={p.userId || i}
+                    ref={rank === 1 ? firstRef : undefined}
                     style={{ backgroundColor: TONE[i], color: INK[i], animation: `rise 600ms ${i * 120}ms both cubic-bezier(.2,.8,.2,1)` }}
                     className={`rise relative flex flex-col items-center rounded-[2rem] px-6 pb-8 pt-10 text-center ${order[rank]} ${mine ? "ring-4 ring-zinc-900" : ""}`}
                   >
@@ -199,7 +316,18 @@ export default function RankPage() {
                       {mine && " (คุณ)"}
                     </p>
                     <p className="mt-1 text-sm opacity-60">เล่นแล้ว {p.games} เกม</p>
-                    <p className="mt-5 text-5xl font-semibold tabular-nums tracking-tight">{p.score.toLocaleString()}</p>
+                    {rank === 1 ? (
+                      // อันดับ 1: เลขวิ่งขึ้นแล้วหยุดที่คะแนนจริง (ล็อกความกว้างไว้ไม่ให้ตัวเลขกระตุก)
+                      <p
+                        className="score-pop mt-5 text-5xl font-semibold tabular-nums tracking-tight"
+                        style={done ? { animation: "score-pop 500ms ease-out" } : undefined}
+                        aria-label={`${p.score.toLocaleString()} แต้ม`}
+                      >
+                        {champScore.toLocaleString()}
+                      </p>
+                    ) : (
+                      <p className="mt-5 text-5xl font-semibold tabular-nums tracking-tight">{p.score.toLocaleString()}</p>
+                    )}
                     <p className="mt-1 text-xs opacity-60">แต้ม</p>
                   </li>
                 );
