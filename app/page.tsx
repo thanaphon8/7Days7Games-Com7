@@ -8,29 +8,12 @@ import EventsCarousel, {
   CloseButton,
   EVENTS,
   EventDetail,
-  FavoriteCard,
   HEART_PATH,
   useOverlay,
   type Status,
 } from "./components/events/page";
+import FavoritesSheet, { type Game } from "./components/favorites/page";
 import Navbar, { getAvatarSrc, type Profile } from "./components/navbar/page";
-
-// ===== ข้อมูลตัวอย่าง =====
-type Game = {
-  id: string;
-  name: string;
-  desc: string;
-  category: string;
-  status: Status;
-  time: string;
-  tone: string;
-  glyph: string;
-  href?: string;
-  image?: string;
-  video?: string; // วิดีโอพรีวิวเกม (ถ้ามี จะแสดงแทนรูป)
-  scoring: string;
-  rules: string[];
-};
 
 const GAMES: Game[] = [
   {
@@ -82,7 +65,35 @@ const PODIUM = ["bg-[#F4D35E]", "bg-[#A8B5E8]", "bg-[#F4A58A]"];
 
 const toneHex = (g: Game) => g.tone.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? "#E7E5E4";
 
-function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void }) {
+const savedGamesKey = (uid?: string | null) => `savedGames:${uid || "guest"}`;
+function writeSavedGames(uid: string | null | undefined, ids: string[]) {
+  try {
+    localStorage.setItem(savedGamesKey(uid), JSON.stringify(ids));
+  } catch {}
+}
+
+function HeartButton({ saved, onToggle, label, size = 44 }: { saved: boolean; onToggle: () => void; label: string; size?: number }) {
+  return (
+    <button
+      type="button"
+      aria-label={saved ? `เอา ${label} ออกจากรายการโปรด` : `บันทึก ${label} เป็นรายการโปรด`}
+      aria-pressed={saved}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(ev) => ev.stopPropagation()}
+      style={{ width: size, height: size }}
+      className="flex shrink-0 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5 outline-none transition-transform hover:scale-105 focus-visible:ring-4 focus-visible:ring-blue-400 active:scale-95"
+    >
+      <svg viewBox="0 0 24 24" width={size * 0.45} height={size * 0.45} fill={saved ? "#EF4444" : "none"} stroke={saved ? "#EF4444" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d={HEART_PATH} />
+      </svg>
+    </button>
+  );
+}
+
+function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null; saved: boolean; onToggleSave: () => void; onClose: () => void }) {
   useOverlay(!!game, onClose);
   if (!game) return null;
   const soon = game.status === "SOON";
@@ -103,7 +114,10 @@ function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void 
             <Badge status={game.status} />
             <span className="text-sm opacity-70">{game.category} · {game.time}</span>
           </div>
-          <CloseButton onClick={onClose} />
+          <div className="flex items-center gap-2">
+            <HeartButton saved={saved} onToggle={onToggleSave} label={game.name} size={48} />
+            <CloseButton onClick={onClose} />
+          </div>
         </div>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-2 lg:items-center">
@@ -175,72 +189,23 @@ function GameDetail({ game, onClose }: { game: Game | null; onClose: () => void 
   );
 }
 
-function FavoritesSheet({ open, detailOpen, saved, toggleSave, onOpenEvent, onClose }: { open: boolean; detailOpen: boolean; saved: string[]; toggleSave: (id: string) => void; onOpenEvent: (id: string) => void; onClose: () => void }) {
-  useOverlay(open && !detailOpen, onClose);
-  if (!open) return null;
-  const items = EVENTS.filter((e) => saved.includes(e.id));
-  return (
-    <div role="dialog" aria-modal="true" aria-label="รายการโปรด" style={{ animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)" }} className="fixed inset-0 z-50 overflow-y-auto bg-white text-zinc-900">
-      <div className="mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-16 pt-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">รายการโปรด</h2>
-            <p className="mt-2 text-sm text-zinc-500">{items.length > 0 ? `บันทึกไว้ ${items.length} กิจกรรม` : "กิจกรรมที่คุณกดหัวใจจะมาอยู่ที่นี่"}</p>
-          </div>
-          <CloseButton onClick={onClose} className="!bg-zinc-100 !shadow-none" />
-        </div>
-
-        {items.length === 0 ? (
-          <div className="mt-10 flex flex-col items-center rounded-[2rem] bg-zinc-50 px-6 py-20 text-center">
-            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5">
-              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d={HEART_PATH} />
-              </svg>
-            </span>
-            <h3 className="mt-6 text-xl font-semibold tracking-tight">ยังไม่มีรายการโปรด</h3>
-            <p className="mt-2 max-w-xs text-sm leading-6 text-zinc-500">กดรูปหัวใจที่การ์ด Events เพื่อบันทึกกิจกรรมที่สนใจไว้ดูทีหลัง</p>
-            <button
-              onClick={() => {
-                onClose();
-                setTimeout(() => (window.location.hash = "#events"), 50);
-              }}
-              className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700"
-            >
-              ดู Events
-            </button>
-          </div>
-        ) : (
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            {items.map((e) => (
-              <FavoriteCard key={e.id} e={e} onOpen={() => onOpenEvent(e.id)} toggleSave={toggleSave} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ===== ผู้ใช้ =====
 type RankUser = { userId?: string; name: string; avatarId?: string; games: number; score: number };
 
 export default function Home() {
   const [cat, setCat] = useState("ทั้งหมด");
   const [saved, setSaved] = useState<string[]>([]);
+  const [savedGames, setSavedGames] = useState<string[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [favOpen, setFavOpen] = useState(false);
   const [gameId, setGameId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [ready, setReady] = useState(false);
 
-  // State สำหรับเก็บข้อมูลอันดับจาก API
   const [topUsers, setTopUsers] = useState<RankUser[]>([]);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
-  // คะแนนรวมของผู้ใช้ที่ล็อกอินอยู่ (ใช้โชว์บน Navbar)
   const [score, setScore] = useState<number | null>(null);
   const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
 
-  // 1. ดึงข้อมูล Leaderboard 3 อันดับแรก
   useEffect(() => {
     async function fetchRanking() {
       try {
@@ -259,7 +224,6 @@ export default function Home() {
               const num = Number(val) || 0;
               if (num > 0) {
                 totalScore += num;
-                // แต้มโบนัส Daily Mission นับเป็นคะแนนรวม แต่ไม่นับเป็น "เกมที่เล่น"
                 if (key !== "dailyMission") playedGamesCount += 1;
               }
             }
@@ -273,7 +237,6 @@ export default function Home() {
             };
           });
 
-          // เรียงตามคะแนนรวมมากไปน้อย
           list.sort((a, b) => b.score - a.score);
           setTopUsers(list.slice(0, 3));
           setScoreMap(
@@ -288,7 +251,6 @@ export default function Home() {
     fetchRanking();
   }, []);
 
-  // 2. ดึงข้อมูล Profile และ Saved Events จาก LocalStorage และ API
   useEffect(() => {
     async function loadProfileAndData() {
       const localData = localStorage.getItem("profile");
@@ -310,6 +272,14 @@ export default function Home() {
         }
       }
 
+      try {
+        const rawGames = localStorage.getItem(savedGamesKey(currentUserId));
+        if (rawGames) {
+          const arr = JSON.parse(rawGames);
+          if (Array.isArray(arr)) setSavedGames(arr);
+        }
+      } catch {}
+
       if (currentUserId) {
         try {
           const res = await fetch(`/api/user?userId=${currentUserId}`, { cache: "no-store" });
@@ -322,6 +292,10 @@ export default function Home() {
               avatar: result.data.avatar || result.data.avatarId || localProfile?.avatar || "p01",
             });
             setSaved(result.data.savedEvents || []);
+            if (Array.isArray(result.data.savedGames)) {
+              setSavedGames(result.data.savedGames);
+              writeSavedGames(currentUserId, result.data.savedGames);
+            }
 
             const gs = result.data.gameScores;
             if (gs && typeof gs === "object") {
@@ -342,7 +316,6 @@ export default function Home() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  // 3. บันทึกรายการโปรด (Saved Events)
   async function toggleSave(id: string) {
     const nextSaved = saved.includes(id) ? saved.filter((x) => x !== id) : [...saved, id];
     setSaved(nextSaved);
@@ -363,21 +336,41 @@ export default function Home() {
     }
   }
 
+  async function toggleSaveGame(id: string) {
+    const nextSaved = savedGames.includes(id) ? savedGames.filter((x) => x !== id) : [...savedGames, id];
+    setSavedGames(nextSaved);
+    writeSavedGames(profile?.userId, nextSaved);
+
+    if (profile?.userId) {
+      try {
+        await fetch("/api/user", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: profile.userId,
+            savedGames: nextSaved,
+          }),
+        });
+      } catch (error) {
+        console.error("Failed to sync favorite games with database:", error);
+      }
+    }
+  }
+
   const list = GAMES.filter((g) => cat === "ทั้งหมด" || g.category === cat);
+  const detailGame = GAMES.find((g) => g.id === gameId) ?? null;
 
   const isFirst =
     !!profile?.userId &&
     (topUsers[0]?.score ?? 0) > 0 &&
     topUsers[0]?.userId === profile.userId;
 
-  // ถ้า API ผู้ใช้ไม่ส่ง gameScores มา ให้ใช้คะแนนจากรายการอันดับแทน
   const myScore = score ?? (profile?.userId ? scoreMap[profile.userId] ?? null : null);
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
-      {/* ===== เมนู / NAVBAR ===== */}
       <Navbar
-        saved={saved}
+        saved={[...saved, ...savedGames]}
         profile={profile}
         ready={ready}
         isFirst={isFirst}
@@ -386,10 +379,8 @@ export default function Home() {
       />
 
       <main className="flex w-full max-w-5xl flex-col gap-6 px-6 pb-24">
-        {/* ===== Events (เลื่อนอัตโนมัติ) ===== */}
         <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId} />
 
-        {/* ===== ตัวเลขสรุป ===== */}
         <section className="grid grid-cols-3 gap-3">
           {[
             [totalParticipants > 0 ? String(totalParticipants) : "0", "ผู้เข้าร่วม"],
@@ -403,7 +394,6 @@ export default function Home() {
           ))}
         </section>
 
-        {/* ===== เกม ===== */}
         <div id="games" className="flex flex-wrap items-center justify-between gap-4 pt-10">
           <h2 className="text-2xl font-semibold tracking-tight">เกมทั้งหมด</h2>
           <div className="flex flex-wrap gap-2">
@@ -451,16 +441,18 @@ export default function Home() {
                   <p className="text-sm opacity-60">{g.category} · {g.time}</p>
                   <h3 className="mt-1 text-3xl font-semibold tracking-tight">{g.name}</h3>
                   <p className="mt-2 max-w-xs text-sm leading-6 opacity-70">{g.desc}</p>
-                  <span className={`mt-5 inline-flex h-11 items-center rounded-full px-5 text-sm font-medium ${soon ? "bg-black/10 text-zinc-500" : "bg-zinc-900 text-white"}`}>
-                    {soon ? "เปิดเร็วๆ นี้" : "เล่นเกม"}
-                  </span>
+                  <div className="mt-5 flex items-center justify-between gap-3">
+                    <span className={`inline-flex h-11 items-center rounded-full px-5 text-sm font-medium ${soon ? "bg-black/10 text-zinc-500" : "bg-zinc-900 text-white"}`}>
+                      {soon ? "เปิดเร็วๆ นี้" : "เล่นเกม"}
+                    </span>
+                    <HeartButton saved={savedGames.includes(g.id)} onToggle={() => toggleSaveGame(g.id)} label={g.name} />
+                  </div>
                 </div>
               </article>
             );
           })}
         </section>
 
-        {/* ===== อันดับ (ดึงข้อมูล Dynamic จาก API) ===== */}
         <section id="ranking" className="grid gap-6 pt-10 md:grid-cols-[1fr_1.4fr]">
           <div className="flex flex-col justify-between gap-6">
             <div>
@@ -495,7 +487,6 @@ export default function Home() {
           </ol>
         </section>
 
-        {/* ===== วิธีเล่น ===== */}
         <section id="how" className="pt-10">
           <h2 className="text-2xl font-semibold tracking-tight">วิธีเล่น</h2>
           <ol className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -511,7 +502,6 @@ export default function Home() {
           </ol>
         </section>
 
-        {/* ===== ปิดท้าย ===== */}
         <section className="mt-10 flex flex-col items-start justify-between gap-6 rounded-[2rem] bg-[#A8B5E8] p-8 text-[#1F2A5C] sm:flex-row sm:items-center md:p-10">
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">พร้อมเล่นรอบแรกหรือยัง</h2>
@@ -527,8 +517,22 @@ export default function Home() {
         7 Days 7 Games · มินิเกมสำหรับพักสมอง
       </footer>
 
-      <GameDetail game={GAMES.find((g) => g.id === gameId) ?? null} onClose={() => setGameId(null)} />
-      <FavoritesSheet open={favOpen} detailOpen={!!openId} saved={saved} toggleSave={toggleSave} onOpenEvent={setOpenId} onClose={() => setFavOpen(false)} />
+      <GameDetail game={detailGame} saved={!!detailGame && savedGames.includes(detailGame.id)} onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)} onClose={() => setGameId(null)} />
+      
+      {/* Component รายการโปรดที่แยกออกมา */}
+      <FavoritesSheet
+        open={favOpen}
+        detailOpen={!!openId || !!gameId}
+        saved={saved}
+        savedGames={savedGames}
+        gamesList={GAMES}
+        toggleSave={toggleSave}
+        toggleSaveGame={toggleSaveGame}
+        onOpenEvent={setOpenId}
+        onOpenGame={setGameId}
+        onClose={() => setFavOpen(false)}
+      />
+
       <EventDetail
         sel={EVENTS.find((e) => e.id === openId) ?? null}
         saved={saved}

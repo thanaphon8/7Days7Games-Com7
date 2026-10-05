@@ -9,7 +9,7 @@ export function Badge({ status }: { status: Status }) {
   const now = status === "NOW";
   return (
     <span
-      className={`inline-flex h-8 items-center rounded-full px-4 text-xs font-semibold tracking-wide ${
+      className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold tracking-wide ${
         now ? "bg-white/70 text-zinc-900" : "bg-black/10 text-zinc-600"
       }`}
     >
@@ -34,6 +34,7 @@ export type EventItem = {
   cover?: string;
   logo?: string;
   bracket?: { teams: string[]; note: string };
+  prize?: { rank: string; amount: string; unit: string };
   info: [string, string][];
   rules: string[];
 };
@@ -44,8 +45,9 @@ export const EVENTS: EventItem[] = [
     desc: "ศึกชิงแชมป์ PUBG Mobile ของบริษัท รวมทีม 4 คน ลงสนามแบบ Squad ลุ้นเป็นทีมสุดท้ายที่รอดชีวิต",
     cta: "ดูรายละเอียด", href: "#", bg: "#B7CBB0", fg: "#1F3A2A", visual: "shapes",
     image: "/img/pubg1.png", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png",
+    prize: { rank: "ผู้ชนะอันดับ 1 รับ", amount: "60,000", unit: "คะแนน" },
     info: [["วันแข่ง", "26 ต.ค. 2026 เวลา 18:00 น."], ["รูปแบบ", "Squad ทีมละ 4 คน"], ["รอบการแข่ง", "คัดเลือก 3 แมตช์ แล้วน็อกเอาต์ 8 ทีม"]],
-    rules: ["สมัครเป็นทีม ทีมละ 4 คน และมีผู้เล่นสำรองได้ 1 คน", "รอบคัดเลือกแข่ง 3 แมตช์ คะแนนรวมมาจากอันดับของทีมและจำนวน Kill", "8 ทีมคะแนนสูงสุดเข้าสู่รอบน็อกเอาต์ แข่งโหมด Team Deathmatch 4 ต่อ 4", "ทีมที่ชนะรอบชิงชนะเลิศเป็นแชมป์ รางวัลจะประกาศก่อนวันแข่ง", "ทุกคนต้องใช้บัญชีของตัวเอง และห้ามใช้โปรแกรมช่วยเล่นทุกชนิด"],
+    rules: ["สมัครเป็นทีม ทีมละ 4 คน และมีผู้เล่นสำรองได้ 1 คน", "รอบคัดเลือกแข่ง 3 แมตช์ คะแนนรวมมาจากอันดับของทีมและจำนวน Kill", "8 ทีมคะแนนสูงสุดเข้าสู่รอบน็อกเอาต์ แข่งโหมด Team Deathmatch 4 ต่อ 4", "ทีมที่ชนะรอบชิงชนะเลิศเป็นแชมป์ ผู้ชนะอันดับ 1 รับ 60,000 คะแนน", "ทุกคนต้องใช้บัญชีของตัวเอง และห้ามใช้โปรแกรมช่วยเล่นทุกชนิด"],
     bracket: {
       teams: ["Alpha Squad", "Night Owls", "Red Dragons", "Pixel Force", "Blue Wolves", "Gold Rush", "Silent Hawks", "Neon Crew"],
       note: "ตัวอย่างสาย 8 ทีมสุดท้าย เรียงตามอันดับจากรอบคัดเลือก (ข้อมูลจำลอง) ผลแต่ละรอบจะอัปเดตเมื่อเริ่มแข่ง",
@@ -80,9 +82,9 @@ function EventVisual({ kind }: { kind: EventItem["visual"] }) {
   if (kind === "memory") {
     const open: Record<number, [string, string]> = { 0: ["#F4A58A", "◐"], 3: ["#A8B5E8", "▦"], 5: ["#B7CBB0", "∿"], 6: ["#A8B5E8", "▦"], 9: ["#F4A58A", "◐"], 11: ["#B7CBB0", "∿"] };
     return (
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-2">
         {Array.from({ length: 12 }, (_, i) => (
-          <div key={i} style={open[i] ? { backgroundColor: open[i][0] } : undefined} className={`flex h-16 w-16 items-center justify-center rounded-2xl text-2xl text-zinc-900 ${open[i] ? "" : "bg-zinc-900"}`}>
+          <div key={i} style={open[i] ? { backgroundColor: open[i][0] } : undefined} className={`flex h-12 w-12 items-center justify-center rounded-xl text-lg text-zinc-900 ${open[i] ? "" : "bg-zinc-900"}`}>
             {open[i]?.[1]}
           </div>
         ))}
@@ -91,9 +93,9 @@ function EventVisual({ kind }: { kind: EventItem["visual"] }) {
   }
   if (kind === "tiles") {
     return (
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2">
         {["2", "4", "8", "16", "32", "64", "128", "256", "512"].map((n, i) => (
-          <div key={n} style={{ backgroundColor: TILE_COLORS[i % 4] }} className="flex h-20 w-20 items-center justify-center rounded-2xl text-xl font-semibold text-zinc-900">
+          <div key={n} style={{ backgroundColor: TILE_COLORS[i % 4] }} className="flex h-14 w-14 items-center justify-center rounded-xl text-base font-semibold text-zinc-900">
             {n}
           </div>
         ))}
@@ -101,10 +103,32 @@ function EventVisual({ kind }: { kind: EventItem["visual"] }) {
     );
   }
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-3 gap-2">
       {["#F4D35E", "#A8B5E8", "#B7CBB0", "#B7CBB0", "#F4A58A", "#F4D35E", "#A8B5E8", "#F4D35E", "#F4A58A"].map((c, i) => (
-        <div key={i} style={{ backgroundColor: c }} className={`h-20 w-20 ${i % 4 === 0 ? "rounded-full" : i % 4 === 2 ? "rounded-t-full rounded-b-xl" : "rounded-2xl"}`} />
+        <div key={i} style={{ backgroundColor: c }} className={`h-14 w-14 ${i % 4 === 0 ? "rounded-full" : i % 4 === 2 ? "rounded-t-full rounded-b-lg" : "rounded-xl"}`} />
       ))}
+    </div>
+  );
+}
+
+// ===== ปรับแต่ง PrizeChip ให้เหมือนป้ายคะแนนใน Navbar =====
+function PrizeChip({ prize }: { prize: NonNullable<EventItem["prize"]> }) {
+  return (
+    <div className="inline-flex items-center gap-2">
+      {prize.rank && (
+        <span className="text-xs font-medium opacity-80">{prize.rank}</span>
+      )}
+      <div
+        className="flex h-9 items-center gap-1.5 rounded-full bg-[#F4D35E] px-3.5 text-sm font-semibold tabular-nums text-[#4A3B00] shadow-sm"
+        title={`${prize.rank} ${prize.amount} ${prize.unit}`}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor">
+          <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
+        </svg>
+        <span>
+          {prize.amount} <span className="text-xs font-normal opacity-85">{prize.unit}</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -121,7 +145,7 @@ function TitleContent({ e, logoClass }: { e: EventItem; logoClass: string }) {
   return (
     <>
       <span className="sr-only">{e.lines.join(" ")}</span>
-      <Image src={e.logo} alt="" width={480} height={160} priority className={`h-auto rounded-2xl ${logoClass}`} />
+      <Image src={e.logo} alt="" width={480} height={160} priority className={`h-auto rounded-xl ${logoClass}`} />
     </>
   );
 }
@@ -141,12 +165,12 @@ function HeartButton({ on, onClick, className = "", tabIndex = 0 }: { on: boolea
         e.stopPropagation();
         onClick();
       }}
-      className={`flex h-11 w-11 items-center justify-center rounded-full bg-white text-zinc-900 shadow-md ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-90 ${className}`}
+      className={`flex h-9 w-9 items-center justify-center rounded-full bg-white text-zinc-900 shadow-md ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-90 ${className}`}
     >
       <svg
         viewBox="0 0 24 24"
-        width="22"
-        height="22"
+        width="18"
+        height="18"
         fill={on ? "#E5484D" : "none"}
         stroke={on ? "#E5484D" : "currentColor"}
         strokeWidth="2"
@@ -175,7 +199,9 @@ function EventCard({ e, titleTag, saved, toggleSave, onOpen, clone = false, styl
       onClick={onOpen}
       onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && onOpen()}
       style={{ backgroundColor: e.bg, color: e.fg, ...style }}
-      className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden rounded-[2rem] p-5 outline-none focus-visible:ring-4 focus-visible:ring-blue-400 md:grid-cols-2 md:p-6 ${e.image ? "min-h-[30rem] md:min-h-[26rem]" : ""}`}
+      className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden rounded-[2rem] p-4 outline-none focus-visible:ring-4 focus-visible:ring-blue-400 md:grid-cols-2 md:p-5 ${
+        e.image ? "min-h-[22rem] md:min-h-[20rem]" : "min-h-[20rem]"
+      }`}
     >
       {e.image && (
         <>
@@ -188,24 +214,29 @@ function EventCard({ e, titleTag, saved, toggleSave, onOpen, clone = false, styl
         on={saved.includes(e.id)}
         onClick={() => toggleSave(e.id)}
         tabIndex={clone ? -1 : 0}
-        className="absolute right-5 top-5 z-10 md:right-6 md:top-6"
+        className="absolute right-4 top-4 z-10 md:right-5 md:top-5"
       />
-      <div className="relative z-10 flex flex-col justify-between gap-16 p-3 md:p-6">
-        <div className="flex items-center gap-3">
+      <div className="relative z-10 flex flex-col justify-between gap-4 p-2 md:p-4">
+        <div className="flex items-center gap-2.5">
           <Badge status={e.status} />
-          <span className="text-sm opacity-70">{e.meta}</span>
+          <span className="text-xs opacity-70">{e.meta}</span>
         </div>
         <div>
-          <Title className="text-6xl font-semibold leading-[1.05] tracking-tight md:text-7xl">
-            <TitleContent e={e} logoClass="w-full max-w-[18rem] md:max-w-[22rem]" />
+          <Title className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+            <TitleContent e={e} logoClass="w-full max-w-[14rem] md:max-w-[17rem]" />
           </Title>
-          <p className="mt-5 max-w-xs text-base leading-7 opacity-70">{e.desc}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a href={e.href} onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop} tabIndex={clone ? -1 : 0} style={{ backgroundColor: e.fg }} className="inline-flex h-12 items-center rounded-full px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
+          <p className="mt-2.5 max-w-xs text-sm leading-6 opacity-70">{e.desc}</p>
+          {e.prize && (
+            <div className="mt-3">
+              <PrizeChip prize={e.prize} />
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2.5">
+            <a href={e.href} onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop} tabIndex={clone ? -1 : 0} style={{ backgroundColor: e.fg }} className="inline-flex h-10 items-center rounded-full px-5 text-xs font-medium text-white transition-opacity hover:opacity-85">
               {e.cta}
             </a>
             {isMain && (
-              <a href="#how" onClick={stop} tabIndex={clone ? -1 : 0} style={{ borderColor: `${e.fg}33` }} className="inline-flex h-12 items-center rounded-full border px-6 text-sm font-medium transition-colors hover:bg-black/5">
+              <a href="#how" onClick={stop} tabIndex={clone ? -1 : 0} style={{ borderColor: `${e.fg}33` }} className="inline-flex h-10 items-center rounded-full border px-5 text-xs font-medium transition-colors hover:bg-black/5">
                 วิธีเล่น
               </a>
             )}
@@ -213,7 +244,7 @@ function EventCard({ e, titleTag, saved, toggleSave, onOpen, clone = false, styl
         </div>
       </div>
       {!e.image && (
-        <div className="flex min-h-72 items-center justify-center rounded-3xl bg-white p-6">
+        <div className="flex min-h-48 items-center justify-center rounded-2xl bg-white p-4">
           <EventVisual kind={e.visual} />
         </div>
       )}
@@ -276,7 +307,7 @@ export default function EventsCarousel({ saved, toggleSave, setOpenId, overlayOp
         })}
       </div>
 
-      <div className="mt-5 flex justify-center gap-2">
+      <div className="mt-4 flex justify-center gap-2">
         {EVENTS.map((e, i) => (
           <button
             key={e.id}
@@ -287,7 +318,7 @@ export default function EventsCarousel({ saved, toggleSave, setOpenId, overlayOp
               setPos((p) => p - (((p % n) + n) % n) + i);
               setTimeout(() => setInstant(false), 60);
             }}
-            className={`h-2.5 rounded-full transition-all duration-300 ${active === i ? "w-8 bg-zinc-900" : "w-2.5 bg-zinc-300 hover:bg-zinc-400"}`}
+            className={`h-2 rounded-full transition-all duration-300 ${active === i ? "w-6 bg-zinc-900" : "w-2 bg-zinc-300 hover:bg-zinc-400"}`}
           />
         ))}
       </div>
@@ -315,9 +346,9 @@ export function CloseButton({ onClick, className = "" }: { onClick: () => void; 
       autoFocus
       aria-label="ปิด"
       onClick={onClick}
-      className={`flex h-11 w-11 items-center justify-center rounded-full bg-white text-zinc-900 shadow-md ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-90 ${className}`}
+      className={`flex h-10 w-10 items-center justify-center rounded-full bg-white text-zinc-900 shadow-md ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-90 ${className}`}
     >
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
         <path d="M6 6l12 12M18 6L6 18" />
       </svg>
     </button>
@@ -419,6 +450,11 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
               <TitleContent e={sel} logoClass="w-full max-w-[20rem] md:max-w-[28rem]" />
             </h2>
             <p className="mt-6 max-w-md text-lg leading-8 opacity-80">{sel.desc}</p>
+            {sel.prize && (
+              <div className="mt-6">
+                <PrizeChip prize={sel.prize} />
+              </div>
+            )}
           </div>
           {sel.image ? (
             <div className="relative min-h-72 overflow-hidden rounded-[2rem] bg-zinc-900 lg:min-h-80">
@@ -489,7 +525,7 @@ export function FavoriteCard({ e, onOpen, toggleSave }: { e: EventItem; onOpen: 
       onClick={onOpen}
       onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && onOpen()}
       style={{ backgroundColor: e.bg, color: e.fg }}
-      className="relative flex min-h-48 cursor-pointer flex-col justify-between overflow-hidden rounded-[2rem] p-5 outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-4 focus-visible:ring-blue-400"
+      className="relative flex min-h-40 cursor-pointer flex-col justify-between overflow-hidden rounded-[2rem] p-4 outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-4 focus-visible:ring-blue-400"
     >
       {e.image ? (
         <>
@@ -497,22 +533,22 @@ export function FavoriteCard({ e, onOpen, toggleSave }: { e: EventItem; onOpen: 
           <div aria-hidden className="absolute inset-0" style={{ background: `linear-gradient(to right, ${e.bg} 0%, ${e.bg}F2 38%, ${e.bg}99 60%, ${e.bg}00 85%)` }} />
         </>
       ) : (
-        <div aria-hidden className="absolute bottom-5 right-5 flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-white">
-          <div className="scale-[0.32]">
+        <div aria-hidden className="absolute bottom-4 right-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white">
+          <div className="scale-[0.25]">
             <EventVisual kind={e.visual} />
           </div>
         </div>
       )}
       <HeartButton on onClick={() => toggleSave(e.id)} className="absolute right-4 top-4 z-10" />
-      <div className="relative z-10 flex items-center gap-3 pr-14">
+      <div className="relative z-10 flex items-center gap-2.5 pr-12">
         <Badge status={e.status} />
-        <span className="text-sm opacity-70">{e.meta}</span>
+        <span className="text-xs opacity-70">{e.meta}</span>
       </div>
       <div className="relative z-10 max-w-[62%]">
-        <h3 className="text-3xl font-semibold leading-[1.1] tracking-tight">
-          <TitleContent e={e} logoClass="w-full max-w-[10rem]" />
+        <h3 className="text-2xl font-semibold leading-[1.1] tracking-tight">
+          <TitleContent e={e} logoClass="w-full max-w-[8rem]" />
         </h3>
-        <p className="mt-2 line-clamp-2 text-sm leading-6 opacity-70">{e.desc}</p>
+        <p className="mt-1 line-clamp-2 text-xs leading-5 opacity-70">{e.desc}</p>
       </div>
     </article>
   );

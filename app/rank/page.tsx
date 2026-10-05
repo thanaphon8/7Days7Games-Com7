@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import Navbar, { type Profile } from "../components/navbar/page";
 
 const TONE = ["#F4D35E", "#A8B5E8", "#F4A58A"]; // สีอันดับ 1-3
 const INK = ["#4A3B00", "#1F2A5C", "#4A2412"];
@@ -111,7 +113,11 @@ function useCountUp(target: number, run: boolean, ms: number, onDone: () => void
 }
 
 export default function RankPage() {
+  const router = useRouter();
   const [myId, setMyId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [saved, setSaved] = useState<string[]>([]);
+  const [ready, setReady] = useState(false);
   const [ranking, setRanking] = useState<PlayerRank[]>([]);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
@@ -119,17 +125,46 @@ export default function RankPage() {
   const firstRef = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
-    // 1. ดึง ID ผู้ใช้ปัจจุบันจาก LocalStorage
+    // 1. ดึง ID และโปรไฟล์ผู้ใช้ปัจจุบันจาก LocalStorage (ใช้กับ Navbar)
+    let uid: string | null = null;
+    let localName = "ผู้เล่นใหม่";
+    let localAvatar = "p01";
     try {
       const v = localStorage.getItem("profile");
       if (v) {
-        const profile = JSON.parse(v);
-        setMyId(profile?.userId || profile?.id || profile?._id || null);
+        const parsed = JSON.parse(v);
+        uid = parsed?.userId || parsed?.id || parsed?._id || null;
+        localName = parsed?.name || localName;
+        localAvatar = parsed?.avatar || parsed?.avatarId || localAvatar;
+        setProfile({ userId: uid || undefined, name: localName, avatar: localAvatar });
       } else {
         const directId = localStorage.getItem("userId");
-        if (directId) setMyId(directId);
+        if (directId) uid = directId;
       }
+      setMyId(uid);
     } catch {}
+
+    // 1.1 อัปเดตโปรไฟล์และรายการโปรดจากฐานข้อมูล
+    async function loadProfile() {
+      if (uid) {
+        try {
+          const res = await fetch(`/api/user?userId=${uid}`, { cache: "no-store" });
+          const result = await res.json();
+          if (result.success && result.data) {
+            setProfile({
+              userId: uid as string,
+              name: result.data.name || localName,
+              avatar: result.data.avatar || result.data.avatarId || localAvatar,
+            });
+            setSaved([...(result.data.savedEvents || []), ...(result.data.savedGames || [])]);
+          }
+        } catch (error) {
+          console.error("Failed to load user data:", error);
+        }
+      }
+      setReady(true);
+    }
+    loadProfile();
 
     // 2. ดึงข้อมูลรายชื่อและคะแนนโดยสั่งห้ามจำ Cache
     async function fetchLeaderboard() {
@@ -184,7 +219,14 @@ export default function RankPage() {
 
   const top = ranking.slice(0, 3);
   const rest = ranking.slice(3);
+  // เดสก์ท็อป: จัดเป็นแท่นรับรางวัล 2-1-3 ส่วนมือถืออันดับ 1 เต็มแถว แล้วอันดับ 2-3 อยู่เคียงกัน
   const order = ["", "md:order-2 md:-mt-6 md:pb-12 md:pt-14", "md:order-1", "md:order-3"];
+
+  // สถิติรวม และอันดับของผู้ใช้ปัจจุบัน
+  const myIdx = myId ? ranking.findIndex((p) => p.userId === myId) : -1;
+  const me = myIdx >= 0 ? ranking[myIdx] : null;
+  const gap = me && myIdx > 0 ? ranking[myIdx - 1].score - me.score : 0;
+  const isFirst = !!myId && (ranking[0]?.score ?? 0) > 0 && ranking[0]?.userId === myId;
 
   // พลุกระดาษ: ยิงจากมุมบนซ้าย-ขวาของการ์ดอันดับ 1 พุ่งขึ้นเฉียงเข้าหากลาง แล้วค่อยๆ ร่วงลง
   function fire() {
@@ -270,63 +312,105 @@ export default function RankPage() {
         </div>
       )}
 
-      <header className="flex w-full max-w-5xl items-center justify-between px-6 py-6">
-        <Link href="/" aria-label="COM7 หน้าแรก" className="flex items-center">
-          <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto origin-left scale-[2.1]" />
-        </Link>
-        <Link href="/" className="flex h-10 items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]">
-          กลับหน้าแรก
-        </Link>
-      </header>
+      <Navbar
+        saved={saved}
+        profile={profile}
+        ready={ready}
+        isFirst={isFirst}
+        score={me ? me.score : null}
+        onOpenFavorites={() => router.push("/")}
+      />
 
       <main className="w-full max-w-5xl px-6 pb-24">
-        <div className="pt-6">
-          <p className="text-sm text-zinc-500">7 Days 7 Games</p>
-          <h1 className="mt-1 text-6xl font-semibold tracking-tight md:text-7xl">อันดับ</h1>
-          <p className="mt-3 max-w-md text-base leading-7 text-zinc-500">
-            แต้มสะสมจากทุกรอบที่เล่น มีผู้เข้าร่วมทั้งหมด {ranking.length} คน
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-4 pt-2 sm:pt-6">
+          <div>
+            <h1 className="text-5xl font-semibold tracking-tight sm:text-6xl md:text-7xl">อันดับ</h1>
+            <p className="mt-3 max-w-md text-sm leading-6 text-zinc-500 sm:text-base sm:leading-7">
+              แต้มสะสมจากทุกรอบที่เล่น อัปเดตทุกครั้งที่มีคนเล่นจบ
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-3 rounded-full bg-zinc-50 py-2.5 pl-4 pr-6">
+            <span aria-hidden className="h-3 w-3 rounded-full bg-[#9CC593]" />
+            <span className="text-sm text-zinc-500">ผู้เข้าร่วม</span>
+            <span className="text-2xl font-semibold tabular-nums tracking-tight">
+              {loading ? "–" : ranking.length.toLocaleString()}
+            </span>
+          </div>
         </div>
 
         {loading ? (
-          <div className="mt-20 text-center text-zinc-400">กำลังโหลดข้อมูลอันดับ...</div>
+          /* โครงระหว่างโหลด */
+          <div aria-busy className="mt-10 animate-pulse sm:mt-14">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+              <div className="col-span-2 h-60 rounded-[2rem] bg-zinc-100 md:col-span-1 md:h-72" />
+              <div className="h-52 rounded-[2rem] bg-zinc-100 md:h-60" />
+              <div className="h-52 rounded-[2rem] bg-zinc-100 md:h-60" />
+            </div>
+            <p className="mt-6 text-center text-sm text-zinc-400">กำลังโหลดข้อมูลอันดับ...</p>
+          </div>
         ) : ranking.length === 0 ? (
-          <div className="mt-20 text-center text-zinc-400">ยังไม่มีข้อมูลอันดับในขณะนี้</div>
+          <div className="mt-10 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center text-[#4A3B00] sm:mt-14">
+            <Crown className="w-16" />
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight">ยังไม่มีข้อมูลอันดับ</h2>
+            <p className="mt-2 max-w-xs text-sm leading-6 opacity-70">เล่นเกมรอบแรกเพื่อเป็นคนแรกบนกระดาน</p>
+            <Link href="/#games" className="mt-6 inline-flex h-12 items-center rounded-full bg-[#4A3B00] px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
+              เลือกเกม
+            </Link>
+          </div>
         ) : (
           <>
+            {/* ===== อันดับของคุณ (แสดงเมื่ออยู่นอก 3 อันดับแรก) ===== */}
+            {me && myIdx >= 3 && (
+              <section className="mt-6 flex items-center gap-4 rounded-[2rem] bg-[#9CC593] p-4 text-[#1E3A1A] sm:mt-8 sm:p-5">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/70 text-xl font-semibold tabular-nums">
+                  {myIdx + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm opacity-70">อันดับของคุณ</p>
+                  <p className="truncate text-lg font-semibold tracking-tight sm:text-xl">
+                    {gap > 0 ? `อีก ${gap.toLocaleString()} แต้มจะแซงอันดับ ${myIdx}` : `แต้มเท่ากับอันดับ ${myIdx}`}
+                  </p>
+                </div>
+                <span className="text-2xl font-semibold tabular-nums sm:text-3xl">{me.score.toLocaleString()}</span>
+              </section>
+            )}
+
             {/* ===== 3 อันดับแรก ===== */}
-            <ol className="mt-14 grid gap-4 md:grid-cols-3 md:items-end">
+            <ol className="mt-10 grid grid-cols-2 gap-3 sm:mt-14 md:grid-cols-3 md:items-end md:gap-4">
               {top.map((p, i) => {
                 const rank = i + 1;
                 const mine = myId ? p.userId === myId : false;
+                const first = rank === 1;
                 return (
                   <li
                     key={p.userId || i}
-                    ref={rank === 1 ? firstRef : undefined}
+                    ref={first ? firstRef : undefined}
                     style={{ backgroundColor: TONE[i], color: INK[i], animation: `rise 600ms ${i * 120}ms both cubic-bezier(.2,.8,.2,1)` }}
-                    className={`rise relative flex flex-col items-center rounded-[2rem] px-6 pb-8 pt-10 text-center ${order[rank]} ${mine ? "ring-4 ring-zinc-900" : ""}`}
+                    className={`rise relative flex min-w-0 flex-col items-center rounded-[2rem] px-4 pb-7 pt-9 text-center sm:px-6 sm:pb-8 sm:pt-10 ${
+                      first ? "col-span-2 md:col-span-1" : ""
+                    } ${order[rank]} ${mine ? "ring-4 ring-zinc-900" : ""}`}
                   >
-                    <span className="absolute left-5 top-5 flex h-9 w-9 items-center justify-center rounded-full bg-white/70 text-sm font-semibold">{rank}</span>
+                    <span className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/70 text-sm font-semibold sm:left-5 sm:top-5">{rank}</span>
                     <div className="relative mt-4">
-                      {rank === 1 && <Crown className="absolute -top-9 left-1/2 w-14 -translate-x-1/2 -rotate-6" />}
-                      <Avatar id={p.avatar} size={`${rank === 1 ? "h-28 w-28" : "h-24 w-24"} ring-4 ring-white/80`} />
+                      {first && <Crown className="absolute -top-9 left-1/2 w-14 -translate-x-1/2 -rotate-6" />}
+                      <Avatar id={p.avatar} size={`${first ? "h-28 w-28 sm:h-32 sm:w-32" : "h-20 w-20 sm:h-24 sm:w-24"} ring-4 ring-white/80`} />
                     </div>
-                    <p className="mt-5 max-w-full truncate text-2xl font-semibold tracking-tight">
+                    <p className={`mt-4 max-w-full truncate font-semibold tracking-tight sm:mt-5 ${first ? "text-2xl" : "text-lg sm:text-2xl"}`}>
                       {p.name}
                       {mine && " (คุณ)"}
                     </p>
-                    <p className="mt-1 text-sm opacity-60">เล่นแล้ว {p.games} เกม</p>
-                    {rank === 1 ? (
-                      // อันดับ 1: เลขวิ่งขึ้นแล้วหยุดที่คะแนนจริง (ล็อกความกว้างไว้ไม่ให้ตัวเลขกระตุก)
+                    <p className="mt-1 text-xs opacity-60 sm:text-sm">เล่นแล้ว {p.games} เกม</p>
+                    {first ? (
+                      // อันดับ 1: เลขวิ่งขึ้นแล้วหยุดที่คะแนนจริง
                       <p
-                        className="score-pop mt-5 text-5xl font-semibold tabular-nums tracking-tight"
+                        className="score-pop mt-4 text-5xl font-semibold tabular-nums tracking-tight sm:mt-5"
                         style={done ? { animation: "score-pop 500ms ease-out" } : undefined}
                         aria-label={`${p.score.toLocaleString()} แต้ม`}
                       >
                         {champScore.toLocaleString()}
                       </p>
                     ) : (
-                      <p className="mt-5 text-5xl font-semibold tabular-nums tracking-tight">{p.score.toLocaleString()}</p>
+                      <p className="mt-4 text-3xl font-semibold tabular-nums tracking-tight sm:mt-5 sm:text-5xl">{p.score.toLocaleString()}</p>
                     )}
                     <p className="mt-1 text-xs opacity-60">แต้ม</p>
                   </li>
@@ -336,19 +420,27 @@ export default function RankPage() {
 
             {/* ===== อันดับที่ 4 เป็นต้นไป ===== */}
             {rest.length > 0 && (
-              <ol className="mt-6 flex flex-col gap-3">
+              <ol className="mt-6 flex flex-col gap-2 sm:gap-3">
                 {rest.map((p, i) => {
                   const mine = myId ? p.userId === myId : false;
                   return (
-                    <li key={p.userId || i} className={`flex items-center gap-4 rounded-full bg-zinc-50 p-3 pr-6 ${mine ? "ring-2 ring-zinc-900" : ""}`}>
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold ring-1 ring-black/5">{i + 4}</span>
-                      <Avatar id={p.avatar} size="h-12 w-12" />
-                      <span className="flex-1 truncate text-lg font-medium">
-                        {p.name}
-                        {mine && " (คุณ)"}
-                      </span>
+                    <li
+                      key={p.userId || i}
+                      className={`flex items-center gap-3 rounded-full p-2.5 pr-5 sm:gap-4 sm:p-3 sm:pr-6 ${
+                        mine ? "bg-[#9CC593]/30 ring-2 ring-zinc-900" : "bg-zinc-50"
+                      }`}
+                    >
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
+                      <Avatar id={p.avatar} size="h-11 w-11 sm:h-12 sm:w-12" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-base font-medium sm:text-lg">
+                          {p.name}
+                          {mine && " (คุณ)"}
+                        </p>
+                        <p className="text-xs text-zinc-500 sm:hidden">{p.games} เกม</p>
+                      </div>
                       <span className="hidden text-sm text-zinc-500 sm:inline">{p.games} เกม</span>
-                      <span className="w-24 text-right text-xl font-semibold tabular-nums">{p.score.toLocaleString()}</span>
+                      <span className="w-20 text-right text-lg font-semibold tabular-nums sm:w-24 sm:text-xl">{p.score.toLocaleString()}</span>
                     </li>
                   );
                 })}
@@ -362,7 +454,7 @@ export default function RankPage() {
             <h2 className="text-3xl font-semibold tracking-tight">อยากขึ้นอันดับ</h2>
             <p className="mt-2 text-sm opacity-70">เล่นเกมเพิ่มเพื่อสะสมแต้มให้มากขึ้น</p>
           </div>
-          <Link href="/#games" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-black">
+          <Link href="/#games" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-[#1F2A5C]/80">
             เลือกเกม
           </Link>
         </div>

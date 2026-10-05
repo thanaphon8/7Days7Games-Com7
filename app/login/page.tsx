@@ -111,7 +111,7 @@ function Avatar({ id, size }: { id: string; size: string }) {
     return (
       <span
         style={{ backgroundColor: bg }}
-        className={`flex items-center justify-center rounded-full font-light text-zinc-900 ${size}`}
+        className={`flex shrink-0 items-center justify-center rounded-full font-light text-zinc-900 ${size}`}
       >
         {id.length <= 3 ? id.toUpperCase() : id.charAt(0).toUpperCase()}
       </span>
@@ -125,7 +125,7 @@ function Avatar({ id, size }: { id: string; size: string }) {
       width={216}
       height={216}
       onError={() => setFailed(true)}
-      className={`rounded-full object-cover ${size}`}
+      className={`shrink-0 rounded-full object-cover ${size}`}
     />
   );
 }
@@ -282,58 +282,81 @@ export default function Login() {
     }
   }
 
+  // ===== ขั้นเลือก Avatar =====
   if (step === "avatar") {
     const activeAvatar = customAvatar.trim() ? customAvatar.trim() : avatar;
 
     return (
-      <div className="min-h-screen bg-[#E6E8EC] px-4 pb-28 pt-10 font-sans text-zinc-900">
-        <h1 className="text-center text-xl font-semibold tracking-tight">เลือก Avatar ของคุณ</h1>
-        <p className="mt-2 text-center text-sm text-zinc-500">สมัครสำเร็จแล้ว รูปนี้จะแสดงข้างชื่อ {name} บนอันดับ</p>
+      <div className="min-h-screen bg-zinc-50 px-4 pb-32 pt-4 font-sans text-zinc-900 sm:px-6 sm:pt-8">
+        <div className="mx-auto max-w-3xl">
+          {/* การ์ดหัวสีพาสเทล แสดงรูปที่เลือกอยู่ */}
+          <header className="relative flex items-center gap-5 overflow-hidden rounded-[2rem] bg-[#A8B5E8] p-6 text-[#1F2A5C] sm:gap-8 sm:p-10">
+            <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-[#F4D35E] opacity-70" />
+            <span aria-hidden className="pointer-events-none absolute -bottom-14 right-16 h-32 w-32 rounded-full bg-[#F4A58A] opacity-60" />
+            <Avatar id={activeAvatar} size="relative h-20 w-20 ring-4 ring-white sm:h-28 sm:w-28" />
+            <div className="relative min-w-0">
+              <p className="text-sm opacity-70">สมัครสำเร็จแล้ว</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-4xl">เลือก Avatar ของคุณ</h1>
+              <p className="mt-1 truncate text-sm opacity-70">รูปนี้จะแสดงข้างชื่อ {name} บนอันดับ</p>
+            </div>
+          </header>
 
-        <div className="mx-auto mt-8 max-w-3xl rounded-[2rem] bg-white p-6 sm:p-10">
-          <div role="radiogroup" aria-label="รูปโปรไฟล์" className="grid grid-cols-3 gap-5 sm:grid-cols-5 sm:gap-6">
-            {AVATAR_IDS.map((id) => {
-              const on = !customAvatar && avatar === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={`รูปโปรไฟล์ ${id}`}
-                  onClick={() => {
-                    setAvatar(id);
-                    setCustomAvatar("");
-                  }}
-                  className={`rounded-full transition-transform duration-150 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 ${
-                    on ? "scale-110 shadow-xl ring-4 ring-[#2B7FFF]" : "hover:scale-105"
-                  }`}
-                >
-                  <Avatar id={id} size="aspect-square w-full" />
-                </button>
-              );
-            })}
-          </div>
+          <section className="mt-4 rounded-[2rem] bg-white p-5 ring-1 ring-black/5 sm:mt-5 sm:p-8">
+            <div className="flex items-center gap-3">
+              <span className="h-3 w-3 rounded-full bg-[#9CC593]" />
+              <h2 id="avatar-label" className="text-lg font-semibold tracking-tight">รูปโปรไฟล์</h2>
+            </div>
+            <div
+              role="radiogroup"
+              aria-labelledby="avatar-label"
+              className="mt-5 grid grid-cols-5 gap-3 p-1 sm:grid-cols-7 sm:gap-4 md:grid-cols-9"
+            >
+              {AVATAR_IDS.map((id) => {
+                const on = !customAvatar && avatar === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    aria-label={`รูปโปรไฟล์ ${id}`}
+                    onClick={() => {
+                      setAvatar(id);
+                      setCustomAvatar("");
+                    }}
+                    className={`rounded-full outline-none transition-transform duration-150 focus-visible:ring-4 focus-visible:ring-blue-400 ${
+                      on ? "scale-105 shadow-lg ring-4 ring-zinc-900 ring-offset-2" : "hover:scale-105"
+                    }`}
+                  >
+                    <Avatar id={id} size="aspect-square w-full" />
+                  </button>
+                );
+              })}
+            </div>
 
-          <div className="mt-8 border-t border-zinc-100 pt-6">
-            <label className="block text-sm font-medium text-zinc-700">หรือระบุ URL รูปภาพโปรไฟล์ของคุณเอง</label>
-            <input
-              type="url"
-              placeholder="https://example.com/my-avatar.png"
-              value={customAvatar}
-              onChange={(e) => setCustomAvatar(e.target.value)}
-              className="mt-2 h-11 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none transition-colors focus:border-zinc-900 focus:bg-white"
-            />
-          </div>
+            <div className="mt-8 border-t border-zinc-100 pt-6">
+              <label htmlFor="custom-avatar" className="block text-sm font-medium text-zinc-700">
+                หรือระบุ URL รูปภาพโปรไฟล์ของคุณเอง
+              </label>
+              <input
+                id="custom-avatar"
+                type="url"
+                placeholder="https://example.com/my-avatar.png"
+                value={customAvatar}
+                onChange={(e) => setCustomAvatar(e.target.value)}
+                className="mt-2 h-12 w-full rounded-full border border-black/[.08] bg-zinc-50 px-5 text-sm outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900 focus:bg-white"
+              />
+            </div>
+          </section>
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#E6E8EC] via-[#E6E8EC]/90 to-transparent px-4 pb-6 pt-10">
+        <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-zinc-50 via-zinc-50/90 to-transparent px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-12">
           <button
             onClick={confirmAvatar}
             disabled={busy}
-            className="flex h-12 w-full max-w-xs items-center justify-center gap-3 rounded-full bg-zinc-900 text-sm font-medium text-white shadow-lg transition-colors hover:bg-zinc-700 disabled:opacity-50"
+            className="flex h-14 w-full max-w-sm items-center justify-center gap-3 rounded-full bg-zinc-900 text-base font-medium text-white shadow-lg transition-colors hover:bg-zinc-700 disabled:opacity-50"
           >
-            <Avatar id={activeAvatar} size="h-8 w-8" />
+            <Avatar id={activeAvatar} size="h-8 w-8 ring-2 ring-white/70" />
             {busy ? "กำลังบันทึก..." : "ใช้รูปนี้"}
           </button>
         </div>
@@ -342,39 +365,45 @@ export default function Login() {
   }
 
   const field =
-    "h-12 w-full rounded-full border border-black/[.08] bg-white px-5 text-base outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900";
+    "h-12 w-full rounded-full border border-black/[.08] bg-zinc-50 px-5 text-base outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900 focus:bg-white";
   const primary =
-    "flex h-12 w-full items-center justify-center rounded-full bg-zinc-900 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50";
+    "flex h-12 w-full items-center justify-center rounded-full bg-zinc-900 text-sm font-medium text-white outline-none transition-colors hover:bg-zinc-700 focus-visible:ring-4 focus-visible:ring-blue-400 disabled:opacity-50";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white p-4 font-sans text-zinc-900 md:p-6">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-3 font-sans text-zinc-900 sm:p-4 md:p-6">
       <ConfettiLayer bursts={bursts} />
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-[2rem] md:min-h-[640px] md:grid-cols-2">
-        <aside className="flex flex-col justify-between gap-12 bg-[#F4A58A] p-8 text-[#4A2412] md:p-10">
-          <Link href="/" aria-label="กลับหน้าแรก" className="flex w-fit items-center">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-[2rem] ring-1 ring-black/5 md:min-h-[640px] md:grid-cols-2">
+        {/* ===== ฝั่งซ้าย: แบรนด์ (บนมือถือเป็นหัวแบบกะทัดรัด) ===== */}
+        <aside className="relative flex flex-col justify-between gap-6 overflow-hidden bg-[#F4A58A] p-6 text-[#4A2412] sm:p-8 md:gap-12 md:p-10">
+          {/* วงกลมตกแต่ง */}
+          <span aria-hidden className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-[#F4D35E] opacity-70 md:-right-20 md:top-1/3 md:h-64 md:w-64" />
+          <span aria-hidden className="pointer-events-none absolute -bottom-16 -left-10 hidden h-48 w-48 rounded-full bg-[#A8B5E8] opacity-60 md:block" />
+
+          <Link href="/" aria-label="กลับหน้าแรก" className="relative flex w-fit items-center">
             <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto" />
           </Link>
-          <div>
-            <h1 className="text-6xl font-semibold leading-[1.05] tracking-tight md:text-7xl">
+          <div className="relative">
+            <h1 className="text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl md:text-7xl">
               7 Days
               <br />
               7 Games
             </h1>
-            <p className="mt-5 max-w-xs text-base leading-7 opacity-70">
+            <p className="mt-3 max-w-xs text-sm leading-6 opacity-70 md:mt-5 md:text-base md:leading-7">
               สมัครครั้งเดียว เล่นได้ทุกเกม แต้มของคุณจะถูกบันทึกและขึ้นอันดับอัตโนมัติ
             </p>
           </div>
-          <div className="flex gap-2" aria-hidden>
+          <div className="relative hidden gap-2 md:flex" aria-hidden>
             {["#F4D35E", "#A8B5E8", "#B7CBB0", "#FFFFFF"].map((c, i) => (
               <span key={i} style={{ backgroundColor: c }} className={`h-10 w-10 ${i % 2 === 0 ? "rounded-full" : "rounded-xl"}`} />
             ))}
           </div>
         </aside>
 
-        <main className="flex flex-col justify-center bg-zinc-50 p-8 md:p-12">
+        {/* ===== ฝั่งขวา: ฟอร์ม ===== */}
+        <main className="flex flex-col justify-center bg-white p-6 sm:p-8 md:p-12">
           {step === "form" && (
             <>
-              <div role="tablist" className="flex w-fit rounded-full bg-white p-1 ring-1 ring-black/[.06]">
+              <div role="tablist" className="flex w-fit rounded-full bg-zinc-100 p-1">
                 {(
                   [
                     ["in", "เข้าสู่ระบบ"],
@@ -386,7 +415,7 @@ export default function Login() {
                     role="tab"
                     aria-selected={mode === m}
                     onClick={() => switchMode(m)}
-                    className={`h-10 rounded-full px-5 text-sm font-medium transition-colors ${
+                    className={`h-10 rounded-full px-5 text-sm font-medium outline-none transition-colors focus-visible:ring-4 focus-visible:ring-blue-400 ${
                       mode === m ? "bg-zinc-900 text-white" : "text-zinc-500 hover:text-zinc-900"
                     }`}
                   >
@@ -407,6 +436,7 @@ export default function Login() {
                   <input
                     className={field}
                     placeholder="ชื่อที่แสดง"
+                    aria-label="ชื่อที่แสดง"
                     autoComplete="nickname"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -416,6 +446,7 @@ export default function Login() {
                   className={field}
                   type="email"
                   placeholder="อีเมล"
+                  aria-label="อีเมล"
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -425,6 +456,7 @@ export default function Login() {
                     className={`${field} pr-20`}
                     type={show ? "text" : "password"}
                     placeholder="รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"
+                    aria-label="รหัสผ่าน"
                     autoComplete={mode === "in" ? "current-password" : "new-password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -439,7 +471,7 @@ export default function Login() {
                 </div>
 
                 {error && (
-                  <p role="alert" className="rounded-2xl bg-[#F4A58A]/20 px-4 py-3 text-sm text-[#4A2412]">
+                  <p role="alert" className="rounded-2xl bg-[#F4A58A]/25 px-4 py-3 text-sm text-[#4A2412]">
                     {error}
                   </p>
                 )}
@@ -460,8 +492,8 @@ export default function Login() {
 
           {step === "welcome" && (
             <div className="flex flex-col items-start">
-              <Avatar id={customAvatar.trim() ? customAvatar.trim() : avatar} size="h-28 w-28 text-6xl" />
-              <h2 className="mt-8 text-4xl font-semibold tracking-tight">ยินดีต้อนรับ {name}</h2>
+              <Avatar id={customAvatar.trim() ? customAvatar.trim() : avatar} size="h-28 w-28 text-6xl ring-4 ring-[#F4D35E]" />
+              <h2 className="mt-8 text-3xl font-semibold tracking-tight sm:text-4xl">ยินดีต้อนรับ {name}</h2>
               <p className="mt-3 max-w-sm text-base leading-7 text-zinc-500">
                 บัญชีพร้อมแล้ว ลองเล่นเกมแรกเพื่อเริ่มสะสมแต้ม แล้วดูว่าคุณอยู่อันดับไหน
               </p>
