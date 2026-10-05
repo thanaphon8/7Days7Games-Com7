@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { getAvatarSrc } from "../../components/navbar/page";
 
@@ -30,10 +31,12 @@ type View = {
   oppLeft: boolean; // คู่แข่งออกจากห้องแล้ว (เซิร์ฟเวอร์ต้องส่งมา)
 };
 type Anim = { entry: Shot; step: 0 | 1 | 2 };
+type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
 
 const TOTAL = 6; // จำนวนลูกปกติ (ต้องตรงกับฝั่งเซิร์ฟเวอร์)
 const TB_TARGET = 2; // ต่อเวลา ใครได้ 2 แต้มก่อนชนะ
 const TB_SHOTS = 3; // ต่อเวลา สูงสุด 3 ลูก
+const WIN_BONUS = 200; // โบนัสผู้ชนะ (ต้องตรงกับฝั่งเซิร์ฟเวอร์)
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
 const COLORS = ["#F4D35E", "#A8B5E8"]; // ผู้เล่น 1 / 2
 const CONF = ["#F4D35E", "#A8B5E8", "#F4A58A", "#FFFFFF"];
@@ -117,6 +120,16 @@ async function api(body: Record<string, unknown>) {
     throw new Error(j.error || `เชื่อมต่อ API ไม่ได้ (HTTP ${r.status}) ตรวจว่ามีไฟล์ app/api/kickbattle/route.ts`);
   }
   return j;
+}
+
+// แจ้งเซิร์ฟเวอร์ว่าเราออกจากห้องแล้ว (keepalive ทำให้ส่งได้แม้กำลังเปลี่ยนหน้า)
+function sendLeave(code: string, playerId: string) {
+  fetch("/api/kickbattle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "leave", code, playerId }),
+    keepalive: true,
+  }).catch(() => {});
 }
 
 function Confetti({ n = 30 }: { n?: number }) {
@@ -514,6 +527,7 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
 }
 
 export default function KickBattle() {
+  const router = useRouter();
   const me = useMe();
   const [code, setCode] = useState<string | null>(null);
   const [view, setView] = useState<View | null>(null);
@@ -529,10 +543,16 @@ export default function KickBattle() {
   const [flip, setFlip] = useState(false);
   const [tbIntro, setTbIntro] = useState(false);
   const [portrait, setPortrait] = useState(false);
+  const [confirmExit, setConfirmExit] = useState(false); // กล่องยืนยันก่อนออกจากเกมระหว่างเล่น
+  const [forfeit, setForfeit] = useState<SaveState>("idle"); // สถานะบันทึกแต้มเมื่อคู่แข่งออกกลางเกม
+  const forfeitRef = useRef("");
   const initRef = useRef(false);
   const introKey = useRef("");
   const tbKey = useRef("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // ห้อง/ผู้เล่นปัจจุบัน ใช้ตอนปิดหน้า (cleanup) เพื่อแจ้งออกจากห้อง
+  const liveRef = useRef<{ code: string | null; id: string | null }>({ code: null, id: null });
+  liveRef.current = { code, id: me?.id ?? null };
   // ข้อมูลล่าสุดสำหรับคีย์ลัด (ตั้งค่าใหม่ทุกครั้งที่เรนเดอร์หน้าเกม)
   const pickRef = useRef<{ canPick: boolean; sel: Dir | null; confirm: (d?: Dir) => void }>({ canPick: false, sel: null, confirm: () => {} });
   pickRef.current.canPick = false;
@@ -541,6 +561,74 @@ export default function KickBattle() {
     timers.current.push(setTimeout(fn, ms));
   };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  // ออกจากหน้านี้ด้วยวิธีไหนก็ตาม (กดกลับ ปุ่มย้อนกลับของเบราว์เซอร์ ลิงก์ไปหน้าอื่น)
+  // ให้แจ้งเซิร์ฟเวอร์ว่าออกจากห้อง เพื่อให้ห้องถูกยกเลิกและอีกฝ่ายรู้ทันที
+  // (การรีเฟรชหน้าไม่เข้าเงื่อนไขนี้ จึงยังกลับเข้าห้องเดิมได้)
+  useEffect(
+    () => () => {
+      const { code: c, id } = liveRef.current;
+      if (c && id) {
+        sendLeave(c, id);
+        try {
+          localStorage.removeItem("kb_room");
+        } catch {}
+      }
+    },
+    []
+  );
+
+  // คู่แข่งออกกลางเกม: ผู้ที่ยังอยู่ได้แต้มเหมือนชนะแบบยิงเข้าทุกลูก (ทุกลูก x 100 + โบนัสผู้ชนะ) และบันทึกเข้าบัญชี
+  async function claimForfeit(v: View) {
+    const key = `kb_forfeit_${v.code}_${v.match}`;
+    // เซิร์ฟเวอร์จ่ายแต้มให้แล้ว หรือรอบนี้เคยบันทึกแล้ว ไม่จ่ายซ้ำ
+    if (v.awardSaved?.[v.you] || (v.earned?.[v.you] ?? 0) > 0) {
+      setForfeit("saved");
+      return;
+    }
+    try {
+      if (localStorage.getItem(key)) {
+        setForfeit("saved");
+        return;
+      }
+    } catch {}
+    let userId: string | null = null;
+    try {
+      const pr = JSON.parse(localStorage.getItem("profile") || "null");
+      userId = pr?.userId || pr?.id || pr?._id || null;
+    } catch {}
+    if (!userId) {
+      setForfeit("guest");
+      return;
+    }
+    setForfeit("saving");
+    try {
+      // API ใช้ $inc อยู่แล้ว จึงส่งเฉพาะแต้มรอบนี้
+      const r = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, gameKey: "kickbattle", score: v.total * 100 + WIN_BONUS }),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.success) {
+        try {
+          localStorage.setItem(key, "1");
+        } catch {}
+        setForfeit("saved");
+      } else setForfeit("error");
+    } catch {
+      setForfeit("error");
+    }
+  }
+
+  useEffect(() => {
+    if (!view || !me || view.status !== "playing" || !view.oppLeft) return;
+    const key = `${view.code}-${view.match}`;
+    if (forfeitRef.current === key) return; // ทำครั้งเดียวต่อแมตช์
+    forfeitRef.current = key;
+    claimForfeit(view);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, me]);
 
   // จอแนวตั้ง/แนวนอน และล็อกการเลื่อนของหน้าเว็บ
   useEffect(() => {
@@ -557,14 +645,8 @@ export default function KickBattle() {
 
   function leave() {
     // แจ้งเซิร์ฟเวอร์ว่าเราออกจากห้องแล้ว เพื่อให้อีกฝั่งเห็นสถานะ (ไม่ต้องรอผล)
-    if (code && me) {
-      fetch("/api/kickbattle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "leave", code, playerId: me.id }),
-        keepalive: true,
-      }).catch(() => {});
-    }
+    if (code && me) sendLeave(code, me.id);
+    liveRef.current = { code: null, id: null }; // กันส่งซ้ำตอน cleanup
     localStorage.removeItem("kb_room");
     timers.current.forEach(clearTimeout);
     timers.current = [];
@@ -572,6 +654,8 @@ export default function KickBattle() {
     introKey.current = "";
     tbKey.current = "";
     setTbIntro(false);
+    setConfirmExit(false);
+    setForfeit("idle");
     setCode(null);
     setView(null);
     setSel(null);
@@ -579,6 +663,12 @@ export default function KickBattle() {
     setAnim(null);
     setIntro(0);
     setGo(false);
+  }
+
+  // ออกจากเกมแล้วกลับหน้าหลัก (ห้องถูกยกเลิก)
+  function exitGame() {
+    leave();
+    router.push("/");
   }
 
   // กลับเข้าห้องเดิมเมื่อรีเฟรช
@@ -855,6 +945,7 @@ export default function KickBattle() {
             <li>ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
             <li>ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 100 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 100 แต้ม และแต้มบวกเข้าคะแนนรวมทันที</li>
             <li>สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ผู้ชนะรับโบนัสเพิ่ม 200 แต้ม</li>
+            <li>ถ้าผู้เล่นคนใดออกจากเกมระหว่างเล่น ห้องจะถูกยกเลิกและเกมจบ ผู้ที่ยังอยู่ชนะโดยปริยาย ได้แต้มเหมือนยิงเข้าทุกลูก (ลูกละ 100 แต้ม ครบ 6 ลูก = 600 แต้ม) บวกโบนัสผู้ชนะ 200 แต้ม รวม 800 แต้ม และบันทึกเข้าคะแนนรวม</li>
             <li>วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
@@ -892,7 +983,8 @@ export default function KickBattle() {
   view.history.slice(0, revealed).forEach((h) => sc[h.goal ? h.shooter : 1 - h.shooter]++);
   const curShooter = ((view.first + shown) % 2) as 0 | 1;
   const iShoot = curShooter === you;
-  const canPick = intro === 0 && !tbIntro && !anim && shown === view.round && view.status === "playing" && !view.youPicked;
+  const cancelled = view.oppLeft && view.status === "playing"; // คู่แข่งออกกลางเกม = ห้องถูกยกเลิก
+  const canPick = !cancelled && !confirmExit && intro === 0 && !tbIntro && !anim && shown === view.round && view.status === "playing" && !view.youPicked;
   const done = view.status === "finished" && shown === view.history.length && !anim;
   const iWon = view.winner === you;
   const tiebreak = view.history.length > view.total || (shown >= view.total && view.history.length === view.total && view.status === "playing");
@@ -961,15 +1053,16 @@ export default function KickBattle() {
         </div>
       </div>
 
-      {/* HUD ล่าง: ปุ่มกลับ + คำสั่ง */}
+      {/* HUD ล่าง: ปุ่มออก + คำสั่ง */}
       {!done && intro === 0 && !tbIntro && (
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end gap-2"
           style={{ padding: "0 calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px)" }}
         >
-          <Link href="/" aria-label="กลับหน้าหลัก" title="กลับหน้าหลัก" className={BTN_ROUND}>
+          {/* กดแล้วต้องยืนยันก่อน เพราะการออกกลางเกมจะยกเลิกห้อง */}
+          <button type="button" onClick={() => setConfirmExit(true)} aria-label="ออกจากเกม" title="ออกจากเกม" className={BTN_ROUND}>
             ←
-          </Link>
+          </button>
           <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
             {anim ? (
               <p className={PILL}>ลุ้นกันหน่อย…</p>
@@ -1099,6 +1192,74 @@ export default function KickBattle() {
               <Link href="/rank" className={BTN_SUB}>
                 ดูอันดับ
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* คู่แข่งออกกลางเกม: ห้องถูกยกเลิก เกมจบ ผู้ที่ยังอยู่ได้แต้มเต็มจำนวน */}
+      {cancelled && (
+        <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-gradient-to-b from-[#F7E9A8] via-white to-white p-4">
+          <Confetti n={40} />
+          <Coins />
+          <div className="my-auto w-full max-w-sm text-center">
+            <span className="inline-block rounded-full bg-[#F4D35E] px-4 py-1 text-sm font-medium">คู่แข่งออกจากเกมแล้ว</span>
+            <p className="kb-pop mt-3 text-7xl">🏆</p>
+            <h2 className="mt-2 text-4xl font-semibold tracking-tight">คุณชนะโดยปริยาย!</h2>
+            <p className="mt-2 text-sm text-zinc-500">ห้องนี้ถูกยกเลิกและเกมจบลงแล้ว</p>
+
+            <div className="mt-5 rounded-3xl bg-[#F4D35E] py-5 text-zinc-900">
+              <p className="text-xs opacity-70">เหมือนชนะแบบยิงเข้าทุกลูก</p>
+              <p className="text-6xl font-semibold tabular-nums tracking-tight">+{view.total * 100 + WIN_BONUS}</p>
+              <div className="mt-3 flex justify-center gap-2 text-xs">
+                <span className="rounded-full bg-white/70 px-3 py-1">ยิงเข้าทุกลูก {view.total * 100}</span>
+                <span className="kb-pop rounded-full bg-zinc-900 px-3 py-1 text-[#F4D35E]">โบนัสผู้ชนะ +{WIN_BONUS}</span>
+              </div>
+            </div>
+
+            {forfeit === "saving" && <p className="mt-3 rounded-2xl bg-zinc-50 px-4 py-2.5 text-sm text-zinc-500">กำลังบันทึกแต้ม…</p>}
+            {forfeit === "saved" && (
+              <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">บวก {view.total * 100 + WIN_BONUS} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
+            )}
+            {forfeit === "guest" && <p className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">เข้าสู่ระบบเพื่อบันทึกแต้มเข้าอันดับ</p>}
+            {forfeit === "error" && (
+              <div className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">
+                บันทึกแต้มไม่สำเร็จ
+                <button onClick={() => claimForfeit(view)} className="ml-2 font-medium underline">
+                  ลองอีกครั้ง
+                </button>
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-col gap-2">
+              <button onClick={leave} className={BTN_MAIN}>
+                สร้าง/เข้าห้องใหม่
+              </button>
+              <button onClick={exitGame} className={BTN_SUB}>
+                กลับหน้าหลัก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ยืนยันก่อนออกจากเกมระหว่างเล่น */}
+      {confirmExit && !cancelled && (
+        <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center bg-[#190C28]/60 p-6 backdrop-blur-sm">
+          <div className="kb-pop w-full max-w-sm rounded-[2rem] bg-white p-7 text-center text-zinc-900">
+            <p className="text-5xl">🚪</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight">ออกจากเกมนี้?</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ ห้องจะถูกยกเลิกและเกมจะจบ คุณจะไม่ได้แต้มจากรอบนี้ และคู่แข่งจะชนะโดยได้แต้มเต็ม {view.total * 100} บวกโบนัสผู้ชนะ {WIN_BONUS} รวม {view.total * 100 + WIN_BONUS} แต้ม</p>
+            <div className="mt-6 flex flex-col gap-2">
+              <button onClick={() => setConfirmExit(false)} className={BTN_MAIN}>
+                เล่นต่อ
+              </button>
+              <button
+                onClick={exitGame}
+                className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#E0483B] text-sm font-medium text-white transition-opacity hover:opacity-85"
+              >
+                ออกและยกเลิกห้อง
+              </button>
             </div>
           </div>
         </div>
