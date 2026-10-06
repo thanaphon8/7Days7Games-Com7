@@ -52,7 +52,7 @@ function Crown({ className = "" }: { className?: string }) {
 }
 
 type NavbarProps = {
-  saved: string[];
+  saved?: string[];
   profile: Profile | null;
   ready: boolean;
   isFirst: boolean;
@@ -64,7 +64,7 @@ const COUNT_MS = 1200; // ระยะเวลาเลขไล่ขึ้น
 const START_DELAY_MS = 500; // หน่วงก่อนเริ่มเอฟเฟกต์ ให้ผู้เล่นเห็นหน้าก่อน
 
 export default function Navbar({
-  saved,
+  saved = [],
   profile,
   ready,
   isFirst,
@@ -179,7 +179,7 @@ export default function Navbar({
             className="flex items-center transition-opacity hover:opacity-60"
           >
             รายการโปรด
-            {saved.length > 0 && (
+            {(saved?.length ?? 0) > 0 && (
               <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E5484D] px-1.5 text-xs font-semibold text-white">
                 {saved.length}
               </span>
@@ -202,15 +202,15 @@ export default function Navbar({
               viewBox="0 0 24 24"
               width="20"
               height="20"
-              fill={saved.length ? "#E5484D" : "none"}
-              stroke={saved.length ? "#E5484D" : "currentColor"}
+              fill={saved?.length ? "#E5484D" : "none"}
+              stroke={saved?.length ? "#E5484D" : "currentColor"}
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
               <path d={HEART_PATH} />
             </svg>
-            {saved.length > 0 && (
+            {(saved?.length ?? 0) > 0 && (
               <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-xs font-semibold text-black">
                 {saved.length}
               </span>
