@@ -174,14 +174,14 @@ type BtnVariant = "solid" | "outline" | "dark";
 
 function btnClasses(variant: BtnVariant = "solid", small = false, fullWidth = false) {
   const base =
-    "btn-fx relative inline-flex -skew-x-12 items-center justify-center overflow-hidden font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50";
+    "btn-fx relative inline-flex items-center justify-center overflow-hidden font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50";
   const size = small ? "px-5 py-2.5 text-xs" : "px-7 py-3.5 text-xs";
   const styles =
     variant === "solid"
       ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)] hover:bg-[#6dffc6] hover:shadow-[0_0_34px_rgba(23,255,162,0.7)]"
       : variant === "dark"
       ? "bg-[#05080a] text-[#17FFA2] hover:bg-black"
-      : "border border-white/30 text-white hover:border-[#17FFA2] hover:text-[#17FFA2] hover:shadow-[0_0_18px_rgba(23,255,162,0.3)]";
+      : "border border-[#17FFA2]/50 bg-[#17FFA2]/15 text-white hover:border-[#17FFA2] hover:bg-[#17FFA2] hover:text-[#04110a] hover:shadow-[0_0_18px_rgba(23,255,162,0.3)]";
   return `${base} ${size} ${styles} ${fullWidth ? "w-full" : ""}`;
 }
 
@@ -189,7 +189,7 @@ function BtnInner({ children }: { children: React.ReactNode }) {
   return (
     <>
       <span className="btn-shine" aria-hidden="true" />
-      <span className="relative inline-block skew-x-12">{children}</span>
+      <span className="relative inline-block">{children}</span>
     </>
   );
 }
@@ -763,10 +763,10 @@ export default function Home() {
       {upcoming.length > 0 && (
         <section id="upcoming" className={`${wrap} pt-24`}>
           <SectionHead title="เกมที่กำลังจะเปิดให้เล่น" intro="เตรียมตัวให้พร้อม เกมใหม่กำลังมา" />
-          <div className="divide-y divide-white/10 border-y border-white/10">
+          <div className="bg-black/55 backdrop-blur-md">
             {upcoming.map((g, i) => (
               <Reveal key={g.id} variant="left" delay={i * 90}>
-                <div className="grid items-center gap-4 py-6 transition-all duration-200 hover:bg-white/[0.03] hover:pl-2 md:grid-cols-[140px_1fr_1.2fr_auto] md:px-4">
+                <div className="grid items-center gap-4 px-6 py-6 transition-colors duration-200 hover:bg-white/[0.04] md:grid-cols-[140px_1fr_1.2fr_auto]">
                   <div>
                     <div className="text-2xl font-bold">{g.time}</div>
                     <div className="text-sm text-[#ff2a55]">เปิดเร็วๆ นี้</div>
@@ -794,7 +794,7 @@ export default function Home() {
           {topUsers.length === 0 ? (
             <p className="border border-white/10 p-10 text-center text-sm text-zinc-500">ยังไม่มีข้อมูลอันดับ</p>
           ) : (
-            <div className="grid items-end gap-4 md:grid-cols-3">
+            <div className="mx-auto grid max-w-3xl items-end gap-4 md:grid-cols-3">
               {topUsers.map((r, i) => {
                 const rank = i + 1;
                 const first = rank === 1;
@@ -804,17 +804,17 @@ export default function Home() {
                   : rank === 2
                   ? "bg-[#12e594]"
                   : "bg-[#0cb577]";
-                const height = first ? "md:h-[400px]" : "md:h-[340px]";
+                const height = first ? "md:h-[470px]" : "md:h-[410px]";
                 const order = first ? "md:order-2" : rank === 2 ? "md:order-1" : "md:order-3";
-                const av = first ? 128 : 108;
+                const av = first ? 112 : 92;
                 return (
                   <Reveal key={r.name + i} delay={i * 100} className={order}>
                     <article
-                      className={`relative flex flex-col items-center justify-center px-6 py-10 text-center text-[#04251a] transition-transform duration-300 hover:-translate-y-1 ${height} ${tone} ${
+                      className={`relative flex flex-col items-center justify-center px-4 py-10 text-center text-[#04251a] transition-transform duration-300 hover:-translate-y-1 ${height} ${tone} ${
                         me ? "outline outline-4 outline-white" : ""
                       }`}
                     >
-                      <span className="absolute left-6 top-6 flex h-11 w-11 items-center justify-center rounded-full bg-white/70 text-base font-bold">
+                      <span className="absolute left-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/70 text-base font-bold">
                         {rank}
                       </span>
                       {first && (
@@ -834,12 +834,12 @@ export default function Home() {
                           (e.target as HTMLImageElement).src = "/img/p01.png";
                         }}
                       />
-                      <h3 className="mt-5 max-w-full truncate text-2xl font-bold">
+                      <h3 className="mt-5 line-clamp-2 w-full break-words text-xl font-bold leading-tight">
                         {r.name}
                         {me && " (คุณ)"}
                       </h3>
                       <p className="mt-1 text-sm opacity-60">เล่นแล้ว {r.games} เกม</p>
-                      <p className="mt-5 text-5xl font-bold tabular-nums md:text-6xl">{r.score.toLocaleString("en-US")}</p>
+                      <p className="mt-5 text-4xl font-bold tabular-nums">{r.score.toLocaleString("en-US")}</p>
                       <p className="text-sm opacity-60">แต้ม</p>
                     </article>
                   </Reveal>

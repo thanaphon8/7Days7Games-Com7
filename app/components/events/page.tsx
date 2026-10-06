@@ -24,11 +24,11 @@ export function Badge({ status, dark = false }: { status: Status; dark?: boolean
 /* ---------- ปุ่มเอียงแบบ esport ---------- */
 function skewBtn(variant: "solid" | "outline" = "solid", fullWidth = false) {
   const base =
-    "btn-fx relative inline-flex -skew-x-12 items-center justify-center overflow-hidden px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+    "btn-fx relative inline-flex items-center justify-center overflow-hidden px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
   const styles =
     variant === "solid"
       ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)] hover:bg-[#6dffc6] hover:shadow-[0_0_34px_rgba(23,255,162,0.7)]"
-      : "border border-white/30 text-white hover:border-[#17FFA2] hover:text-[#17FFA2] hover:shadow-[0_0_18px_rgba(23,255,162,0.3)]";
+      : "border border-[#17FFA2]/50 bg-[#17FFA2]/15 text-white hover:border-[#17FFA2] hover:bg-[#17FFA2] hover:text-[#04110a] hover:shadow-[0_0_18px_rgba(23,255,162,0.3)]";
   return `${base} ${styles} ${fullWidth ? "w-full" : ""}`;
 }
 
@@ -36,7 +36,7 @@ function SkewInner({ children }: { children: React.ReactNode }) {
   return (
     <>
       <span className="btn-shine" aria-hidden="true" />
-      <span className="relative inline-block skew-x-12">{children}</span>
+      <span className="relative inline-block">{children}</span>
     </>
   );
 }
