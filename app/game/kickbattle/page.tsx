@@ -28,23 +28,22 @@ type View = {
   awardSaved: [boolean, boolean];
   youRematch: boolean;
   oppRematch: boolean;
-  oppLeft: boolean; // คู่แข่งออกจากห้องแล้ว (เซิร์ฟเวอร์ต้องส่งมา)
+  oppLeft: boolean;
 };
 type Anim = { entry: Shot; step: 0 | 1 | 2 };
 type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
 
-const TOTAL = 6; // จำนวนลูกปกติ (ต้องตรงกับฝั่งเซิร์ฟเวอร์)
-const TB_TARGET = 2; // ต่อเวลา ใครได้ 2 แต้มก่อนชนะ
-const TB_SHOTS = 3; // ต่อเวลา สูงสุด 3 ลูก
-const WIN_BONUS = 200; // โบนัสผู้ชนะ (ต้องตรงกับฝั่งเซิร์ฟเวอร์)
+const TOTAL = 6;
+const TB_TARGET = 2;
+const TB_SHOTS = 3;
+const WIN_BONUS = 200;
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
-const COLORS = ["#F4D35E", "#A8B5E8"]; // ผู้เล่น 1 / 2
+const COLORS = ["#F4D35E", "#A8B5E8"];
 const CONF = ["#F4D35E", "#A8B5E8", "#F4A58A", "#FFFFFF"];
-const KEEP_X: Record<Dir, number> = { L: 16.7, C: 50, R: 83.3 }; // ตำแหน่งในกรอบประตู (%)
-// ตำแหน่งสนาม (% ของพื้นที่เล่น)
+const KEEP_X: Record<Dir, number> = { L: 16.7, C: 50, R: 83.3 };
 const GOAL_TOP = 17;
 const GOAL_H = 45;
-const LINE_Y = GOAL_TOP + GOAL_H; // เส้นหน้าประตู
+const LINE_Y = GOAL_TOP + GOAL_H;
 const GRASS = "repeating-linear-gradient(90deg,#8DB885 0 12.5%,#9CC593 12.5% 25%)";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -85,7 +84,6 @@ const BTN_ROUND =
   "pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
 const PILL = "rounded-full bg-white/90 px-4 py-2 text-sm text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur";
 
-// ===== ผู้เล่น (ใช้ profile เดิมของเว็บ ถ้าไม่มีสร้างผู้เล่นชั่วคราว) =====
 function useMe() {
   const [me, setMe] = useState<Player | null>(null);
   useEffect(() => {
@@ -117,12 +115,11 @@ async function api(body: Record<string, unknown>) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
-    throw new Error(j.error || `เชื่อมต่อ API ไม่ได้ (HTTP ${r.status}) ตรวจว่ามีไฟล์ app/api/kickbattle/route.ts`);
+    throw new Error(j.error || `เชื่อมต่อ API ไม่ได้ (HTTP ${r.status})`);
   }
   return j;
 }
 
-// แจ้งเซิร์ฟเวอร์ว่าเราออกจากห้องแล้ว (keepalive ทำให้ส่งได้แม้กำลังเปลี่ยนหน้า)
 function sendLeave(code: string, playerId: string) {
   fetch("/api/kickbattle", {
     method: "POST",
@@ -166,7 +163,6 @@ function Coins() {
   );
 }
 
-// ข้อความไล่สีส้ม-เหลืองแบบเดียวกับเกม Basketball (แยกชั้นแสงเรืองไว้ด้านหลัง)
 function FireText({ text, size }: { text: string; size: string }) {
   return (
     <div className="relative inline-block px-6 py-2">
@@ -184,7 +180,6 @@ function FireText({ text, size }: { text: string; size: string }) {
   );
 }
 
-// ตัวเลขแต้มที่นับขึ้นทีละน้อยและเด้งเมื่อเปลี่ยน
 function CountUp({ value }: { value: number }) {
   const [v, setV] = useState(value);
   const from = useRef(value);
@@ -227,7 +222,6 @@ function Keeper() {
   );
 }
 
-// ===== สนามยิงจุดโทษ (ไม่มีพื้นหลังของตัวเอง ใช้สนามหญ้าเต็มจอด้านหลัง) =====
 function Pitch({
   anim,
   you,
@@ -244,7 +238,7 @@ function Pitch({
   sel: Dir | null;
   canPick: boolean;
   iShoot: boolean;
-  inset: number; // ระยะขอบประตูซ้าย/ขวา (%)
+  inset: number;
   aspect: string;
   onSel: (d: Dir) => void;
   onFlick: (d: Dir) => void;
@@ -266,7 +260,6 @@ function Pitch({
     return t < 1 / 3 ? "L" : t < 2 / 3 ? "C" : "R";
   };
 
-  // ลูกบอล
   let ball = { left: 50, bottom: 10, scale: 1, rot: 0, ms: 0 };
   if (e && step === 1) ball = { left: bx(e.shot), bottom: 55, scale: 0.55, rot: 720, ms: 720 };
   if (e && step === 2) {
@@ -279,11 +272,9 @@ function Pitch({
   const dragging = !!drag && canPick && !anim;
   if (dragging && iShoot) ball = { left: drag!.x, bottom: 100 - drag!.y, scale: 0.85, rot: 0, ms: 0 };
 
-  // ผู้รับ (และไม่ได้อยู่ระหว่างแอนิเมชัน) จะเห็นถุงมือตรงหน้าแทนลูกบอล
   const showGlove = !iShoot && !anim;
-  const hideRest = showGlove && dragging; // ขณะลาก ถุงมือจะตามนิ้วแทน
+  const hideRest = showGlove && dragging;
 
-  // ผู้รักษาประตู
   let kx = 50;
   let kTf = "translate(-50%,0)";
   if (e && step >= 1) {
@@ -300,7 +291,6 @@ function Pitch({
       ? iShot ? "ยิงเข้าเต็มๆ" : "คู่แข่งยิงเข้า"
       : iShot ? "โดนอ่านทางขาด" : "ปัดออกได้ทัน";
 
-  // ลากลูก (หรือถุงมือ) ไปที่มุมแล้วปล่อยเพื่อยืนยัน
   const pct = (ev: React.PointerEvent) => {
     const r = rootRef.current!.getBoundingClientRect();
     return { x: ((ev.clientX - r.left) / r.width) * 100, y: ((ev.clientY - r.top) / r.height) * 100 };
@@ -335,108 +325,99 @@ function Pitch({
       style={{ aspectRatio: aspect, touchAction: "none" }}
     >
       <div className={`absolute inset-0 ${reveal && (!e!.goal || !iShot) ? "kb-shake" : ""}`}>
-      {/* เส้นหน้าประตู (ยาวเกินกรอบเพื่อให้เต็มจอ) */}
-      <div className="absolute h-[3px] bg-white/70" style={{ top: `${LINE_Y}%`, left: "-100vw", right: "-100vw" }} />
-      <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-white/80" style={{ top: "86%" }} />
+        <div className="absolute h-[3px] bg-white/70" style={{ top: `${LINE_Y}%`, left: "-100vw", right: "-100vw" }} />
+        <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-white/80" style={{ top: "86%" }} />
 
-      {/* ประตู */}
-      <div
-        className={`absolute ${reveal && e!.goal ? "kb-net" : ""}`}
-        style={{ left: `${inset}%`, right: `${inset}%`, top: `${GOAL_TOP}%`, height: `${GOAL_H}%`, transformOrigin: "50% 0" }}
-      >
         <div
-          className="absolute inset-0 rounded-t-md border-x-[6px] border-t-[6px] border-white"
-          style={{
-            backgroundColor: "rgba(255,255,255,.16)",
-            backgroundImage:
-              "repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 12px),repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 12px)",
-          }}
-        />
-
-        {/* โซนเลือกทิศ */}
-        <div className="absolute inset-0 z-10 grid grid-cols-3">
-          {(["L", "C", "R"] as Dir[]).map((d) => {
-            const active = sel === d || hover === d;
-            return (
-              <button
-                key={d}
-                type="button"
-                disabled={!canPick}
-                onClick={() => onSel(d)}
-                aria-label={`เลือก${SIDE[d]}`}
-                aria-pressed={sel === d}
-                className={`m-1.5 flex items-end justify-center rounded-xl pb-2 text-sm font-semibold outline-none transition-all focus-visible:ring-4 focus-visible:ring-blue-400 ${
-                  canPick
-                    ? active
-                      ? "scale-[1.03] bg-white/60 text-zinc-900 ring-4 ring-white"
-                      : "border-2 border-dashed border-white/70 text-white hover:bg-white/25"
-                    : "pointer-events-none border-0 text-transparent"
-                }`}
-              >
-                {SIDE[d]}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ผู้รักษาประตู */}
-        <div
-          className="pointer-events-none absolute z-20"
-          style={{
-            left: `${kx}%`,
-            bottom: "2%",
-            width: inset < 8 ? "15%" : "11%",
-            transform: kTf,
-            transformOrigin: "50% 100%",
-            transition: step >= 1 ? "left 380ms cubic-bezier(.3,.9,.3,1) 120ms, transform 380ms cubic-bezier(.3,.9,.3,1) 120ms" : "none",
-          }}
+          className={`absolute ${reveal && e!.goal ? "kb-net" : ""}`}
+          style={{ left: `${inset}%`, right: `${inset}%`, top: `${GOAL_TOP}%`, height: `${GOAL_H}%`, transformOrigin: "50% 0" }}
         >
-          <div className={step < 1 ? "kb-sway" : ""}>
-            <Keeper />
+          <div
+            className="absolute inset-0 rounded-t-md border-x-[6px] border-t-[6px] border-white"
+            style={{
+              backgroundColor: "rgba(255,255,255,.16)",
+              backgroundImage:
+                "repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 12px),repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 12px)",
+            }}
+          />
+
+          <div className="absolute inset-0 z-10 grid grid-cols-3">
+            {(["L", "C", "R"] as Dir[]).map((d) => {
+              const active = sel === d || hover === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  disabled={!canPick}
+                  onClick={() => onSel(d)}
+                  aria-label={`เลือก${SIDE[d]}`}
+                  aria-pressed={sel === d}
+                  className={`m-1.5 flex items-end justify-center rounded-xl pb-2 text-sm font-semibold outline-none transition-all focus-visible:ring-4 focus-visible:ring-blue-400 ${
+                    canPick
+                      ? active
+                        ? "scale-[1.03] bg-white/60 text-zinc-900 ring-4 ring-white"
+                        : "border-2 border-dashed border-white/70 text-white hover:bg-white/25"
+                      : "pointer-events-none border-0 text-transparent"
+                  }`}
+                >
+                  {SIDE[d]}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            className="pointer-events-none absolute z-20"
+            style={{
+              left: `${kx}%`,
+              bottom: "2%",
+              width: inset < 8 ? "15%" : "11%",
+              transform: kTf,
+              transformOrigin: "50% 100%",
+              transition: step >= 1 ? "left 380ms cubic-bezier(.3,.9,.3,1) 120ms, transform 380ms cubic-bezier(.3,.9,.3,1) 120ms" : "none",
+            }}
+          >
+            <div className={step < 1 ? "kb-sway" : ""}>
+              <Keeper />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* ถุงมือที่ลากตามนิ้ว (ฝั่งผู้รับ) */}
-      {dragging && !iShoot && (
+        {dragging && !iShoot && (
+          <div
+            className="pointer-events-none absolute z-30 leading-none"
+            style={{
+              left: `${drag!.x}%`,
+              top: `${drag!.y}%`,
+              transform: "translate(-50%,-50%)",
+              fontSize: "clamp(72px,11vw,128px)",
+              filter: "drop-shadow(0 6px 4px rgba(0,0,0,.25))",
+            }}
+          >
+            🧤
+          </div>
+        )}
+
         <div
-          className="pointer-events-none absolute z-30 leading-none"
+          className="pointer-events-none absolute z-20 leading-none"
           style={{
-            left: `${drag!.x}%`,
-            top: `${drag!.y}%`,
-            transform: "translate(-50%,-50%)",
-            fontSize: "clamp(72px,11vw,128px)",
+            fontSize: "clamp(56px,9vw,112px)",
+            left: `${ball.left}%`,
+            bottom: `${ball.bottom}%`,
+            opacity: hideRest ? 0 : 1,
+            transform: `translateX(-50%) scale(${ball.scale}) rotate(${ball.rot}deg)`,
+            transition: ball.ms
+              ? `left ${ball.ms}ms cubic-bezier(.2,.7,.3,1), bottom ${ball.ms}ms cubic-bezier(.2,.7,.3,1), transform ${ball.ms}ms cubic-bezier(.2,.7,.3,1)`
+              : "none",
             filter: "drop-shadow(0 6px 4px rgba(0,0,0,.25))",
           }}
         >
-          🧤
+          <span className={!anim && !dragging ? "kb-bob inline-block" : "inline-block"}>{showGlove ? "🧤" : "⚽"}</span>
         </div>
-      )}
-
-      {/* ลูกบอล (ผู้ยิง) / ถุงมือ (ผู้รับ) ตรงหน้าผู้เล่น */}
-      <div
-        className="pointer-events-none absolute z-20 leading-none"
-        style={{
-          fontSize: "clamp(56px,9vw,112px)",
-          left: `${ball.left}%`,
-          bottom: `${ball.bottom}%`,
-          opacity: hideRest ? 0 : 1,
-          transform: `translateX(-50%) scale(${ball.scale}) rotate(${ball.rot}deg)`,
-          transition: ball.ms
-            ? `left ${ball.ms}ms cubic-bezier(.2,.7,.3,1), bottom ${ball.ms}ms cubic-bezier(.2,.7,.3,1), transform ${ball.ms}ms cubic-bezier(.2,.7,.3,1)`
-            : "none",
-          filter: "drop-shadow(0 6px 4px rgba(0,0,0,.25))",
-        }}
-      >
-        <span className={!anim && !dragging ? "kb-bob inline-block" : "inline-block"}>{showGlove ? "🧤" : "⚽"}</span>
       </div>
 
-      </div>
-
-      {/* แฟลชตอนบอลถึงเป้า */}
       {reveal && e!.goal && <div className="kb-flash pointer-events-none fixed inset-0 z-20 bg-white" />}
 
-      {/* ผลลัพธ์ */}
       {reveal && (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">
           <div className="kb-pop flex flex-col items-center text-center">
@@ -467,7 +448,6 @@ function Pitch({
   );
 }
 
-// จุดผลทุกลูกบนป้ายผู้เล่น: ได้แต้ม (ยิงเข้าหรือเซฟได้) เป็น ✓ เขียว ไม่ได้แต้มเป็น ✕ แดง
 function ShotDot({ state, next, hint }: { state: "win" | "lose" | "pending"; next: boolean; hint: string }) {
   const base = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white sm:h-6 sm:w-6 sm:text-xs";
   if (state === "win")
@@ -536,24 +516,22 @@ export default function KickBattle() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sel, setSel] = useState<Dir | null>(null);
-  const [shown, setShown] = useState(0); // จำนวนผลที่แสดงให้ผู้เล่นเห็นแล้ว
+  const [shown, setShown] = useState(0);
   const [anim, setAnim] = useState<Anim | null>(null);
   const [intro, setIntro] = useState<0 | 1 | 2>(0);
   const [go, setGo] = useState(false);
   const [flip, setFlip] = useState(false);
   const [tbIntro, setTbIntro] = useState(false);
   const [portrait, setPortrait] = useState(false);
-  const [confirmExit, setConfirmExit] = useState(false); // กล่องยืนยันก่อนออกจากเกมระหว่างเล่น
-  const [forfeit, setForfeit] = useState<SaveState>("idle"); // สถานะบันทึกแต้มเมื่อคู่แข่งออกกลางเกม
+  const [confirmExit, setConfirmExit] = useState(false);
+  const [forfeit, setForfeit] = useState<SaveState>("idle");
   const forfeitRef = useRef("");
   const initRef = useRef(false);
   const introKey = useRef("");
   const tbKey = useRef("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  // ห้อง/ผู้เล่นปัจจุบัน ใช้ตอนปิดหน้า (cleanup) เพื่อแจ้งออกจากห้อง
   const liveRef = useRef<{ code: string | null; id: string | null }>({ code: null, id: null });
   liveRef.current = { code, id: me?.id ?? null };
-  // ข้อมูลล่าสุดสำหรับคีย์ลัด (ตั้งค่าใหม่ทุกครั้งที่เรนเดอร์หน้าเกม)
   const pickRef = useRef<{ canPick: boolean; sel: Dir | null; confirm: (d?: Dir) => void }>({ canPick: false, sel: null, confirm: () => {} });
   pickRef.current.canPick = false;
 
@@ -562,9 +540,6 @@ export default function KickBattle() {
   };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  // ออกจากหน้านี้ด้วยวิธีไหนก็ตาม (กดกลับ ปุ่มย้อนกลับของเบราว์เซอร์ ลิงก์ไปหน้าอื่น)
-  // ให้แจ้งเซิร์ฟเวอร์ว่าออกจากห้อง เพื่อให้ห้องถูกยกเลิกและอีกฝ่ายรู้ทันที
-  // (การรีเฟรชหน้าไม่เข้าเงื่อนไขนี้ จึงยังกลับเข้าห้องเดิมได้)
   useEffect(
     () => () => {
       const { code: c, id } = liveRef.current;
@@ -578,10 +553,8 @@ export default function KickBattle() {
     []
   );
 
-  // คู่แข่งออกกลางเกม: ผู้ที่ยังอยู่ได้แต้มเหมือนชนะแบบยิงเข้าทุกลูก (ทุกลูก x 100 + โบนัสผู้ชนะ) และบันทึกเข้าบัญชี
   async function claimForfeit(v: View) {
     const key = `kb_forfeit_${v.code}_${v.match}`;
-    // เซิร์ฟเวอร์จ่ายแต้มให้แล้ว หรือรอบนี้เคยบันทึกแล้ว ไม่จ่ายซ้ำ
     if (v.awardSaved?.[v.you] || (v.earned?.[v.you] ?? 0) > 0) {
       setForfeit("saved");
       return;
@@ -603,7 +576,6 @@ export default function KickBattle() {
     }
     setForfeit("saving");
     try {
-      // API ใช้ $inc อยู่แล้ว จึงส่งเฉพาะแต้มรอบนี้
       const r = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -624,13 +596,11 @@ export default function KickBattle() {
   useEffect(() => {
     if (!view || !me || view.status !== "playing" || !view.oppLeft) return;
     const key = `${view.code}-${view.match}`;
-    if (forfeitRef.current === key) return; // ทำครั้งเดียวต่อแมตช์
+    if (forfeitRef.current === key) return;
     forfeitRef.current = key;
     claimForfeit(view);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, me]);
 
-  // จอแนวตั้ง/แนวนอน และล็อกการเลื่อนของหน้าเว็บ
   useEffect(() => {
     const f = () => setPortrait(window.innerWidth < window.innerHeight);
     f();
@@ -644,9 +614,8 @@ export default function KickBattle() {
   }, []);
 
   function leave() {
-    // แจ้งเซิร์ฟเวอร์ว่าเราออกจากห้องแล้ว เพื่อให้อีกฝั่งเห็นสถานะ (ไม่ต้องรอผล)
     if (code && me) sendLeave(code, me.id);
-    liveRef.current = { code: null, id: null }; // กันส่งซ้ำตอน cleanup
+    liveRef.current = { code: null, id: null };
     localStorage.removeItem("kb_room");
     timers.current.forEach(clearTimeout);
     timers.current = [];
@@ -665,13 +634,11 @@ export default function KickBattle() {
     setGo(false);
   }
 
-  // ออกจากเกมแล้วกลับหน้าหลัก (ห้องถูกยกเลิก)
   function exitGame() {
     leave();
     router.push("/");
   }
 
-  // กลับเข้าห้องเดิมเมื่อรีเฟรช
   useEffect(() => {
     if (me) {
       const saved = localStorage.getItem("kb_room");
@@ -679,7 +646,6 @@ export default function KickBattle() {
     }
   }, [me]);
 
-  // ดึงสถานะห้องทุก 0.5 วินาที
   useEffect(() => {
     if (!code || !me) return;
     let stop = false;
@@ -703,10 +669,8 @@ export default function KickBattle() {
       stop = true;
       clearInterval(t);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, me]);
 
-  // เล่นแอนิเมชันผลยิงทีละครั้ง
   useEffect(() => {
     if (!view) return;
     if (!initRef.current) {
@@ -733,10 +697,8 @@ export default function KickBattle() {
         setSel(null);
       }, 3200);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, shown, anim]);
 
-  // สุ่มบทบาทตอนเริ่มแมตช์ แล้วขึ้น GO!!!
   useEffect(() => {
     if (!view || view.status !== "playing" || view.history.length > 0) return;
     const key = `${view.code}-${view.match}`;
@@ -749,10 +711,8 @@ export default function KickBattle() {
       setGo(true);
     }, 3700);
     later(() => setGo(false), 4600);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
-  // ประกาศต่อเวลาเมื่อครบ 6 ลูกแล้วแต้มเสมอ
   useEffect(() => {
     if (!view || anim || view.status !== "playing") return;
     if (view.history.length !== view.total || shown !== view.total) return;
@@ -761,7 +721,6 @@ export default function KickBattle() {
     tbKey.current = key;
     setTbIntro(true);
     later(() => setTbIntro(false), 3000);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, shown, anim]);
 
   useEffect(() => {
@@ -770,7 +729,6 @@ export default function KickBattle() {
     return () => clearInterval(t);
   }, [intro]);
 
-  // คีย์ลัดบนคอม: ← ↓ → (หรือ A S D) เลือกทิศ, Enter/Space ยืนยัน
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const p = pickRef.current;
@@ -794,10 +752,20 @@ export default function KickBattle() {
     setError("");
     setBusy(true);
     try {
-      const r = await api({ action, code: joinCode, playerId: me.id, name: me.name, avatar: me.avatar });
-      localStorage.setItem("kb_room", r.code);
+      const targetCode = action === "join" ? joinCode.trim().toUpperCase() : undefined;
+      const r = await api({ action, code: targetCode, playerId: me.id, name: me.name, avatar: me.avatar });
+      const activeCode = r.code || targetCode;
+      if (!activeCode) throw new Error("ไม่พบรหัสห้อง");
+      
+      // ล้าง State เก่าเพื่อเตรียมพร้อมสำหรับการเข้าห้องใหม่
       initRef.current = false;
-      setCode(r.code);
+      setView(null);
+      setShown(0);
+      setAnim(null);
+      setSel(null);
+      
+      localStorage.setItem("kb_room", activeCode);
+      setCode(activeCode);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -812,7 +780,6 @@ export default function KickBattle() {
     setBusy(true);
     try {
       const v: View = await api({ action: "pick", code, playerId: me.id, dir: d });
-      // ถ้าผลลูกนี้ออกแล้ว ปล่อยให้การดึงสถานะรอบถัดไปพาทั้งสองฝั่งเล่นแอนิเมชันพร้อมกัน
       setView((cur) => (cur && v.history.length > cur.history.length ? { ...cur, youPicked: true } : v));
     } catch (e: any) {
       setError(e.message);
@@ -839,12 +806,10 @@ export default function KickBattle() {
     } catch {}
   }
 
-  // เมนู (ล็อบบี้/รอเพื่อน): เต็มจอ เลื่อนได้
   const menu = (children: React.ReactNode, hero = false) => (
     <div className={`fixed inset-0 z-50 overflow-y-auto font-sans text-zinc-900 ${hero ? "bg-[#8DB885]" : "bg-white"}`}>
       <style>{CSS}</style>
 
-      {/* พื้นหลังวิดีโอ + พื้นหลังเขียวไล่ระดับความทึบด้านล่าง (เฉพาะหน้าล็อบบี้) */}
       {hero && (
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden="true">
           <video
@@ -954,28 +919,45 @@ export default function KickBattle() {
     );
   }
 
-  // ===== รอเพื่อน =====
+  // ===== รอเพื่อน (เฉพาะ Host คนสร้างห้อง หรือ Guest ที่เพิ่ง Join แล้วรอ Server เริ่มเกม) =====
   if (!view || view.status === "waiting") {
+    const isGuest = view && view.you === 1;
     return menu(
       <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center">
-        <p className="text-sm opacity-70">รหัสห้องของคุณ</p>
-        <p className="mt-2 text-7xl font-semibold tracking-[.2em] md:text-8xl">{code}</p>
-        <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
-          {copied ? "คัดลอกแล้ว" : "คัดลอกรหัส"}
-        </button>
-        <p className="mt-8 text-sm opacity-70">
-          รอเพื่อนเข้าห้อง
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-              .
-            </span>
-          ))}
-        </p>
+        {isGuest ? (
+          <>
+            <p className="text-2xl font-semibold">เข้าร่วมห้อง {code} สำเร็จ!</p>
+            <p className="mt-4 text-sm opacity-70">
+              กำลังเชื่อมต่อและรอเริ่มเกม
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
+                  .
+                </span>
+              ))}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm opacity-70">รหัสห้องของคุณ</p>
+            <p className="mt-2 text-7xl font-semibold tracking-[.2em] md:text-8xl">{code}</p>
+            <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
+              {copied ? "คัดลอกแล้ว" : "คัดลอกรหัส"}
+            </button>
+            <p className="mt-8 text-sm opacity-70">
+              รอเพื่อนเข้าห้อง
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
+                  .
+                </span>
+              ))}
+            </p>
+          </>
+        )}
       </div>
     );
   }
 
-  // ===== ในเกม (เต็มจอ) =====
+  // ===== ในเกม (เมื่อสถานะเปลี่ยนเป็น playing หรือ finished) =====
   const you = view.you;
   const opp = (1 - you) as 0 | 1;
   const revealed = shown + (anim && anim.step >= 2 ? 1 : 0);
@@ -983,7 +965,7 @@ export default function KickBattle() {
   view.history.slice(0, revealed).forEach((h) => sc[h.goal ? h.shooter : 1 - h.shooter]++);
   const curShooter = ((view.first + shown) % 2) as 0 | 1;
   const iShoot = curShooter === you;
-  const cancelled = view.oppLeft && view.status === "playing"; // คู่แข่งออกกลางเกม = ห้องถูกยกเลิก
+  const cancelled = view.oppLeft && view.status === "playing";
   const canPick = !cancelled && !confirmExit && intro === 0 && !tbIntro && !anim && shown === view.round && view.status === "playing" && !view.youPicked;
   const done = view.status === "finished" && shown === view.history.length && !anim;
   const iWon = view.winner === you;
@@ -1002,7 +984,6 @@ export default function KickBattle() {
     ...Array.from({ length: view.total }).map((_, k) => dot(i, k)),
     ...(tiebreak ? [<span key="tb" className="mx-0.5 h-5 w-px bg-black/20" />, ...Array.from({ length: TB_SHOTS }).map((_, k) => dot(i, view.total + k))] : []),
   ];
-  // ป้าย +100 ลอยขึ้นเหนือผู้ที่เพิ่งได้แต้ม
   const scorer = anim && anim.step >= 2 ? (anim.entry.goal ? anim.entry.shooter : 1 - anim.entry.shooter) : -1;
   const gainFor = (i: 0 | 1) => (scorer === i && anim ? `${view.match}-${anim.entry.round}` : null);
   const roleOf = (i: 0 | 1) => (done ? null : i === curShooter ? "ยิง" : "รับ");
@@ -1018,7 +999,6 @@ export default function KickBattle() {
     <div className="fixed inset-0 z-50 overflow-hidden overscroll-none font-sans text-zinc-900" style={{ background: GRASS, touchAction: "none" }}>
       <style>{CSS}</style>
 
-      {/* สนาม: อัตราส่วนคงที่ อยู่กลางจอ ส่วนที่เหลือเป็นสนามหญ้าเต็มจอ */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div style={{ width: portrait ? "100vw" : "min(100vw, 160vh)" }}>
           <Pitch
@@ -1038,13 +1018,11 @@ export default function KickBattle() {
         </div>
       </div>
 
-      {/* HUD บน: ป้ายผู้เล่น + สถานะลูกที่ */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 z-30"
         style={{ padding: "calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px)" }}
       >
         <div className="mx-auto flex max-w-3xl gap-2 sm:gap-3">
-          {/* ลำดับเหมือนกันทั้งสองฝั่ง: ผู้สร้างห้องก่อน ผู้เข้าร่วมถัดมา */}
           <PlayerPill p={view.players[0]} score={sc[0] * 100} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou={you === 0} dots={dotsFor(0)} />
           <PlayerPill p={view.players[1]} score={sc[1] * 100} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
         </div>
@@ -1053,13 +1031,11 @@ export default function KickBattle() {
         </div>
       </div>
 
-      {/* HUD ล่าง: ปุ่มออก + คำสั่ง */}
       {!done && intro === 0 && !tbIntro && (
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end gap-2"
           style={{ padding: "0 calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px)" }}
         >
-          {/* กดแล้วต้องยืนยันก่อน เพราะการออกกลางเกมจะยกเลิกห้อง */}
           <button type="button" onClick={() => setConfirmExit(true)} aria-label="ออกจากเกม" title="ออกจากเกม" className={BTN_ROUND}>
             ←
           </button>
@@ -1096,7 +1072,6 @@ export default function KickBattle() {
         </div>
       )}
 
-      {/* สุ่มบทบาท */}
       {intro > 0 && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#190C28]/60 px-6 text-center text-white backdrop-blur-sm">
           {intro === 1 ? (
@@ -1116,7 +1091,6 @@ export default function KickBattle() {
         </div>
       )}
 
-      {/* GO!!! */}
       {go && (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
           <div style={{ animation: "kb-go .9s ease-out both" }}>
@@ -1125,7 +1099,6 @@ export default function KickBattle() {
         </div>
       )}
 
-      {/* ประกาศต่อเวลา */}
       {tbIntro && (
         <div className="kb-rise absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#190C28]/70 px-6 text-center text-white backdrop-blur-sm">
           <div className="kb-pop">
@@ -1137,7 +1110,6 @@ export default function KickBattle() {
         </div>
       )}
 
-      {/* หน้าสรุป */}
       {done && (
         <div className="kb-rise absolute inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-gradient-to-b from-[#F7E9A8] via-white to-white p-4">
           {iWon && <Confetti n={44} />}
@@ -1167,7 +1139,6 @@ export default function KickBattle() {
                 <p className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว</p>
               ))}
 
-            {/* สถานะคู่แข่ง */}
             <p className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-600">
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: view.oppLeft ? "#E0483B" : "#5FA35A" }} aria-hidden="true" />
               {view.oppLeft ? "คู่แข่งออกจากห้องแล้ว" : "คู่แข่งยังอยู่ในห้อง"}
@@ -1175,7 +1146,6 @@ export default function KickBattle() {
 
             <div className="mt-4 flex flex-col gap-2">
               {view.oppLeft ? (
-                // คู่แข่งออกแล้ว เล่นอีกรอบไม่ได้ เหลือแค่ปุ่มจบเกม
                 <button onClick={leave} className={BTN_MAIN}>
                   จบเกม
                 </button>
@@ -1197,7 +1167,6 @@ export default function KickBattle() {
         </div>
       )}
 
-      {/* คู่แข่งออกกลางเกม: ห้องถูกยกเลิก เกมจบ ผู้ที่ยังอยู่ได้แต้มเต็มจำนวน */}
       {cancelled && (
         <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-gradient-to-b from-[#F7E9A8] via-white to-white p-4">
           <Confetti n={40} />
@@ -1243,7 +1212,6 @@ export default function KickBattle() {
         </div>
       )}
 
-      {/* ยืนยันก่อนออกจากเกมระหว่างเล่น */}
       {confirmExit && !cancelled && (
         <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center bg-[#190C28]/60 p-6 backdrop-blur-sm">
           <div className="kb-pop w-full max-w-sm rounded-[2rem] bg-white p-7 text-center text-zinc-900">
