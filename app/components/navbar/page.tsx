@@ -138,8 +138,8 @@ export default function Navbar({
   }, [score, userId]);
 
   return (
-    <header className="sticky top-0 z-40 flex w-full justify-center bg-white/80 backdrop-blur-md">
-      <div className="flex h-20 w-full max-w-5xl items-center justify-between px-6">
+    <header className="sticky top-0 z-40 flex w-full justify-center bg-black/50 text-white backdrop-blur-xl backdrop-saturate-150">
+      <div className="flex h-20 w-full max-w-7xl items-center justify-between px-6">
         <style>{`
           @keyframes score-gain {
             0%   { opacity: 0; transform: translateY(-10px) scale(.6); }
@@ -151,20 +151,20 @@ export default function Navbar({
           @media (prefers-reduced-motion: reduce) { .score-gain { animation: none; } }
         `}</style>
 
-        {/* Logo COM7 กลับหน้าแรก */}
+        {/* Logo COM7 กลับหน้าแรก (แปลงเป็นสีขาวให้เห็นชัดบนพื้นดำ) */}
         <Link href="/" aria-label="COM7 หน้าแรก" className="flex items-center">
           <Image
             src="/img/com7logo.png"
             alt="COM7"
-            width={120}
-            height={36}
+            width={213}
+            height={64}
             priority
-            className="h-9 w-auto object-contain"
+            className="h-16 w-auto object-contain brightness-0 invert"
           />
         </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden items-center gap-8 text-sm font-medium sm:flex">
+        <nav className="hidden items-center gap-8 text-sm font-medium text-white sm:flex">
           <a href="#events" className="transition-opacity hover:opacity-60">
             Events
           </a>
@@ -196,7 +196,7 @@ export default function Navbar({
           <button
             onClick={onOpenFavorites}
             aria-label="รายการโปรด"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/[.08] transition-colors hover:bg-black/[.04] sm:hidden"
+            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 sm:hidden"
           >
             <svg
               viewBox="0 0 24 24"
@@ -211,7 +211,7 @@ export default function Navbar({
               <path d={HEART_PATH} />
             </svg>
             {saved.length > 0 && (
-              <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-900 px-1 text-xs font-semibold text-white">
+              <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-xs font-semibold text-black">
                 {saved.length}
               </span>
             )}
@@ -246,12 +246,12 @@ export default function Navbar({
 
           {/* โปรไฟล์ / ปุ่มเข้าสู่ระบบ */}
           {!ready ? (
-            <span className="h-10 w-10 animate-pulse rounded-full bg-zinc-200" />
+            <span className="h-10 w-10 animate-pulse rounded-full bg-zinc-700" />
           ) : profile ? (
             <Link
               href="/login/profile"
               aria-label="โปรไฟล์ของฉัน"
-              className="flex items-center gap-3 rounded-full border border-black/[.08] p-1 transition-colors hover:bg-black/[.04] sm:pr-4"
+              className="flex items-center gap-3 rounded-full border border-white/20 p-1 text-white transition-colors hover:bg-white/10 sm:pr-4"
             >
               <span className="relative shrink-0">
                 {isFirst && (
@@ -273,7 +273,7 @@ export default function Navbar({
           ) : (
             <Link
               href="/login"
-              className="flex h-10 items-center rounded-full bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-700"
+              className="flex h-10 items-center rounded-full bg-white px-5 text-sm font-medium text-black transition-colors hover:bg-zinc-300"
             >
               เข้าสู่ระบบ
             </Link>

@@ -368,7 +368,7 @@ export default function Home() {
   const myScore = score ?? (profile?.userId ? scoreMap[profile.userId] ?? null : null);
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
+    <div className="flex min-h-screen flex-col items-center bg-black font-sans text-white">
       <Navbar
         saved={[...saved, ...savedGames]}
         profile={profile}
@@ -378,18 +378,21 @@ export default function Home() {
         onOpenFavorites={() => setFavOpen(true)}
       />
 
-      <main className="flex w-full max-w-5xl flex-col gap-6 px-6 pb-24">
+      {/* Events เต็มความกว้างจอ (อยู่นอก container max-w-5xl) */}
+      <div className="w-full">
         <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId} />
+      </div>
 
+      <main className="flex w-full max-w-7xl flex-col gap-6 px-6 pb-24 pt-6">
         <section className="grid grid-cols-3 gap-3">
           {[
             [totalParticipants > 0 ? String(totalParticipants) : "0", "ผู้เข้าร่วม"],
             ["5/7", "เกมที่เปิดแล้ว"],
             ["4", "วันที่เหลือ"],
           ].map(([n, label]) => (
-            <div key={label} className="rounded-3xl bg-zinc-50 px-5 py-6 text-center">
+            <div key={label} className="rounded-3xl bg-zinc-900 px-5 py-6 text-center">
               <p className="text-4xl font-semibold tabular-nums tracking-tight">{n}</p>
-              <p className="mt-1 text-sm text-zinc-500">{label}</p>
+              <p className="mt-1 text-sm text-zinc-400">{label}</p>
             </div>
           ))}
         </section>
@@ -403,8 +406,8 @@ export default function Home() {
                 onClick={() => setCat(c)}
                 className={`h-10 rounded-full px-4 text-sm font-medium transition-colors ${
                   cat === c
-                    ? "bg-zinc-900 text-white"
-                    : "border border-black/[.08] hover:bg-black/[.04]"
+                    ? "bg-white text-black"
+                    : "border border-white/20 hover:bg-white/10"
                 }`}
               >
                 {c}
@@ -430,11 +433,11 @@ export default function Home() {
                   }
                 }}
                 className={`flex min-h-72 cursor-pointer flex-col justify-between rounded-[2rem] p-6 outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-4 focus-visible:ring-blue-400 ${
-                  soon ? "bg-zinc-100 text-zinc-700" : `${g.tone} text-zinc-900`
+                  soon ? "bg-zinc-900 text-zinc-300" : `${g.tone} text-zinc-900`
                 }`}
               >
                 <div className="flex items-start justify-between">
-                  <Badge status={g.status} />
+                  <Badge status={g.status} dark={soon} />
                   <span className="text-6xl font-light leading-none opacity-80">{g.glyph}</span>
                 </div>
                 <div>
@@ -442,7 +445,7 @@ export default function Home() {
                   <h3 className="mt-1 text-3xl font-semibold tracking-tight">{g.name}</h3>
                   <p className="mt-2 max-w-xs text-sm leading-6 opacity-70">{g.desc}</p>
                   <div className="mt-5 flex items-center justify-between gap-3">
-                    <span className={`inline-flex h-11 items-center rounded-full px-5 text-sm font-medium ${soon ? "bg-black/10 text-zinc-500" : "bg-zinc-900 text-white"}`}>
+                    <span className={`inline-flex h-11 items-center rounded-full px-5 text-sm font-medium ${soon ? "bg-white/10 text-zinc-400" : "bg-zinc-900 text-white"}`}>
                       {soon ? "เปิดเร็วๆ นี้" : "เล่นเกม"}
                     </span>
                     <HeartButton saved={savedGames.includes(g.id)} onToggle={() => toggleSaveGame(g.id)} label={g.name} />
@@ -457,15 +460,15 @@ export default function Home() {
           <div className="flex flex-col justify-between gap-6">
             <div>
               <h2 className="text-2xl font-semibold tracking-tight">ผู้นำตอนนี้</h2>
-              <p className="mt-2 max-w-xs text-sm leading-6 text-zinc-500">
+              <p className="mt-2 max-w-xs text-sm leading-6 text-zinc-400">
                 แต้มสะสมจากทุกรอบที่เล่น อัปเดตทุกครั้งที่มีคนเล่นจบ
               </p>
             </div>
-            <Link href="/rank" className="inline-flex h-11 w-fit items-center rounded-full border border-black/[.08] px-5 text-sm font-medium transition-colors hover:bg-black/[.04]">ดูอันดับทั้งหมด</Link>
+            <Link href="/rank" className="inline-flex h-11 w-fit items-center rounded-full border border-white/20 px-5 text-sm font-medium transition-colors hover:bg-white/10">ดูอันดับทั้งหมด</Link>
           </div>
           <ol className="flex flex-col gap-3">
             {topUsers.length === 0 ? (
-              <p className="py-6 text-center text-sm text-zinc-400">ยังไม่มีข้อมูลอันดับ</p>
+              <p className="py-6 text-center text-sm text-zinc-500">ยังไม่มีข้อมูลอันดับ</p>
             ) : (
               topUsers.map((r, i) => (
                 <li key={r.name + i} className={`flex items-center gap-4 rounded-full p-3 text-zinc-900 ${PODIUM[i]}`}>
@@ -491,12 +494,12 @@ export default function Home() {
           <h2 className="text-2xl font-semibold tracking-tight">วิธีเล่น</h2>
           <ol className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((s, i) => (
-              <li key={s.title} className="rounded-3xl bg-zinc-50 p-6">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm font-semibold">
+              <li key={s.title} className="rounded-3xl bg-zinc-900 p-6">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm font-semibold text-black">
                   {i + 1}
                 </span>
                 <h3 className="mt-6 text-lg font-semibold tracking-tight">{s.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-zinc-500">{s.desc}</p>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">{s.desc}</p>
               </li>
             ))}
           </ol>
@@ -513,12 +516,12 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="w-full max-w-5xl border-t border-black/[.08] px-6 py-8 text-sm text-zinc-500">
+      <footer className="w-full max-w-7xl border-t border-white/10 px-6 py-8 text-sm text-zinc-400">
         7 Days 7 Games · มินิเกมสำหรับพักสมอง
       </footer>
 
       <GameDetail game={detailGame} saved={!!detailGame && savedGames.includes(detailGame.id)} onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)} onClose={() => setGameId(null)} />
-      
+
       {/* Component รายการโปรดที่แยกออกมา */}
       <FavoritesSheet
         open={favOpen}

@@ -5,14 +5,17 @@ import { useEffect, useState } from "react";
 
 export type Status = "NOW" | "SOON";
 
-export function Badge({ status }: { status: Status }) {
+export function Badge({ status, dark = false }: { status: Status; dark?: boolean }) {
   const now = status === "NOW";
+  const tone = dark
+    ? now
+      ? "bg-white text-black"
+      : "bg-white/15 text-white"
+    : now
+      ? "bg-white/70 text-zinc-900"
+      : "bg-black/10 text-zinc-600";
   return (
-    <span
-      className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold tracking-wide ${
-        now ? "bg-white/70 text-zinc-900" : "bg-black/10 text-zinc-600"
-      }`}
-    >
+    <span className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold tracking-wide ${tone}`}>
       {status}
     </span>
   );
@@ -33,6 +36,7 @@ export type EventItem = {
   image?: string;
   cover?: string;
   logo?: string;
+  dark?: boolean; // หน้ารายละเอียดแบบพื้นดำ ตัวหนังสือขาว
   bracket?: { teams: string[]; note: string };
   prize?: { rank: string; amount: string; unit: string };
   info: [string, string][];
@@ -44,7 +48,7 @@ export const EVENTS: EventItem[] = [
     id: "pubg", status: "SOON", meta: "เริ่ม 26 ต.ค. 2026", lines: ["PUBG", "Mobile Cup"],
     desc: "ศึกชิงแชมป์ PUBG Mobile ของบริษัท รวมทีม 4 คน ลงสนามแบบ Squad ลุ้นเป็นทีมสุดท้ายที่รอดชีวิต",
     cta: "ดูรายละเอียด", href: "#", bg: "#B7CBB0", fg: "#1F3A2A", visual: "shapes",
-    image: "/img/pubg1.png", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png",
+    image: "/img/pubg1.png", cover: "/img/pubg2.jpg", logo: "/img/pubglogo.png", dark: true,
     prize: { rank: "ผู้ชนะอันดับ 1 รับ", amount: "60,000", unit: "คะแนน" },
     info: [["วันแข่ง", "26 ต.ค. 2026 เวลา 18:00 น."], ["รูปแบบ", "Squad ทีมละ 4 คน"], ["รอบการแข่ง", "คัดเลือก 3 แมตช์ แล้วน็อกเอาต์ 8 ทีม"]],
     rules: ["สมัครเป็นทีม ทีมละ 4 คน และมีผู้เล่นสำรองได้ 1 คน", "รอบคัดเลือกแข่ง 3 แมตช์ คะแนนรวมมาจากอันดับของทีมและจำนวน Kill", "8 ทีมคะแนนสูงสุดเข้าสู่รอบน็อกเอาต์ แข่งโหมด Team Deathmatch 4 ต่อ 4", "ทีมที่ชนะรอบชิงชนะเลิศเป็นแชมป์ ผู้ชนะอันดับ 1 รับ 60,000 คะแนน", "ทุกคนต้องใช้บัญชีของตัวเอง และห้ามใช้โปรแกรมช่วยเล่นทุกชนิด"],
@@ -152,15 +156,20 @@ function TitleContent({ e, logoClass }: { e: EventItem; logoClass: string }) {
 
 const SLIDE_MS = 5000;
 
+// ระยะขอบซ้าย/ขวา ให้เนื้อหาในการ์ดตรงกับ container max-w-5xl แม้การ์ดเต็มจอ
+const EDGE = "max(1rem, calc((100% - 80rem) / 2 + 0.5rem))";
+const EDGE_HEART = "max(1rem, calc((100% - 80rem) / 2 + 1.5rem))";
+
 export const HEART_PATH = "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.2l7.8-7.7 1-1.1a5.5 5.5 0 0 0 0-7.8z";
 
-function HeartButton({ on, onClick, className = "", tabIndex = 0 }: { on: boolean; onClick: () => void; className?: string; tabIndex?: number }) {
+function HeartButton({ on, onClick, className = "", tabIndex = 0, style }: { on: boolean; onClick: () => void; className?: string; tabIndex?: number; style?: React.CSSProperties }) {
   return (
     <button
       type="button"
       tabIndex={tabIndex}
       aria-pressed={on}
       aria-label={on ? "ยกเลิกการบันทึกกิจกรรม" : "บันทึกกิจกรรม"}
+      style={style}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -198,45 +207,64 @@ function EventCard({ e, titleTag, saved, toggleSave, onOpen, clone = false, styl
       tabIndex={clone ? -1 : 0}
       onClick={onOpen}
       onKeyDown={(ev) => ev.key === "Enter" && ev.target === ev.currentTarget && onOpen()}
-      style={{ backgroundColor: e.bg, color: e.fg, ...style }}
-      className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden rounded-[2rem] p-4 outline-none focus-visible:ring-4 focus-visible:ring-blue-400 md:grid-cols-2 md:p-5 ${
-        e.image ? "min-h-[22rem] md:min-h-[20rem]" : "min-h-[20rem]"
-      }`}
+      style={{ paddingLeft: EDGE, paddingRight: EDGE, ...style }}
+      className={`relative grid w-full shrink-0 cursor-pointer overflow-hidden bg-black py-4 text-white outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-blue-400 md:grid-cols-2 md:py-6 min-h-[calc(100svh-6.5rem)]`}
     >
       {e.image && (
         <>
+          {/* รูปเต็มการ์ด */}
           <Image src={e.image} alt="" fill sizes="(min-width: 1024px) 1024px, 100vw" className="object-cover" />
-          <div aria-hidden className="absolute inset-0 md:hidden" style={{ background: `linear-gradient(to top, ${e.bg} 0%, ${e.bg}F2 45%, ${e.bg}00 100%)` }} />
-          <div aria-hidden className="absolute inset-0 hidden md:block" style={{ background: `linear-gradient(to right, ${e.bg} 0%, ${e.bg}F2 30%, ${e.bg}99 52%, ${e.bg}00 78%)` }} />
+          {/* ไล่ระดับสีดำด้านข้าง (มือถือไล่จากล่างขึ้นบน) */}
+          <div
+            aria-hidden
+            className="absolute inset-0 md:hidden"
+            style={{ background: "linear-gradient(to top, rgba(0,0,0,.95) 0%, rgba(0,0,0,.8) 40%, rgba(0,0,0,0) 80%)" }}
+          />
+          <div
+            aria-hidden
+            className="absolute inset-0 hidden md:block"
+            style={{ background: "linear-gradient(to right, rgba(0,0,0,.95) 0%, rgba(0,0,0,.85) 28%, rgba(0,0,0,.4) 50%, rgba(0,0,0,0) 72%)" }}
+          />
         </>
       )}
       <HeartButton
         on={saved.includes(e.id)}
         onClick={() => toggleSave(e.id)}
         tabIndex={clone ? -1 : 0}
-        className="absolute right-4 top-4 z-10 md:right-5 md:top-5"
+        style={{ right: EDGE_HEART }}
+        className="absolute top-4 z-10 md:top-6"
       />
       <div className="relative z-10 flex flex-col justify-between gap-4 p-2 md:p-4">
         <div className="flex items-center gap-2.5">
-          <Badge status={e.status} />
-          <span className="text-xs opacity-70">{e.meta}</span>
+          <Badge status={e.status} dark />
+          <span className="text-xs text-white/70">{e.meta}</span>
         </div>
         <div>
-          <Title className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            <TitleContent e={e} logoClass="w-full max-w-[14rem] md:max-w-[17rem]" />
+          <Title className="text-4xl font-semibold leading-tight tracking-tight text-white md:text-5xl">
+            <TitleContent e={e} logoClass="w-full max-w-[18rem] md:max-w-[26rem]" />
           </Title>
-          <p className="mt-2.5 max-w-xs text-sm leading-6 opacity-70">{e.desc}</p>
+          <p className="mt-2.5 max-w-xs text-sm leading-6 text-white/80">{e.desc}</p>
           {e.prize && (
-            <div className="mt-3">
+            <div className="mt-3 text-white">
               <PrizeChip prize={e.prize} />
             </div>
           )}
           <div className="mt-4 flex flex-wrap gap-2.5">
-            <a href={e.href} onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop} tabIndex={clone ? -1 : 0} style={{ backgroundColor: e.fg }} className="inline-flex h-10 items-center rounded-full px-5 text-xs font-medium text-white transition-opacity hover:opacity-85">
+            <a
+              href={e.href}
+              onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop}
+              tabIndex={clone ? -1 : 0}
+              className="inline-flex h-10 items-center rounded-none border-2 border-[#3BBF5E] bg-[#3BBF5E] px-6 text-xs font-semibold text-white transition-colors hover:bg-[#34A853] hover:border-[#34A853]"
+            >
               {e.cta}
             </a>
             {isMain && (
-              <a href="#how" onClick={stop} tabIndex={clone ? -1 : 0} style={{ borderColor: `${e.fg}33` }} className="inline-flex h-10 items-center rounded-full border px-5 text-xs font-medium transition-colors hover:bg-black/5">
+              <a
+                href="#how"
+                onClick={stop}
+                tabIndex={clone ? -1 : 0}
+                className="inline-flex h-10 items-center rounded-none border border-white/40 px-6 text-xs font-medium text-white transition-colors hover:bg-white/10"
+              >
                 วิธีเล่น
               </a>
             )}
@@ -244,7 +272,7 @@ function EventCard({ e, titleTag, saved, toggleSave, onOpen, clone = false, styl
         </div>
       </div>
       {!e.image && (
-        <div className="flex min-h-48 items-center justify-center rounded-2xl bg-white p-4">
+        <div className="relative z-10 flex min-h-48 items-center justify-center rounded-2xl bg-white p-4">
           <EventVisual kind={e.visual} />
         </div>
       )}
@@ -285,7 +313,7 @@ export default function EventsCarousel({ saved, toggleSave, setOpenId, overlayOp
         @keyframes sheet-in { from { opacity: 0; transform: translateY(28px) scale(.98); } to { opacity: 1; transform: none; } }
       `}</style>
 
-      <div className="grid overflow-hidden rounded-[2rem]">
+      <div className="grid overflow-hidden">
         {EVENTS.map((e, i) => {
           const rel = ((((i - pos + 1) % n) + n) % n) - 1;
           return (
@@ -318,7 +346,7 @@ export default function EventsCarousel({ saved, toggleSave, setOpenId, overlayOp
               setPos((p) => p - (((p % n) + n) % n) + i);
               setTimeout(() => setInstant(false), 60);
             }}
-            className={`h-2 rounded-full transition-all duration-300 ${active === i ? "w-6 bg-zinc-900" : "w-2 bg-zinc-300 hover:bg-zinc-400"}`}
+            className={`h-2 rounded-full transition-all duration-300 ${active === i ? "w-6 bg-white" : "w-2 bg-zinc-600 hover:bg-zinc-500"}`}
           />
         ))}
       </div>
@@ -416,26 +444,29 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
   useEffect(() => setFade(0), [sel?.id]);
   if (!sel) return null;
   const isSaved = saved.includes(sel.id);
+  const dark = !!sel.dark;
+  const bg = dark ? "#000000" : sel.bg;
+  const fg = dark ? "#FFFFFF" : sel.fg;
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={sel.lines.join(" ")}
       onScroll={sel.cover ? (e) => setFade(Math.min(1, e.currentTarget.scrollTop / (window.innerHeight * 0.45))) : undefined}
-      style={{ backgroundColor: sel.bg, color: sel.fg, animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)" }}
+      style={{ backgroundColor: bg, color: fg, animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)" }}
       className="fixed inset-0 z-[60] overflow-y-auto"
     >
       {sel.cover && (
         <div aria-hidden className="fixed inset-x-0 top-0 h-[62vh] overflow-hidden">
           <Image src={sel.cover} alt="" fill priority sizes="100vw" className="object-cover" />
-          <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, rgba(0,0,0,.25) 0%, rgba(0,0,0,0) 30%, ${sel.bg} 100%)` }} />
-          <div className="absolute inset-0" style={{ backgroundColor: sel.bg, opacity: fade * 0.92 }} />
+          <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, rgba(0,0,0,.25) 0%, rgba(0,0,0,0) 30%, ${bg} 100%)` }} />
+          <div className="absolute inset-0" style={{ backgroundColor: bg, opacity: fade * 0.92 }} />
         </div>
       )}
-      <div className="relative mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-36 pt-6">
+      <div className={`relative mx-auto flex min-h-full flex-col px-6 pb-36 pt-6 ${dark ? "max-w-7xl" : "max-w-5xl"}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Badge status={sel.status} />
+            <Badge status={sel.status} dark={dark} />
             <span className="text-sm opacity-70">{sel.meta}</span>
           </div>
           <div className="flex gap-3">
@@ -471,7 +502,7 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
 
         <div className="mt-10 grid gap-4 sm:grid-cols-3">
           {sel.info.map(([label, value]) => (
-            <div key={label} className="rounded-3xl bg-white/70 p-6">
+            <div key={label} className={`rounded-3xl p-6 ${dark ? "bg-white/10" : "bg-white/70"}`}>
               <p className="text-sm opacity-60">{label}</p>
               <p className="mt-1 text-lg font-semibold">{value}</p>
             </div>
@@ -505,10 +536,10 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
         )}
       </div>
 
-      <div style={{ background: `linear-gradient(to top, ${sel.bg} 60%, transparent)` }} className="fixed inset-x-0 bottom-0 flex justify-center px-6 pb-6 pt-12">
+      <div style={{ background: `linear-gradient(to top, ${bg} 60%, transparent)` }} className="fixed inset-x-0 bottom-0 flex justify-center px-6 pb-6 pt-12">
         <button
           onClick={() => (sel.status === "NOW" ? onPlay() : toggleSave(sel.id))}
-          style={{ backgroundColor: sel.fg }}
+          style={{ backgroundColor: dark ? "#3BBF5E" : sel.fg }}
           className="h-14 w-full max-w-sm rounded-full text-base font-medium text-white transition-opacity hover:opacity-85"
         >
           {sel.status === "NOW" ? "เริ่มเล่น" : isSaved ? "บันทึกกิจกรรมแล้ว" : "บันทึกกิจกรรมนี้"}
