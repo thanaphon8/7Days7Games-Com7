@@ -210,6 +210,22 @@ const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-ful
 const BTN_ROUND = "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
 const POP_SHADOW = "0 2px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 0 14px rgba(255,255,255,.9)";
 
+/* Component แสดงพรีวิววิดีโอตัวอย่างเกม */
+function GameVideoPreview() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-black/5 shadow-inner">
+      <video
+        src="/video/memorymatch/memorymatch.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="h-full w-full object-cover"
+      />
+    </div>
+  );
+}
+
 /* =========================================================
    หน้าเกม
    ========================================================= */
@@ -764,7 +780,7 @@ export default function MemoryMatchPage() {
         </div>
       )}
 
-      {/* ===== หน้าสรุปคะแนน ===== */}
+      {/* ===== หน้าสรุปคะแนน / พรีวิวรายละเอียดตัวอย่างเกม ===== */}
       {over && (
         <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
           <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 590, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
@@ -772,6 +788,11 @@ export default function MemoryMatchPage() {
               <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${newRecord ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
                 {newRecord ? "🏆 สถิติใหม่!" : "หมดเวลา!"}
               </span>
+
+              {/* ส่วนพรีวิววิดีโอแสดงผลตัวอย่างการเล่น */}
+              <div className="mt-3 px-4">
+                <GameVideoPreview />
+              </div>
 
               <div className="mt-4 flex items-end justify-center gap-1">
                 {STAR_AT.map((_, i) => (
