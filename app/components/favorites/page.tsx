@@ -167,7 +167,7 @@ function EsButton({
       aria-selected={ariaSelected}
       onClick={onClick}
       className={`fav-btn relative inline-flex shrink-0 items-center justify-center overflow-hidden font-bold uppercase tracking-wider outline-none transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-95 ${
-        small ? "px-5 py-2.5 text-xs" : "px-7 py-3.5 text-xs"
+        small ? "min-h-[44px] px-5 py-2.5 text-xs" : "min-h-[44px] px-7 py-3.5 text-xs"
       } ${
         active
           ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)] hover:bg-[#6dffc6]"
@@ -323,6 +323,7 @@ export default function FavoritesSheet({
       className="fixed inset-0 z-50 overflow-y-auto bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] text-white"
     >
       <style>{`
+        button, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         .fav-txt-outline { color: transparent; -webkit-text-stroke: 1.5px rgba(23,255,162,.13); }
         .fav-shine { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%); transform: translateX(-120%); transition: transform .6s ease; pointer-events: none; }
         .fav-btn:hover .fav-shine { transform: translateX(120%); }
@@ -335,7 +336,7 @@ export default function FavoritesSheet({
 
       <BackdropText />
 
-      <div className="relative z-10 mx-auto flex min-h-full max-w-5xl flex-col gap-6 px-4 pb-[max(4rem,env(safe-area-inset-bottom))] pt-4 sm:gap-8 sm:px-6 sm:pt-6">
+      <div className="relative z-10 mx-auto flex min-h-full max-w-5xl flex-col gap-6 px-4 pb-[max(4rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:gap-8 sm:px-6 sm:pt-6">
         {/* ===== ส่วนหัว ===== */}
         <header
           className="fav-rise relative overflow-hidden border border-[#17FFA2]/40 bg-[#0a1014]/90 p-6 shadow-[10px_10px_0_0_#ff2a55] backdrop-blur-sm sm:p-10"

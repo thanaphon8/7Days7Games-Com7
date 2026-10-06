@@ -181,6 +181,7 @@ function BackdropText() {
 }
 
 const STYLES = `
+  button, a, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .txt-bg-outline { color: transparent; -webkit-text-stroke: 1.5px rgba(23,255,162,.13); }
   @keyframes bg-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
   .bg-marquee { animation: bg-marquee linear infinite; will-change: transform; }
@@ -194,7 +195,7 @@ const STYLES = `
 `;
 
 const pageShell =
-  "relative isolate min-h-screen bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white";
+  "relative isolate min-h-[100dvh] overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white";
 
 // ปุ่มเอียงแบบ esport
 function Btn({
@@ -396,7 +397,7 @@ export default function Login() {
     const activeAvatar = customAvatar.trim() ? customAvatar.trim() : avatar;
 
     return (
-      <div className={`${pageShell} px-4 pb-32 pt-4 sm:px-6 sm:pt-8`}>
+      <div className={`${pageShell} px-4 pb-32 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-8`}>
         <style>{STYLES}</style>
         <BackdropText />
         <div className="mx-auto max-w-3xl">
@@ -457,6 +458,10 @@ export default function Login() {
               <input
                 id="custom-avatar"
                 type="url"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="https://example.com/my-avatar.png"
                 value={customAvatar}
                 onChange={(e) => setCustomAvatar(e.target.value)}
@@ -528,7 +533,7 @@ export default function Login() {
                     role="tab"
                     aria-selected={mode === m}
                     onClick={() => switchMode(m)}
-                    className={`btn-fx relative overflow-hidden px-5 py-2.5 text-xs font-bold uppercase tracking-wider outline-none transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-95 ${
+                    className={`btn-fx relative min-h-[44px] overflow-hidden px-5 py-2.5 text-xs font-bold uppercase tracking-wider outline-none transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-95 ${
                       mode === m
                         ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)]"
                         : "border border-[#17FFA2]/50 bg-[#17FFA2]/15 text-white hover:border-[#17FFA2] hover:bg-[#17FFA2] hover:text-[#04110a]"
@@ -561,6 +566,10 @@ export default function Login() {
                 <input
                   className={field}
                   type="email"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder="อีเมล"
                   aria-label="อีเมล"
                   autoComplete="email"
@@ -580,7 +589,7 @@ export default function Login() {
                   <button
                     type="button"
                     onClick={() => setShow((v) => !v)}
-                    className="absolute right-2 top-1/2 h-8 -translate-y-1/2 px-3 text-xs font-bold uppercase text-[#8fa6a1] transition-colors hover:bg-white/10 hover:text-[#17FFA2]"
+                    className="absolute right-2 top-1/2 h-10 -translate-y-1/2 px-3 text-xs font-bold uppercase text-[#8fa6a1] transition-colors hover:bg-white/10 hover:text-[#17FFA2]"
                   >
                     {show ? "ซ่อน" : "แสดง"}
                   </button>

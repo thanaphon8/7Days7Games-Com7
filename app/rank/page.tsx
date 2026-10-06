@@ -10,6 +10,7 @@ const TONE = ["#17FFA2", "#0FD98A", "#0AB373"]; // สีอันดับ 1-3 
 const INK = ["#00301B", "#00301B", "#00301B"];
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
 const COUNT_MS = 2000; // เวลาที่เลขคะแนนวิ่ง
+const MUTED = "text-[#8fa6a1]";
 
 interface PlayerRank {
   userId: string;
@@ -49,7 +50,7 @@ function Avatar({ id, size }: { id: string; size: string }) {
     return (
       <span
         style={{ backgroundColor: FALLBACK_BG[(num - 1) % 4] }}
-        className={`flex shrink-0 items-center justify-center rounded-full font-light text-zinc-900 ${size}`}
+        className={`flex shrink-0 items-center justify-center rounded-full font-bold text-zinc-900 ${size}`}
       >
         {num}
       </span>
@@ -76,6 +77,70 @@ function Crown({ className = "" }: { className?: string }) {
         <circle key={x} cx={x} cy={y} r="2" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" />
       ))}
     </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  พื้นหลังตัวหนังสือซ้อนๆ วิ่งช้าๆ ตลอดเวลา (เหมือนหน้าหลัก)          */
+/* ------------------------------------------------------------------ */
+
+const STACK_WORD = "RANK";
+const STACK_SOLID = "7 DAYS 7 GAMES";
+const STACK_ROWS: ("ghost" | "outline" | "solid")[] = ["ghost", "outline", "outline", "solid", "outline", "outline", "ghost"];
+// ยิ่งตัวเลขมาก ยิ่งวิ่งช้า (วินาทีต่อหนึ่งรอบ)
+const STACK_SECONDS = { ghost: 140, outline: 110, solid: 90 } as const;
+
+function BackdropText() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none fixed inset-0 -z-10 flex select-none flex-col justify-center overflow-hidden"
+    >
+      {STACK_ROWS.map((kind, i) => {
+        const solid = kind === "solid";
+        const reverse = i % 2 !== 0;
+        const text = solid ? STACK_SOLID : STACK_WORD;
+        const tone = solid ? "text-[#17FFA2] opacity-[0.1]" : kind === "ghost" ? "txt-bg-outline opacity-50" : "txt-bg-outline";
+        return (
+          <div key={i} className="overflow-hidden whitespace-nowrap">
+            <div
+              className={`bg-marquee flex w-max font-bold uppercase leading-[0.9] text-[clamp(3rem,9vw,7.5rem)] ${tone}`}
+              style={{
+                animationDuration: `${STACK_SECONDS[kind]}s`,
+                animationDirection: reverse ? "reverse" : "normal",
+              }}
+            >
+              {/* ซ้ำสองชุดเท่ากัน เพื่อให้วนต่อกันเนียนไม่มีรอยต่อ */}
+              {[0, 1].map((g) => (
+                <div key={g} className="flex shrink-0 gap-[0.45em] pr-[0.45em]">
+                  {Array.from({ length: solid ? 3 : 5 }).map((_, j) => (
+                    <span key={j}>{text}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ปุ่มลิงก์เอียงแบบ esport
+function linkBtn(variant: "solid" | "dark" = "solid") {
+  const base =
+    "btn-fx relative inline-flex min-h-[44px] items-center justify-center overflow-hidden px-7 py-3.5 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+  return variant === "solid"
+    ? `${base} bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)] hover:bg-[#6dffc6] hover:shadow-[0_0_34px_rgba(23,255,162,0.7)]`
+    : `${base} bg-[#05080a] text-[#17FFA2] hover:bg-black`;
+}
+
+function BtnInner({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <span className="btn-shine" aria-hidden="true" />
+      <span className="relative inline-block">{children}</span>
+    </>
   );
 }
 
@@ -255,8 +320,8 @@ export default function RankPage() {
 
   const top = ranking.slice(0, 3);
   const rest = ranking.slice(3);
-  // เดสก์ท็อป: จัดเป็นแท่นรับรางวัล 2-1-3 ส่วนมือถืออันดับ 1 เต็มแถว แล้วอันดับ 2-3 อยู่เคียงกัน
-  const order = ["", "md:order-2 md:-mt-6 md:pb-12 md:pt-14", "md:order-1", "md:order-3"];
+  // จัดเป็นแท่นรับรางวัล 2-1-3 เรียงแนวนอนทุกขนาดจอ (อันดับ 1 อยู่กลางและสูงสุด)
+  const order = ["", "order-2", "order-1", "order-3"];
 
   // สถิติรวม และอันดับของผู้ใช้ปัจจุบัน
   const myIdx = myId ? ranking.findIndex((p) => p.userId === myId) : -1;
@@ -300,8 +365,15 @@ export default function RankPage() {
   });
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-black font-sans text-white">
+    <div className="relative isolate flex min-h-[100dvh] flex-col items-center overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white">
       <style>{`
+        button, a, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .txt-bg-outline { color: transparent; -webkit-text-stroke: 1.5px rgba(23,255,162,.13); }
+        @keyframes bg-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .bg-marquee { animation: bg-marquee linear infinite; will-change: transform; }
+        .btn-shine { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%); transform: translateX(-120%); transition: transform .6s ease; pointer-events: none; }
+        .btn-fx:hover .btn-shine { transform: translateX(120%); }
+
         @keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
         @keyframes score-pop { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
         @keyframes bolt {
@@ -315,8 +387,10 @@ export default function RankPage() {
         @keyframes flash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
         .bolt { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: bolt var(--dur) linear var(--d) forwards; }
         .flash { background: radial-gradient(circle at 50% 35%, rgba(23,255,162,.28), rgba(23,255,162,.06) 60%, transparent); opacity: 0; animation: flash 600ms ease-out forwards; }
-        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } .bolt, .flash { display: none; } .score-pop { animation: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } .bolt, .flash { display: none; } .score-pop { animation: none !important; } .bg-marquee { animation: none !important; } }
       `}</style>
+
+      <BackdropText />
 
       {/* ชั้นสายฟ้านีออน (ไม่รับการคลิก) */}
       {bolts.length > 0 && (
@@ -348,18 +422,19 @@ export default function RankPage() {
         onOpenFavorites={() => router.push("/")}
       />
 
-      <main className="w-full max-w-5xl px-6 pb-24">
+      <main className="w-full max-w-5xl px-4 pb-[max(6rem,env(safe-area-inset-bottom))] sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4 pt-2 sm:pt-6">
           <div>
-            <h1 className="text-5xl font-semibold tracking-tight sm:text-6xl md:text-7xl">อันดับ</h1>
-            <p className="mt-3 max-w-md text-sm leading-6 text-zinc-400 sm:text-base sm:leading-7">
+            <span className="mb-4 block h-1.5 w-16 -skew-x-12 bg-[#17FFA2] shadow-[0_0_14px_#17FFA2]" />
+            <h1 className="text-5xl font-bold uppercase tracking-tight [text-shadow:0_0_26px_rgba(23,255,162,0.35)] sm:text-6xl md:text-7xl">อันดับ</h1>
+            <p className={`mt-3 max-w-md text-sm leading-6 sm:text-base sm:leading-7 ${MUTED}`}>
               แต้มสะสมจากทุกรอบที่เล่น อัปเดตทุกครั้งที่มีคนเล่นจบ
             </p>
           </div>
-          <div className="inline-flex items-center gap-3 rounded-full bg-zinc-900 py-2.5 pl-4 pr-6">
-            <span aria-hidden className="h-3 w-3 rounded-full bg-[#9CC593]" />
-            <span className="text-sm text-zinc-400">ผู้เข้าร่วม</span>
-            <span className="text-2xl font-semibold tabular-nums tracking-tight">
+          <div className="inline-flex items-center gap-3 border border-[#17FFA2]/40 bg-[#0a1014]/90 py-2.5 pl-4 pr-6 backdrop-blur-sm">
+            <span aria-hidden className="h-5 w-1.5 -skew-x-12 bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" />
+            <span className={`text-sm ${MUTED}`}>ผู้เข้าร่วม</span>
+            <span className="text-2xl font-bold tabular-nums tracking-tight text-[#17FFA2] [text-shadow:0_0_22px_rgba(23,255,162,0.55)]">
               {loading ? "–" : ranking.length.toLocaleString()}
             </span>
           </div>
@@ -368,46 +443,49 @@ export default function RankPage() {
         {loading ? (
           /* โครงระหว่างโหลด */
           <div aria-busy className="mt-10 animate-pulse sm:mt-14">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
-              <div className="col-span-2 h-60 rounded-none bg-zinc-800 md:col-span-1 md:h-72" />
-              <div className="h-52 rounded-none bg-zinc-800 md:h-60" />
-              <div className="h-52 rounded-none bg-zinc-800 md:h-60" />
+            <div className="grid grid-cols-3 items-end gap-2 sm:gap-4">
+              <div className="order-1 h-52 bg-[#0a1014] sm:h-60" />
+              <div className="order-2 h-64 bg-[#0a1014] sm:h-72" />
+              <div className="order-3 h-52 bg-[#0a1014] sm:h-60" />
             </div>
-            <p className="mt-6 text-center text-sm text-zinc-500">กำลังโหลดข้อมูลอันดับ...</p>
+            <p className={`mt-6 text-center text-sm ${MUTED}`}>กำลังโหลดข้อมูลอันดับ...</p>
           </div>
         ) : ranking.length === 0 ? (
-          <div className="mt-10 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center text-[#4A3B00] sm:mt-14">
+          <div className="mt-10 flex flex-col items-center border border-[#17FFA2]/40 bg-[#0a1014]/90 px-6 py-16 text-center shadow-[10px_10px_0_0_#ff2a55] backdrop-blur-sm sm:mt-14">
             <Crown className="w-16" />
-            <h2 className="mt-4 text-2xl font-semibold tracking-tight">ยังไม่มีข้อมูลอันดับ</h2>
-            <p className="mt-2 max-w-xs text-sm leading-6 opacity-70">เล่นเกมรอบแรกเพื่อเป็นคนแรกบนกระดาน</p>
-            <Link href="/#games" className="mt-6 inline-flex h-12 items-center rounded-full bg-[#4A3B00] px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
-              เลือกเกม
+            <h2 className="mt-4 text-2xl font-bold uppercase tracking-tight">ยังไม่มีข้อมูลอันดับ</h2>
+            <p className={`mt-2 max-w-xs text-sm leading-6 ${MUTED}`}>เล่นเกมรอบแรกเพื่อเป็นคนแรกบนกระดาน</p>
+            <Link href="/#games" className={`${linkBtn("solid")} mt-6`}>
+              <BtnInner>เลือกเกม</BtnInner>
             </Link>
           </div>
         ) : (
           <>
             {/* ===== อันดับของคุณ (แสดงเมื่ออยู่นอก 3 อันดับแรก) ===== */}
             {me && myIdx >= 3 && (
-              <section className="mt-6 flex items-center gap-4 rounded-[2rem] bg-[#9CC593] p-4 text-[#1E3A1A] sm:mt-8 sm:p-5">
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/70 text-xl font-semibold tabular-nums">
+              <section className="mt-6 flex items-center gap-4 border border-white/10 border-l-4 border-l-[#17FFA2] bg-[#0a1014]/90 p-4 backdrop-blur-sm sm:mt-8 sm:p-5">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center bg-[#17FFA2] text-xl font-bold tabular-nums text-[#04110a]">
                   {myIdx + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm opacity-70">อันดับของคุณ</p>
-                  <p className="truncate text-lg font-semibold tracking-tight sm:text-xl">
+                  <p className={`text-sm ${MUTED}`}>อันดับของคุณ</p>
+                  <p className="truncate text-lg font-bold tracking-tight sm:text-xl">
                     {gap > 0 ? `อีก ${gap.toLocaleString()} แต้มจะแซงอันดับ ${myIdx}` : `แต้มเท่ากับอันดับ ${myIdx}`}
                   </p>
                 </div>
-                <span className="text-2xl font-semibold tabular-nums sm:text-3xl">{me.score.toLocaleString()}</span>
+                <span className="text-2xl font-bold tabular-nums text-[#17FFA2] [text-shadow:0_0_22px_rgba(23,255,162,0.55)] sm:text-3xl">{me.score.toLocaleString()}</span>
               </section>
             )}
 
-            {/* ===== 3 อันดับแรก ===== */}
-            <ol className="mt-10 grid grid-cols-2 gap-3 sm:mt-14 md:grid-cols-3 md:items-end md:gap-4">
+            {/* ===== 3 อันดับแรก (เรียงแนวนอน 2-1-3 ทุกขนาดจอ) ===== */}
+            <ol className="mt-10 grid grid-cols-3 items-end gap-2 sm:mt-14 sm:gap-4">
               {top.map((p, i) => {
                 const rank = i + 1;
                 const mine = myId ? p.userId === myId : false;
                 const first = rank === 1;
+                const pad = first
+                  ? "-mt-4 px-1.5 pb-9 pt-12 sm:-mt-6 sm:px-6 sm:pb-12 sm:pt-14"
+                  : "px-1.5 pb-5 pt-9 sm:px-6 sm:pb-8 sm:pt-10";
                 return (
                   <li
                     key={p.userId || i}
@@ -421,33 +499,34 @@ export default function RankPage() {
                         ? `${mine ? "0 0 0 4px #fff, " : ""}0 0 18px 4px rgba(23,255,162,.85), 0 0 60px 14px rgba(23,255,162,.5), 0 0 130px 36px rgba(23,255,162,.28)`
                         : undefined,
                     }}
-                    className={`rise relative flex min-w-0 flex-col items-center rounded-none px-4 pb-7 pt-9 text-center sm:px-6 sm:pb-8 sm:pt-10 ${
-                      first ? "col-span-2 md:col-span-1" : ""
-                    } ${order[rank]} ${mine ? "ring-4 ring-white" : ""}`}
+                    className={`rise relative flex min-w-0 flex-col items-center text-center ${pad} ${order[rank]} ${mine ? "ring-2 ring-white sm:ring-4" : ""}`}
                   >
-                    <span className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/70 text-sm font-semibold sm:left-5 sm:top-5">{rank}</span>
-                    <div className="relative mt-4">
-                      {first && <Crown className="absolute -top-9 left-1/2 w-14 -translate-x-1/2 -rotate-6" />}
-                      <Avatar id={p.avatar} size={`${first ? "h-28 w-28 sm:h-32 sm:w-32" : "h-20 w-20 sm:h-24 sm:w-24"} ring-4 ring-white/80`} />
+                    <span className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-xs font-bold sm:left-5 sm:top-5 sm:h-9 sm:w-9 sm:text-sm">{rank}</span>
+                    <div className="relative mt-2 sm:mt-4">
+                      {first && <Crown className="absolute -top-6 left-1/2 w-9 -translate-x-1/2 -rotate-6 sm:-top-9 sm:w-14" />}
+                      <Avatar
+                        id={p.avatar}
+                        size={`${first ? "h-16 w-16 sm:h-32 sm:w-32" : "h-12 w-12 sm:h-24 sm:w-24"} ring-2 ring-white/80 sm:ring-4`}
+                      />
                     </div>
-                    <p className={`mt-4 max-w-full truncate font-semibold tracking-tight sm:mt-5 ${first ? "text-2xl" : "text-lg sm:text-2xl"}`}>
+                    <p className={`mt-2 max-w-full truncate font-bold tracking-tight sm:mt-5 ${first ? "text-sm sm:text-2xl" : "text-xs sm:text-2xl"}`}>
                       {p.name}
                       {mine && " (คุณ)"}
                     </p>
-                    <p className="mt-1 text-xs opacity-60 sm:text-sm">เล่นแล้ว {p.games} เกม</p>
+                    <p className="mt-0.5 text-[10px] opacity-60 sm:mt-1 sm:text-sm">เล่นแล้ว {p.games} เกม</p>
                     {first ? (
                       // อันดับ 1: เลขวิ่งขึ้นแล้วหยุดที่คะแนนจริง
                       <p
-                        className="score-pop mt-4 text-5xl font-semibold tabular-nums tracking-tight sm:mt-5"
+                        className="score-pop mt-2 max-w-full text-xl font-bold tabular-nums tracking-tight sm:mt-5 sm:text-5xl"
                         style={done ? { animation: "score-pop 500ms ease-out" } : undefined}
                         aria-label={`${p.score.toLocaleString()} แต้ม`}
                       >
                         {champScore.toLocaleString()}
                       </p>
                     ) : (
-                      <p className="mt-4 text-3xl font-semibold tabular-nums tracking-tight sm:mt-5 sm:text-5xl">{p.score.toLocaleString()}</p>
+                      <p className="mt-2 max-w-full text-base font-bold tabular-nums tracking-tight sm:mt-5 sm:text-5xl">{p.score.toLocaleString()}</p>
                     )}
-                    <p className="mt-1 text-xs opacity-60">แต้ม</p>
+                    <p className="mt-0.5 text-[10px] opacity-60 sm:mt-1 sm:text-xs">แต้ม</p>
                   </li>
                 );
               })}
@@ -455,27 +534,29 @@ export default function RankPage() {
 
             {/* ===== อันดับที่ 4 เป็นต้นไป ===== */}
             {rest.length > 0 && (
-              <ol className="mt-6 flex flex-col gap-2 sm:gap-3">
+              <ol className="mt-8 flex flex-col gap-2 sm:gap-3">
                 {rest.map((p, i) => {
                   const mine = myId ? p.userId === myId : false;
                   return (
                     <li
                       key={p.userId || i}
-                      className={`flex items-center gap-3 rounded-full p-2.5 pr-5 sm:gap-4 sm:p-3 sm:pr-6 ${
-                        mine ? "bg-[#9CC593]/30 ring-2 ring-white" : "bg-zinc-900"
+                      className={`flex items-center gap-3 border p-2.5 pr-4 backdrop-blur-sm transition-all duration-200 hover:border-[#17FFA2]/60 sm:gap-4 sm:p-3 sm:pr-6 ${
+                        mine
+                          ? "border-[#17FFA2] bg-[#17FFA2]/10 shadow-[0_0_18px_rgba(23,255,162,0.25)]"
+                          : "border-white/10 bg-[#0a1014]/90"
                       }`}
                     >
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-base font-semibold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center bg-white/10 text-base font-bold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
                       <Avatar id={p.avatar} size="h-11 w-11 sm:h-12 sm:w-12" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-base font-medium sm:text-lg">
+                        <p className="truncate text-base font-semibold sm:text-lg">
                           {p.name}
                           {mine && " (คุณ)"}
                         </p>
-                        <p className="text-xs text-zinc-400 sm:hidden">{p.games} เกม</p>
+                        <p className={`text-xs sm:hidden ${MUTED}`}>{p.games} เกม</p>
                       </div>
-                      <span className="hidden text-sm text-zinc-400 sm:inline">{p.games} เกม</span>
-                      <span className="w-20 text-right text-lg font-semibold tabular-nums sm:w-24 sm:text-xl">{p.score.toLocaleString()}</span>
+                      <span className={`hidden text-sm sm:inline ${MUTED}`}>{p.games} เกม</span>
+                      <span className="w-20 text-right text-lg font-bold tabular-nums text-[#17FFA2] sm:w-24 sm:text-xl">{p.score.toLocaleString()}</span>
                     </li>
                   );
                 })}
@@ -484,13 +565,13 @@ export default function RankPage() {
           </>
         )}
 
-        <div className="mt-12 flex flex-col items-start justify-between gap-6 rounded-[2rem] bg-[#A8B5E8] p-8 text-[#1F2A5C] sm:flex-row sm:items-center md:p-10">
+        <div className="mt-12 flex flex-col items-start justify-between gap-6 bg-[#17FFA2] bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(0,0,0,0.08)_18px_36px)] p-8 text-[#04110a] sm:flex-row sm:items-center md:p-10">
           <div>
-            <h2 className="text-3xl font-semibold tracking-tight">อยากขึ้นอันดับ</h2>
-            <p className="mt-2 text-sm opacity-70">เล่นเกมเพิ่มเพื่อสะสมแต้มให้มากขึ้น</p>
+            <h2 className="text-3xl font-bold uppercase tracking-tight">อยากขึ้นอันดับ</h2>
+            <p className="mt-2 text-sm text-[#04110a]/80">เล่นเกมเพิ่มเพื่อสะสมแต้มให้มากขึ้น</p>
           </div>
-          <Link href="/#games" className="inline-flex h-12 items-center rounded-full bg-[#1F2A5C] px-6 text-sm font-medium text-white transition-colors hover:bg-[#1F2A5C]/80">
-            เลือกเกม
+          <Link href="/#games" className={linkBtn("dark")}>
+            <BtnInner>เลือกเกม</BtnInner>
           </Link>
         </div>
       </main>

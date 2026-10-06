@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type Status = "NOW" | "SOON";
 
@@ -24,7 +24,7 @@ export function Badge({ status, dark = false }: { status: Status; dark?: boolean
 /* ---------- ปุ่มเอียงแบบ esport ---------- */
 function skewBtn(variant: "solid" | "outline" = "solid", fullWidth = false) {
   const base =
-    "btn-fx relative inline-flex items-center justify-center overflow-hidden px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+    "btn-fx relative inline-flex min-h-[44px] items-center justify-center overflow-hidden px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
   const styles =
     variant === "solid"
       ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)] hover:bg-[#6dffc6] hover:shadow-[0_0_34px_rgba(23,255,162,0.7)]"
@@ -193,12 +193,12 @@ function HeartButton({ on, onClick, className = "", tabIndex = 0, style }: { on:
         e.stopPropagation();
         onClick();
       }}
-      className={`flex h-9 w-9 items-center justify-center text-white drop-shadow-[0_0_6px_rgba(0,0,0,0.7)] transition-transform hover:scale-110 active:scale-90 ${className}`}
+      className={`flex h-11 w-11 items-center justify-center text-white drop-shadow-[0_0_6px_rgba(0,0,0,0.7)] transition-transform hover:scale-110 active:scale-90 ${className}`}
     >
       <svg
         viewBox="0 0 24 24"
-        width="18"
-        height="18"
+        width="20"
+        height="20"
         fill={on ? "#ff2a55" : "none"}
         stroke={on ? "#ff2a55" : "currentColor"}
         strokeWidth="2"
@@ -265,7 +265,7 @@ function EventCard({
         onClick={() => toggleSave(e.id)}
         tabIndex={live ? 0 : -1}
         style={{ right: EDGE_HEART }}
-        className="absolute top-4 z-10 md:top-6"
+        className="absolute top-3 z-10 md:top-5"
       />
 
       {/* key เปลี่ยนทุกครั้งที่สไลด์ขึ้น เพื่อให้แอนิเมชันข้อความเล่นใหม่ */}
@@ -329,6 +329,7 @@ export default function EventsCarousel({
   const [prev, setPrev] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const [reduced, setReduced] = useState(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -339,6 +340,23 @@ export default function EventsCarousel({
     setPrev(active);
     setActive(i);
     setTick((t) => t + 1);
+  };
+
+  // ปัดซ้าย/ขวาบนมือถือเพื่อเปลี่ยนสไลด์ (ต้องปัดแนวนอนชัดเจน จะได้ไม่ชนกับการเลื่อนหน้า)
+  const onTouchStart = (ev: React.TouchEvent) => {
+    const t = ev.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  };
+  const onTouchEnd = (ev: React.TouchEvent) => {
+    const s = touchStart.current;
+    touchStart.current = null;
+    if (!s) return;
+    const t = ev.changedTouches[0];
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      goTo(dx < 0 ? (active + 1) % n : (active - 1 + n) % n);
+    }
   };
 
   // เลื่อนอัตโนมัติต่อเนื่อง แม้เมาส์ชี้อยู่ (หยุดเฉพาะตอนเปิดหน้ารายละเอียด)
@@ -398,13 +416,19 @@ export default function EventsCarousel({
         .btn-shine { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%); transform: translateX(-120%); transition: transform .6s ease; pointer-events: none; }
         .btn-fx:hover .btn-shine { transform: translateX(120%); }
 
+        button, a, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
         @media (prefers-reduced-motion: reduce) {
           .ev-in, .ev-out, .ev-sweep, .ev-title, .ev-rise { animation: none !important; }
           .ev-progress { animation: none; width: 100%; }
         }
       `}</style>
 
-      <div className="relative grid overflow-hidden">
+      <div
+        className="relative grid touch-pan-y overflow-hidden"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         {EVENTS.map((e, i) => (
           <EventCard
             key={e.id}
@@ -426,17 +450,22 @@ export default function EventsCarousel({
         )}
       </div>
 
-      <div className="flex justify-center gap-2 bg-[#05080a] py-4">
+      {/* จุดบอกตำแหน่ง: ปุ่มสูง 44px เพื่อให้แตะง่ายบนมือถือ ส่วนแท่งที่เห็นยังเล็กเหมือนเดิม */}
+      <div className="flex justify-center bg-[#05080a]">
         {EVENTS.map((e, i) => (
           <button
             key={e.id}
             aria-label={`ไปที่ Event ${i + 1}`}
             aria-current={active === i}
             onClick={() => goTo(i)}
-            className={`h-1.5 -skew-x-12 transition-all duration-300 hover:bg-[#17FFA2] ${
-              active === i ? "w-8 bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" : "w-4 bg-white/30"
-            }`}
-          />
+            className="group flex h-11 items-center px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-[#17FFA2]"
+          >
+            <span
+              className={`block h-1.5 -skew-x-12 transition-all duration-300 group-hover:bg-[#17FFA2] ${
+                active === i ? "w-8 bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" : "w-4 bg-white/30"
+              }`}
+            />
+          </button>
         ))}
       </div>
     </section>
@@ -463,9 +492,9 @@ export function CloseButton({ onClick, className = "" }: { onClick: () => void; 
       autoFocus
       aria-label="ปิด"
       onClick={onClick}
-      className={`flex h-10 w-10 items-center justify-center text-white drop-shadow-[0_0_6px_rgba(0,0,0,0.7)] transition-all hover:scale-110 hover:text-[#17FFA2] active:scale-90 ${className}`}
+      className={`flex h-11 w-11 items-center justify-center text-white drop-shadow-[0_0_6px_rgba(0,0,0,0.7)] transition-all hover:scale-110 hover:text-[#17FFA2] active:scale-90 ${className}`}
     >
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
         <path d="M6 6l12 12M18 6L6 18" />
       </svg>
     </button>
@@ -547,31 +576,31 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
         backgroundSize: "auto, 56px 56px, 56px 56px, auto",
         animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)",
       }}
-      className="fixed inset-0 z-[60] overflow-y-auto text-white"
+      className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain text-white"
     >
       {sel.cover && (
-        <div aria-hidden className="fixed inset-x-0 top-0 h-[62vh] overflow-hidden">
+        <div aria-hidden className="fixed inset-x-0 top-0 h-[62svh] overflow-hidden">
           <Image src={sel.cover} alt="" fill priority sizes="100vw" className="object-cover" />
           <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, rgba(0,0,0,.25) 0%, rgba(0,0,0,0) 30%, ${bg} 100%)` }} />
           <div className="absolute inset-0" style={{ backgroundColor: bg, opacity: fade * 0.92 }} />
         </div>
       )}
-      <div className={`relative mx-auto flex min-h-full flex-col px-6 pb-36 pt-6 ${wide ? "max-w-7xl" : "max-w-5xl"}`}>
+      <div className={`relative mx-auto flex min-h-full flex-col px-4 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-6 ${wide ? "max-w-7xl" : "max-w-5xl"}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Badge status={sel.status} dark />
             <span className={`text-sm ${MUTED}`}>{sel.meta}</span>
           </div>
-          <div className="flex gap-3">
-            <HeartButton on={isSaved} onClick={() => toggleSave(sel.id)} className="!h-10 !w-10" />
+          <div className="flex gap-1">
+            <HeartButton on={isSaved} onClick={() => toggleSave(sel.id)} />
             <CloseButton onClick={onClose} />
           </div>
         </div>
 
-        <div className={`${sel.cover ? "mt-[26vh]" : "mt-12"} grid gap-10 lg:grid-cols-2 lg:items-center`}>
+        <div className={`${sel.cover ? "mt-[26svh]" : "mt-10 sm:mt-12"} grid gap-10 lg:grid-cols-2 lg:items-center`}>
           <div>
             <span className="mb-5 block h-1.5 w-16 -skew-x-12 shadow-[0_0_14px_currentColor]" style={{ backgroundColor: accent, color: accent }} />
-            <h2 className="text-5xl font-bold uppercase leading-[1.05] tracking-tight [text-shadow:0_0_30px_rgba(23,255,162,0.35)] md:text-7xl">
+            <h2 className="break-words text-5xl font-bold uppercase leading-[1.05] tracking-tight [text-shadow:0_0_30px_rgba(23,255,162,0.35)] md:text-7xl">
               <TitleContent e={sel} logoClass="w-full max-w-[20rem] md:max-w-[28rem]" />
             </h2>
             <p className={`mt-6 max-w-md text-lg leading-8 ${MUTED}`}>{sel.desc}</p>
@@ -586,8 +615,8 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
               <Image src={sel.image} alt={sel.lines.join(" ")} fill sizes="(min-width: 1024px) 480px, 100vw" className="object-cover" />
             </div>
           ) : (
-            <div className="flex min-h-72 items-center justify-center border border-[#17FFA2]/30 bg-[#0a1014] p-8 shadow-[10px_10px_0_0_#ff2a55]">
-              <div className="scale-110 md:scale-125">
+            <div className="flex min-h-72 items-center justify-center overflow-hidden border border-[#17FFA2]/30 bg-[#0a1014] p-8 shadow-[10px_10px_0_0_#ff2a55]">
+              <div className="scale-100 sm:scale-110 md:scale-125">
                 <EventVisual kind={sel.visual} />
               </div>
             </div>
@@ -596,14 +625,14 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
 
         <div className="mt-10 grid gap-4 sm:grid-cols-3">
           {sel.info.map(([label, value]) => (
-            <div key={label} className="border border-white/10 bg-[#0a1014] p-6">
+            <div key={label} className="border border-white/10 bg-[#0a1014] p-5 sm:p-6">
               <p className={`text-sm ${MUTED}`}>{label}</p>
               <p className="mt-1 text-lg font-semibold">{value}</p>
             </div>
           ))}
         </div>
 
-        <div className="mt-4 border-l-4 bg-[#0a1014] p-8" style={{ borderColor: accent }}>
+        <div className="mt-4 border-l-4 bg-[#0a1014] p-5 sm:p-8" style={{ borderColor: accent }}>
           <h3 className="text-xl font-bold uppercase tracking-wide">กติกา</h3>
           <ul className="mt-5 flex flex-col gap-4">
             {sel.rules.map((r) => (
@@ -616,13 +645,13 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
         </div>
 
         {sel.bracket && (
-          <div className="mt-4 border border-white/10 bg-[#0a1014] p-8">
+          <div className="mt-4 border border-white/10 bg-[#0a1014] p-5 sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-xl font-bold uppercase tracking-wide">สายการแข่งขัน</h3>
               <span className="inline-flex h-8 items-center bg-white/10 px-4 text-xs font-bold uppercase tracking-wider text-white/70">รอเริ่มแข่ง</span>
             </div>
             <p className={`mt-2 text-sm leading-6 ${MUTED}`}>{sel.bracket.note}</p>
-            <div className="mt-6 overflow-x-auto pb-2">
+            <div className="mt-6 overflow-x-auto overscroll-x-contain pb-2">
               <Bracket teams={sel.bracket.teams} accent={accent} />
             </div>
             <p className={`mt-3 text-xs sm:hidden ${MUTED}`}>เลื่อนไปทางขวาเพื่อดูสายทั้งหมด</p>
@@ -630,7 +659,7 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
         )}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#05080a] from-60% to-transparent px-6 pb-6 pt-12">
+      <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#05080a] from-60% to-transparent px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-12 sm:px-6">
         <div className="w-full max-w-sm">
           <button
             onClick={() => (sel.status === "NOW" ? onPlay() : toggleSave(sel.id))}
@@ -667,7 +696,7 @@ export function FavoriteCard({ e, onOpen, toggleSave }: { e: EventItem; onOpen: 
           </div>
         </div>
       )}
-      <HeartButton on onClick={() => toggleSave(e.id)} className="absolute right-4 top-4 z-10" />
+      <HeartButton on onClick={() => toggleSave(e.id)} className="absolute right-2 top-2 z-10" />
       <div className="relative z-10 flex items-center gap-2.5 pr-12">
         <Badge status={e.status} dark />
         <span className="text-xs text-white/70">{e.meta}</span>
@@ -678,6 +707,6 @@ export function FavoriteCard({ e, onOpen, toggleSave }: { e: EventItem; onOpen: 
         </h3>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/70">{e.desc}</p>
       </div>
-    </article>
+    </article>  
   );
 }

@@ -175,7 +175,7 @@ type BtnVariant = "solid" | "outline" | "dark";
 function btnClasses(variant: BtnVariant = "solid", small = false, fullWidth = false) {
   const base =
     "btn-fx relative inline-flex items-center justify-center overflow-hidden font-bold uppercase tracking-wider transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50";
-  const size = small ? "px-5 py-2.5 text-xs" : "px-7 py-3.5 text-xs";
+  const size = small ? "min-h-[44px] px-5 py-2.5 text-xs" : "min-h-[44px] px-7 py-3.5 text-xs";
   const styles =
     variant === "solid"
       ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)] hover:bg-[#6dffc6] hover:shadow-[0_0_34px_rgba(23,255,162,0.7)]"
@@ -299,7 +299,7 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
       }}
       className="fixed inset-0 z-[60] overflow-y-auto text-white"
     >
-      <div className="mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-36 pt-6">
+      <div className="mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Badge status={game.status} dark />
@@ -314,7 +314,7 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
         <div className="mt-12 grid gap-10 lg:grid-cols-2 lg:items-center">
           <div>
             <span className="mb-5 block h-1.5 w-16 -skew-x-12 shadow-[0_0_14px_currentColor]" style={{ backgroundColor: accent, color: accent }} />
-            <h2 className="text-5xl font-bold uppercase leading-[1.05] tracking-tight [text-shadow:0_0_30px_rgba(23,255,162,0.35)] md:text-7xl">{game.name}</h2>
+            <h2 className="break-words text-5xl font-bold uppercase leading-[1.05] tracking-tight [text-shadow:0_0_30px_rgba(23,255,162,0.35)] md:text-7xl">{game.name}</h2>
             <p className={`mt-6 max-w-md text-lg leading-8 ${MUTED}`}>{game.desc}</p>
           </div>
           {game.video ? (
@@ -367,7 +367,7 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#05080a] from-60% to-transparent px-6 pb-6 pt-12">
+      <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#05080a] from-60% to-transparent px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-12">
         <div className="w-full max-w-sm">
           {playable ? (
             <Button href={game.href} fullWidth>เริ่มเล่น</Button>
@@ -613,11 +613,12 @@ export default function Home() {
   const myScore = score ?? (profile?.userId ? scoreMap[profile.userId] ?? null : null);
 
   return (
-    <div className="relative isolate flex min-h-screen flex-col items-center bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white">
+    <div className="relative isolate flex min-h-[100dvh] flex-col items-center overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white">
       <style>{`
         html { scroll-behavior: smooth; }
         section[id] { scroll-margin-top: 60px; }
 
+        button, a, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         .txt-bg-outline { color: transparent; -webkit-text-stroke: 1.5px rgba(23,255,162,.13); }
 
         @keyframes bg-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
@@ -628,6 +629,7 @@ export default function Home() {
         .reveal-left { transform: translateX(-70px); }
         .reveal-right { transform: translateX(70px); }
         .reveal-zoom { transform: scale(.88); }
+        @media (max-width: 639px) { .reveal-left { transform: translateX(-28px); } .reveal-right { transform: translateX(28px); } }
         .reveal.is-in { opacity: 1; transform: none; }
 
         .bar-grow { width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1) .25s; }
@@ -678,7 +680,7 @@ export default function Home() {
           ].map((st, i) => (
             <Reveal key={st.label} variant="zoom" delay={i * 110}>
               <div className="text-center">
-                <p className="text-4xl font-bold tabular-nums text-[#17FFA2] [text-shadow:0_0_22px_rgba(23,255,162,0.55)] sm:text-5xl">{st.n}</p>
+                <p className="text-3xl font-bold tabular-nums text-[#17FFA2] [text-shadow:0_0_22px_rgba(23,255,162,0.55)] sm:text-5xl">{st.n}</p>
                 <p className={`mt-2 text-sm ${MUTED}`}>{st.label}</p>
               </div>
             </Reveal>
@@ -687,7 +689,7 @@ export default function Home() {
       </section>
 
       {/* ---------------- GAMES ---------------- */}
-      <section id="games" className={`${wrap} pt-24`}>
+      <section id="games" className={`${wrap} pt-16 sm:pt-24`}>
         <SectionHead
           title="เกมทั้งหมด"
           intro="เลือกเกมที่ใช่ แล้วเก็บแต้มขึ้นอันดับ"
@@ -754,7 +756,7 @@ export default function Home() {
 
       {/* ---------------- UPCOMING GAMES ---------------- */}
       {upcoming.length > 0 && (
-        <section id="upcoming" className={`${wrap} pt-24`}>
+        <section id="upcoming" className={`${wrap} pt-16 sm:pt-24`}>
           <SectionHead title="เกมที่กำลังจะเปิดให้เล่น" intro="เตรียมตัวให้พร้อม เกมใหม่กำลังมา" />
           <div className="bg-black/55 backdrop-blur-md">
             {upcoming.map((g, i) => (
@@ -777,7 +779,7 @@ export default function Home() {
       )}
 
       {/* ---------------- RANKING (การ์ดยื่น) ---------------- */}
-      <section id="ranking" className="mt-24 w-full bg-[#0a1014]/70 py-24">
+      <section id="ranking" className="mt-16 w-full bg-[#0a1014]/70 py-16 sm:mt-24 sm:py-24">
         <div className={wrap}>
           <SectionHead
             title="ผู้นำตอนนี้"
@@ -787,7 +789,7 @@ export default function Home() {
           {topUsers.length === 0 ? (
             <p className="border border-white/10 p-10 text-center text-sm text-zinc-500">ยังไม่มีข้อมูลอันดับ</p>
           ) : (
-            <div className="mx-auto grid max-w-3xl items-end gap-4 md:grid-cols-3">
+            <div className="mx-auto grid max-w-3xl grid-cols-3 items-end gap-2 sm:gap-4">
               {topUsers.map((r, i) => {
                 const rank = i + 1;
                 const first = rank === 1;
@@ -797,21 +799,21 @@ export default function Home() {
                   : rank === 2
                   ? "bg-[#12e594]"
                   : "bg-[#0cb577]";
-                const height = first ? "md:h-[470px]" : "md:h-[410px]";
-                const order = first ? "md:order-2" : rank === 2 ? "md:order-1" : "md:order-3";
-                const av = first ? 112 : 92;
+                const height = first ? "h-[330px] sm:h-[470px]" : "h-[290px] sm:h-[410px]";
+                const order = first ? "order-2" : rank === 2 ? "order-1" : "order-3";
+                const avCls = first ? "h-16 w-16 sm:h-28 sm:w-28" : "h-12 w-12 sm:h-[92px] sm:w-[92px]";
                 return (
-                  <Reveal key={r.name + i} delay={i * 100} className={order}>
+                  <Reveal key={r.name + i} delay={i * 100} className={`${order} min-w-0`}>
                     <article
-                      className={`relative flex flex-col items-center justify-center px-4 py-10 text-center text-[#04251a] transition-transform duration-300 hover:-translate-y-1 ${height} ${tone} ${
-                        me ? "outline outline-4 outline-white" : ""
+                      className={`relative flex flex-col items-center justify-center px-1.5 py-6 text-center text-[#04251a] transition-transform duration-300 hover:-translate-y-1 sm:px-4 sm:py-10 ${height} ${tone} ${
+                        me ? "outline outline-2 outline-white sm:outline-4" : ""
                       }`}
                     >
-                      <span className="absolute left-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/70 text-base font-bold">
+                      <span className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-xs font-bold sm:left-4 sm:top-4 sm:h-10 sm:w-10 sm:text-base">
                         {rank}
                       </span>
                       {first && (
-                        <svg width="68" height="46" viewBox="0 0 68 46" className="relative z-10 -mb-5" aria-hidden="true">
+                        <svg width="68" height="46" viewBox="0 0 68 46" className="relative z-10 -mb-3 h-auto w-9 sm:-mb-5 sm:w-[68px]" aria-hidden="true">
                           <path d="M6 38 10 12l16 14L34 6l8 20 16-14 4 26z" fill="#F4D35E" stroke="#4A3B00" strokeWidth="3" strokeLinejoin="round" />
                           <circle cx="10" cy="10" r="4" fill="#F4D35E" stroke="#4A3B00" strokeWidth="2.5" />
                           <circle cx="34" cy="5" r="4" fill="#F4D35E" stroke="#4A3B00" strokeWidth="2.5" />
@@ -821,19 +823,18 @@ export default function Home() {
                       <img
                         src={getAvatarSrc(r.avatarId)}
                         alt={r.name}
-                        style={{ width: av, height: av }}
-                        className="rounded-full border-4 border-white/80 bg-zinc-500 object-cover"
+                        className={`${avCls} rounded-full border-2 border-white/80 bg-zinc-500 object-cover sm:border-4`}
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = "/img/p01.png";
                         }}
                       />
-                      <h3 className="mt-5 line-clamp-2 w-full break-words text-xl font-bold leading-tight">
+                      <h3 className="mt-3 line-clamp-2 w-full break-words text-xs font-bold leading-tight sm:mt-5 sm:text-xl">
                         {r.name}
                         {me && " (คุณ)"}
                       </h3>
-                      <p className="mt-1 text-sm opacity-60">เล่นแล้ว {r.games} เกม</p>
-                      <p className="mt-5 text-4xl font-bold tabular-nums">{r.score.toLocaleString("en-US")}</p>
-                      <p className="text-sm opacity-60">แต้ม</p>
+                      <p className="mt-1 text-[10px] opacity-60 sm:text-sm">เล่นแล้ว {r.games} เกม</p>
+                      <p className="mt-3 text-xl font-bold tabular-nums sm:mt-5 sm:text-4xl">{r.score.toLocaleString("en-US")}</p>
+                      <p className="text-[10px] opacity-60 sm:text-sm">แต้ม</p>
                     </article>
                   </Reveal>
                 );
@@ -844,7 +845,7 @@ export default function Home() {
       </section>
 
       {/* ---------------- HOW TO PLAY ---------------- */}
-      <section id="how" className={`${wrap} pt-24`}>
+      <section id="how" className={`${wrap} pt-16 sm:pt-24`}>
         <SectionHead title="วิธีเล่น" />
         <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s, i) => (
@@ -862,7 +863,7 @@ export default function Home() {
       </section>
 
       {/* ---------------- CTA ---------------- */}
-      <section className="mt-24 w-full bg-[#17FFA2] bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(0,0,0,0.08)_18px_36px)] text-[#04110a]">
+      <section className="mt-16 w-full bg-[#17FFA2] sm:mt-24 bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(0,0,0,0.08)_18px_36px)] text-[#04110a]">
         <div className={`${wrap} py-14`}>
           <Reveal className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <div>
@@ -875,7 +876,7 @@ export default function Home() {
       </section>
 
       <footer className="w-full border-t border-white/10 bg-[#05080a]">
-        <div className={`${wrap} py-8 text-sm ${MUTED}`}>7 Days 7 Games · มินิเกมสำหรับพักสมอง</div>
+        <div className={`${wrap} pb-[max(2rem,env(safe-area-inset-bottom))] pt-8 text-sm ${MUTED}`}>7 Days 7 Games · มินิเกมสำหรับพักสมอง</div>
       </footer>
 
       <GameDetail game={detailGame} saved={!!detailGame && savedGames.includes(detailGame.id)} onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)} onClose={() => setGameId(null)} />

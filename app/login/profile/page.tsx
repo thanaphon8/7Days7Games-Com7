@@ -118,6 +118,7 @@ function BackdropText() {
 /* ------------------------------------------------------------------ */
 
 const STYLES = `
+  button, a, [role="button"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .txt-bg-outline { color: transparent; -webkit-text-stroke: 1.5px rgba(23,255,162,.13); }
   @keyframes bg-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
   .bg-marquee { animation: bg-marquee linear infinite; will-change: transform; }
@@ -193,7 +194,7 @@ function CardTitle({ id, htmlFor, children }: { id?: string; htmlFor?: string; c
 }
 
 const pageShell =
-  "relative isolate min-h-screen bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white";
+  "relative isolate min-h-[100dvh] overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white";
 
 /* ------------------------------------------------------------------ */
 /*  PROFILE PAGE                                                       */
@@ -386,7 +387,7 @@ export default function ProfilePage() {
       <style>{STYLES}</style>
       <BackdropText />
 
-      <div className="mx-auto max-w-5xl px-4 pb-40 pt-4 sm:px-6 sm:pt-6">
+      <div className="mx-auto max-w-5xl px-4 pb-40 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-6">
         <div className="fx-rise flex items-end justify-between gap-4">
           <div>
             <span className="mb-4 block h-1.5 w-16 -skew-x-12 bg-[#17FFA2] shadow-[0_0_14px_#17FFA2]" />
@@ -459,6 +460,8 @@ export default function ProfilePage() {
               <div className="relative mt-4">
                 <input
                   id="pname"
+                  autoComplete="nickname"
+                  enterKeyHint="done"
                   value={name}
                   maxLength={20}
                   onChange={(e) => setName(e.target.value)}
