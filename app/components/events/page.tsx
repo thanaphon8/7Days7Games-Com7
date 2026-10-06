@@ -311,7 +311,19 @@ function EventCard({
   );
 }
 
-export default function EventsCarousel({ saved, toggleSave, setOpenId, overlayOpen }: { saved: string[]; toggleSave: (id: string) => void; setOpenId: (id: string | null) => void; overlayOpen: boolean }) {
+// ใส่ค่าเริ่มต้นไว้ เพราะไฟล์นี้ชื่อ page.tsx อยู่ใน app/ Next.js จึงมองเป็นหน้า (route)
+// แล้ว prerender ตอน build โดยไม่ส่ง props มา ถ้าไม่มีค่าเริ่มต้นจะ error (saved is undefined)
+export default function EventsCarousel({
+  saved = [],
+  toggleSave = () => {},
+  setOpenId = () => {},
+  overlayOpen = false,
+}: {
+  saved?: string[];
+  toggleSave?: (id: string) => void;
+  setOpenId?: (id: string | null) => void;
+  overlayOpen?: boolean;
+}) {
   const n = EVENTS.length;
   const [active, setActive] = useState(0);
   const [prev, setPrev] = useState<number | null>(null);
