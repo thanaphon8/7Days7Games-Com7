@@ -381,53 +381,42 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
 }
 
 /* ------------------------------------------------------------------ */
-/*  STACKED TEXT BACKGROUND (จางๆ อยู่หลังทั้งหน้า)                    */
+/*  STACKED TEXT BACKGROUND (จางๆ อยู่หลังทั้งหน้า วิ่งช้าๆ ตลอดเวลา)    */
 /* ------------------------------------------------------------------ */
 
 const STACK_WORD = "PLAY";
 const STACK_SOLID = "7 DAYS 7 GAMES";
 const STACK_ROWS: ("ghost" | "outline" | "solid")[] = ["ghost", "outline", "outline", "solid", "outline", "outline", "ghost"];
+// ยิ่งตัวเลขมาก ยิ่งวิ่งช้า (วินาทีต่อหนึ่งรอบ)
+const STACK_SECONDS = { ghost: 140, outline: 110, solid: 90 } as const;
 
 function BackdropText() {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let raf = 0;
-    const update = () => {
-      raf = 0;
-      ref.current?.style.setProperty("--sy", String(window.scrollY));
-    };
-    const on = () => {
-      if (!raf) raf = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", on, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", on);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
-
   return (
     <div
-      ref={ref}
       aria-hidden="true"
       className="pointer-events-none fixed inset-0 -z-10 flex select-none flex-col justify-center overflow-hidden"
     >
       {STACK_ROWS.map((kind, i) => {
-        const dir = i % 2 === 0 ? 1 : -1;
         const solid = kind === "solid";
+        const reverse = i % 2 !== 0;
+        const text = solid ? STACK_SOLID : STACK_WORD;
+        const tone = solid ? "text-[#17FFA2] opacity-[0.1]" : kind === "ghost" ? "txt-bg-outline opacity-50" : "txt-bg-outline";
         return (
-          <div key={i} className="flex justify-center whitespace-nowrap">
+          <div key={i} className="overflow-hidden whitespace-nowrap">
             <div
-              className={`flex w-max gap-[0.45em] font-bold uppercase leading-[0.9] text-[clamp(3rem,9vw,7.5rem)] ${
-                solid ? "text-[#17FFA2] opacity-[0.1]" : kind === "ghost" ? "txt-bg-outline opacity-50" : "txt-bg-outline"
-              }`}
-              style={{ transform: `translateX(calc(var(--sy, 0) * ${dir * -0.12}px))` }}
+              className={`bg-marquee flex w-max font-bold uppercase leading-[0.9] text-[clamp(3rem,9vw,7.5rem)] ${tone}`}
+              style={{
+                animationDuration: `${STACK_SECONDS[kind]}s`,
+                animationDirection: reverse ? "reverse" : "normal",
+              }}
             >
-              {Array.from({ length: solid ? 3 : 5 }).map((_, j) => (
-                <span key={j}>{solid ? STACK_SOLID : STACK_WORD}</span>
+              {/* ซ้ำสองชุดเท่ากัน เพื่อให้วนต่อกันเนียนไม่มีรอยต่อ */}
+              {[0, 1].map((g) => (
+                <div key={g} className="flex shrink-0 gap-[0.45em] pr-[0.45em]">
+                  {Array.from({ length: solid ? 3 : 5 }).map((_, j) => (
+                    <span key={j}>{text}</span>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
@@ -631,6 +620,9 @@ export default function Home() {
 
         .txt-bg-outline { color: transparent; -webkit-text-stroke: 1.5px rgba(23,255,162,.13); }
 
+        @keyframes bg-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .bg-marquee { animation: bg-marquee linear infinite; will-change: transform; }
+
         .reveal { opacity: 0; transition: opacity .75s ease, transform .75s cubic-bezier(.2,.8,.2,1); }
         .reveal-up { transform: translateY(44px); }
         .reveal-left { transform: translateX(-70px); }
@@ -654,6 +646,7 @@ export default function Home() {
           .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
           .bar-grow { width: 4rem; transition: none; }
           .fx-rise { animation: none !important; }
+          .bg-marquee { animation: none !important; }
         }
       `}</style>
 
