@@ -6,10 +6,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Navbar, { type Profile } from "../components/navbar/page";
 
-const TONE = ["#F4D35E", "#A8B5E8", "#F4A58A"]; // สีอันดับ 1-3
-const INK = ["#4A3B00", "#1F2A5C", "#4A2412"];
+const TONE = ["#17FFA2", "#0FD98A", "#0AB373"]; // สีอันดับ 1-3 (อันดับ 1 = เขียวนีออน #17FFA2 มีออร่า, อันดับ 2-3 = เขียวเข้มขึ้น ไม่มีออร่า)
+const INK = ["#00301B", "#00301B", "#00301B"];
 const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
-const PAPER = ["#F4D35E", "#A8B5E8", "#F4A58A", "#B7CBB0", "#FFFFFF"]; // สีกระดาษพลุ (โทนเดียวกับธีม)
 const COUNT_MS = 2000; // เวลาที่เลขคะแนนวิ่ง
 
 interface PlayerRank {
@@ -20,7 +19,7 @@ interface PlayerRank {
   score: number;
 }
 
-type Piece = { id: number; ox: number; oy: number; x: number; y: number; r: number; w: number; h: number; c: string; d: number; dur: number; round: boolean };
+type Bolt = { id: number; d: string; delay: number; dur: number; w: number };
 
 // Helper แปลง Path รูปภาพให้อยู่ใน public/img/
 function getAvatarSrc(id?: string) {
@@ -80,6 +79,43 @@ function Crown({ className = "" }: { className?: string }) {
   );
 }
 
+// ===== สายฟ้านีออน =====
+type Pt = [number, number];
+const fmt = (pts: Pt[]) => pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L");
+
+// เส้นซิกแซกจากจุดหนึ่งไปอีกจุด
+function jag(x1: number, y1: number, x2: number, y2: number, segs: number, amp: number): Pt[] {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const pts: Pt[] = [[x1, y1]];
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs;
+    const o = (Math.random() - 0.5) * 2 * amp;
+    pts.push([x1 + dx * t + nx * o, y1 + dy * t + ny * o]);
+  }
+  pts.push([x2, y2]);
+  return pts;
+}
+
+// เส้นสายฟ้าหลัก + กิ่งแตกเล็กๆ 2 กิ่ง
+function boltPath(x1: number, y1: number, x2: number, y2: number): string {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const segs = Math.max(6, Math.round(len / 38));
+  const pts = jag(x1, y1, x2, y2, segs, Math.min(40, len * 0.12));
+  let d = "M" + fmt(pts);
+  for (let b = 0; b < 2; b++) {
+    const k = 2 + Math.floor(Math.random() * (pts.length - 4));
+    const [bx, by] = pts[k];
+    const ang = Math.atan2(y2 - y1, x2 - x1) + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5);
+    const bl = len * (0.12 + Math.random() * 0.15);
+    d += " M" + fmt(jag(bx, by, bx + Math.cos(ang) * bl, by + Math.sin(ang) * bl, 4, 10));
+  }
+  return d;
+}
+
 // ตัวเลขวิ่งจาก 0 ไปหยุดที่ค่าจริง (เริ่มเมื่อ run = true) แล้วเรียก onDone ตอนหยุด
 function useCountUp(target: number, run: boolean, ms: number, onDone: () => void) {
   const [v, setV] = useState(0);
@@ -121,7 +157,7 @@ export default function RankPage() {
   const [ranking, setRanking] = useState<PlayerRank[]>([]);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
-  const [pieces, setPieces] = useState<Piece[]>([]);
+  const [bolts, setBolts] = useState<Bolt[]>([]);
   const firstRef = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
@@ -228,41 +264,34 @@ export default function RankPage() {
   const gap = me && myIdx > 0 ? ranking[myIdx - 1].score - me.score : 0;
   const isFirst = !!myId && (ranking[0]?.score ?? 0) > 0 && ranking[0]?.userId === myId;
 
-  // พลุกระดาษ: ยิงจากมุมบนซ้าย-ขวาของการ์ดอันดับ 1 พุ่งขึ้นเฉียงเข้าหากลาง แล้วค่อยๆ ร่วงลง
+  // สายฟ้านีออน: ฟาดลงมาจากบนจอใส่การ์ดอันดับ 1 แล้วแผ่ออกรอบการ์ด พร้อมแสงวาบทั้งจอ
   function fire() {
     setDone(true);
     const el = firstRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const out: Piece[] = [];
-    const per = 22;
-    (["L", "R"] as const).forEach((side, s) => {
-      const ox = side === "L" ? rect.left + 24 : rect.right - 24;
-      const oy = rect.top + 36;
-      // มุมยิง: ซ้ายยิงขึ้นขวา ขวายิงขึ้นซ้าย (องศาจากแกน x, ลบ = ขึ้นบน)
-      const base = side === "L" ? -62 : -118;
-      for (let i = 0; i < per; i++) {
-        const ang = ((base + (Math.random() - 0.5) * 46) * Math.PI) / 180;
-        const speed = 150 + Math.random() * 170;
-        const round = Math.random() < 0.3;
-        out.push({
-          id: s * per + i,
-          ox,
-          oy,
-          x: Math.cos(ang) * speed,
-          y: Math.sin(ang) * speed,
-          r: (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 480),
-          w: round ? 7 : 6 + Math.random() * 3,
-          h: round ? 7 : 10 + Math.random() * 6,
-          c: PAPER[Math.floor(Math.random() * PAPER.length)],
-          d: Math.random() * 120,
-          dur: 1500 + Math.random() * 900,
-          round,
-        });
-      }
-    });
-    setPieces(out);
-    setTimeout(() => setPieces([]), 3200);
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const out: Bolt[] = [];
+    let id = 0;
+
+    // ฟ้าผ่าจากบนจอลงมาที่การ์ด
+    for (let i = 0; i < 4; i++) {
+      const sx = rect.left + Math.random() * rect.width + (Math.random() - 0.5) * 200;
+      const ex = rect.left + rect.width * (0.15 + Math.random() * 0.7);
+      const ey = rect.top + rect.height * (0.1 + Math.random() * 0.3);
+      out.push({ id: id++, d: boltPath(sx, -20, ex, ey), delay: i * 90, dur: 900 + Math.random() * 300, w: 2 + Math.random() * 1.5 });
+    }
+    // สายฟ้าแผ่ออกจากการ์ดรอบทิศ
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
+      const sx = cx + Math.cos(ang) * rect.width * 0.4;
+      const sy = cy + Math.sin(ang) * rect.height * 0.4;
+      const r = 160 + Math.random() * 140;
+      out.push({ id: id++, d: boltPath(sx, sy, sx + Math.cos(ang) * r, sy + Math.sin(ang) * r), delay: 120 + i * 70, dur: 800 + Math.random() * 300, w: 1.5 + Math.random() * 1.2 });
+    }
+    setBolts(out);
+    setTimeout(() => setBolts([]), 1800);
   }
 
   const champ = top[0];
@@ -271,44 +300,42 @@ export default function RankPage() {
   });
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-white font-sans text-zinc-900">
+    <div className="flex min-h-screen flex-col items-center bg-black font-sans text-white">
       <style>{`
         @keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
         @keyframes score-pop { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
-        @keyframes paper {
-          0% { transform: translate(-50%, -50%) translate(0, 0) rotate(0); opacity: 1; animation-timing-function: cubic-bezier(.1, .8, .3, 1); }
-          36% { transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(calc(var(--r) * .4)); opacity: 1; animation-timing-function: cubic-bezier(.45, 0, .9, .55); }
-          100% { transform: translate(-50%, -50%) translate(calc(var(--x) * 1.3), calc(var(--y) + 460px)) rotate(var(--r)); opacity: 0; }
+        @keyframes bolt {
+          0% { stroke-dashoffset: 1; opacity: 0; }
+          12% { stroke-dashoffset: 0; opacity: 1; }
+          22% { opacity: .35; }
+          32% { opacity: 1; }
+          55% { opacity: .5; }
+          100% { stroke-dashoffset: 0; opacity: 0; }
         }
-        .paper { position: absolute; animation: paper var(--dur) linear var(--d) forwards; will-change: transform, opacity; }
-        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } .paper { display: none; } .score-pop { animation: none !important; } }
+        @keyframes flash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+        .bolt { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: bolt var(--dur) linear var(--d) forwards; }
+        .flash { background: radial-gradient(circle at 50% 35%, rgba(23,255,162,.28), rgba(23,255,162,.06) 60%, transparent); opacity: 0; animation: flash 600ms ease-out forwards; }
+        @media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } .bolt, .flash { display: none; } .score-pop { animation: none !important; } }
       `}</style>
 
-      {/* ชั้นพลุกระดาษ (ไม่รับการคลิก) */}
-      {pieces.length > 0 && (
+      {/* ชั้นสายฟ้านีออน (ไม่รับการคลิก) */}
+      {bolts.length > 0 && (
         <div aria-hidden className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-          {pieces.map((p) => (
-            <span
-              key={p.id}
-              className="paper"
-              style={
-                {
-                  left: p.ox,
-                  top: p.oy,
-                  width: p.w,
-                  height: p.h,
-                  background: p.c,
-                  borderRadius: p.round ? "9999px" : 2,
-                  boxShadow: p.c === "#FFFFFF" ? "0 0 0 1px rgba(0,0,0,.08)" : undefined,
-                  "--x": `${p.x}px`,
-                  "--y": `${p.y}px`,
-                  "--r": `${p.r}deg`,
-                  "--d": `${p.d}ms`,
-                  "--dur": `${p.dur}ms`,
-                } as React.CSSProperties
-              }
-            />
-          ))}
+          <div className="flash absolute inset-0" />
+          <svg
+            className="absolute inset-0 h-full w-full"
+            style={{ filter: "drop-shadow(0 0 6px #17FFA2) drop-shadow(0 0 18px #17FFA2)" }}
+          >
+            {bolts.map((b) => {
+              const v = { "--d": `${b.delay}ms`, "--dur": `${b.dur}ms` } as React.CSSProperties;
+              return (
+                <g key={b.id}>
+                  <path d={b.d} pathLength={1} className="bolt" style={{ ...v, stroke: "#17FFA2", strokeWidth: b.w * 3 }} />
+                  <path d={b.d} pathLength={1} className="bolt" style={{ ...v, stroke: "#FFFFFF", strokeWidth: b.w }} />
+                </g>
+              );
+            })}
+          </svg>
         </div>
       )}
 
@@ -325,13 +352,13 @@ export default function RankPage() {
         <div className="flex flex-wrap items-end justify-between gap-4 pt-2 sm:pt-6">
           <div>
             <h1 className="text-5xl font-semibold tracking-tight sm:text-6xl md:text-7xl">อันดับ</h1>
-            <p className="mt-3 max-w-md text-sm leading-6 text-zinc-500 sm:text-base sm:leading-7">
+            <p className="mt-3 max-w-md text-sm leading-6 text-zinc-400 sm:text-base sm:leading-7">
               แต้มสะสมจากทุกรอบที่เล่น อัปเดตทุกครั้งที่มีคนเล่นจบ
             </p>
           </div>
-          <div className="inline-flex items-center gap-3 rounded-full bg-zinc-50 py-2.5 pl-4 pr-6">
+          <div className="inline-flex items-center gap-3 rounded-full bg-zinc-900 py-2.5 pl-4 pr-6">
             <span aria-hidden className="h-3 w-3 rounded-full bg-[#9CC593]" />
-            <span className="text-sm text-zinc-500">ผู้เข้าร่วม</span>
+            <span className="text-sm text-zinc-400">ผู้เข้าร่วม</span>
             <span className="text-2xl font-semibold tabular-nums tracking-tight">
               {loading ? "–" : ranking.length.toLocaleString()}
             </span>
@@ -342,11 +369,11 @@ export default function RankPage() {
           /* โครงระหว่างโหลด */
           <div aria-busy className="mt-10 animate-pulse sm:mt-14">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
-              <div className="col-span-2 h-60 rounded-[2rem] bg-zinc-100 md:col-span-1 md:h-72" />
-              <div className="h-52 rounded-[2rem] bg-zinc-100 md:h-60" />
-              <div className="h-52 rounded-[2rem] bg-zinc-100 md:h-60" />
+              <div className="col-span-2 h-60 rounded-none bg-zinc-800 md:col-span-1 md:h-72" />
+              <div className="h-52 rounded-none bg-zinc-800 md:h-60" />
+              <div className="h-52 rounded-none bg-zinc-800 md:h-60" />
             </div>
-            <p className="mt-6 text-center text-sm text-zinc-400">กำลังโหลดข้อมูลอันดับ...</p>
+            <p className="mt-6 text-center text-sm text-zinc-500">กำลังโหลดข้อมูลอันดับ...</p>
           </div>
         ) : ranking.length === 0 ? (
           <div className="mt-10 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center text-[#4A3B00] sm:mt-14">
@@ -385,10 +412,18 @@ export default function RankPage() {
                   <li
                     key={p.userId || i}
                     ref={first ? firstRef : undefined}
-                    style={{ backgroundColor: TONE[i], color: INK[i], animation: `rise 600ms ${i * 120}ms both cubic-bezier(.2,.8,.2,1)` }}
-                    className={`rise relative flex min-w-0 flex-col items-center rounded-[2rem] px-4 pb-7 pt-9 text-center sm:px-6 sm:pb-8 sm:pt-10 ${
+                    style={{
+                      backgroundColor: TONE[i],
+                      color: INK[i],
+                      animation: `rise 600ms ${i * 120}ms both cubic-bezier(.2,.8,.2,1)`,
+                      // ออร่านีออนรอบการ์ดอันดับ 1
+                      boxShadow: first
+                        ? `${mine ? "0 0 0 4px #fff, " : ""}0 0 18px 4px rgba(23,255,162,.85), 0 0 60px 14px rgba(23,255,162,.5), 0 0 130px 36px rgba(23,255,162,.28)`
+                        : undefined,
+                    }}
+                    className={`rise relative flex min-w-0 flex-col items-center rounded-none px-4 pb-7 pt-9 text-center sm:px-6 sm:pb-8 sm:pt-10 ${
                       first ? "col-span-2 md:col-span-1" : ""
-                    } ${order[rank]} ${mine ? "ring-4 ring-zinc-900" : ""}`}
+                    } ${order[rank]} ${mine ? "ring-4 ring-white" : ""}`}
                   >
                     <span className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/70 text-sm font-semibold sm:left-5 sm:top-5">{rank}</span>
                     <div className="relative mt-4">
@@ -427,19 +462,19 @@ export default function RankPage() {
                     <li
                       key={p.userId || i}
                       className={`flex items-center gap-3 rounded-full p-2.5 pr-5 sm:gap-4 sm:p-3 sm:pr-6 ${
-                        mine ? "bg-[#9CC593]/30 ring-2 ring-zinc-900" : "bg-zinc-50"
+                        mine ? "bg-[#9CC593]/30 ring-2 ring-white" : "bg-zinc-900"
                       }`}
                     >
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-base font-semibold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
                       <Avatar id={p.avatar} size="h-11 w-11 sm:h-12 sm:w-12" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-base font-medium sm:text-lg">
                           {p.name}
                           {mine && " (คุณ)"}
                         </p>
-                        <p className="text-xs text-zinc-500 sm:hidden">{p.games} เกม</p>
+                        <p className="text-xs text-zinc-400 sm:hidden">{p.games} เกม</p>
                       </div>
-                      <span className="hidden text-sm text-zinc-500 sm:inline">{p.games} เกม</span>
+                      <span className="hidden text-sm text-zinc-400 sm:inline">{p.games} เกม</span>
                       <span className="w-20 text-right text-lg font-semibold tabular-nums sm:w-24 sm:text-xl">{p.score.toLocaleString()}</span>
                     </li>
                   );
