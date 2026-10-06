@@ -99,8 +99,9 @@ function useMe() {
       }
     } catch {}
     if (!id) {
-      id = localStorage.getItem("kb_guest") || "g" + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem("kb_guest", id);
+      // ใช้ sessionStorage เพื่อให้แต่ละแท็บมี id ของตัวเอง (localStorage ใช้ร่วมกันทุกแท็บ ทำให้ id ซ้ำ)
+      id = sessionStorage.getItem("kb_guest") || "g" + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem("kb_guest", id);
     }
     setMe({ id: String(id), name, avatar });
   }, []);
@@ -756,14 +757,14 @@ export default function KickBattle() {
       const r = await api({ action, code: targetCode, playerId: me.id, name: me.name, avatar: me.avatar });
       const activeCode = r.code || targetCode;
       if (!activeCode) throw new Error("ไม่พบรหัสห้อง");
-      
+
       // ล้าง State เก่าเพื่อเตรียมพร้อมสำหรับการเข้าห้องใหม่
       initRef.current = false;
       setView(null);
       setShown(0);
       setAnim(null);
       setSel(null);
-      
+
       localStorage.setItem("kb_room", activeCode);
       setCode(activeCode);
     } catch (e: any) {
@@ -919,40 +920,40 @@ export default function KickBattle() {
     );
   }
 
-  // ===== รอเพื่อน (เฉพาะ Host คนสร้างห้อง หรือ Guest ที่เพิ่ง Join แล้วรอ Server เริ่มเกม) =====
-  if (!view || view.status === "waiting") {
-    const isGuest = view && view.you === 1;
+  // ===== กำลังเชื่อมต่อห้อง (ยังไม่ได้ข้อมูลห้องจาก server) =====
+  if (!view) {
     return menu(
       <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center">
-        {isGuest ? (
-          <>
-            <p className="text-2xl font-semibold">เข้าร่วมห้อง {code} สำเร็จ!</p>
-            <p className="mt-4 text-sm opacity-70">
-              กำลังเชื่อมต่อและรอเริ่มเกม
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-                  .
-                </span>
-              ))}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm opacity-70">รหัสห้องของคุณ</p>
-            <p className="mt-2 text-7xl font-semibold tracking-[.2em] md:text-8xl">{code}</p>
-            <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
-              {copied ? "คัดลอกแล้ว" : "คัดลอกรหัส"}
-            </button>
-            <p className="mt-8 text-sm opacity-70">
-              รอเพื่อนเข้าห้อง
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-                  .
-                </span>
-              ))}
-            </p>
-          </>
-        )}
+        <p className="text-2xl font-semibold">กำลังเชื่อมต่อห้อง {code}</p>
+        <p className="mt-4 text-sm opacity-70">
+          รอสักครู่
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
+              .
+            </span>
+          ))}
+        </p>
+      </div>
+    );
+  }
+
+  // ===== รอเพื่อน (เฉพาะ Host คนสร้างห้อง) =====
+  if (view.status === "waiting") {
+    return menu(
+      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center">
+        <p className="text-sm opacity-70">รหัสห้องของคุณ</p>
+        <p className="mt-2 text-7xl font-semibold tracking-[.2em] md:text-8xl">{code}</p>
+        <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
+          {copied ? "คัดลอกแล้ว" : "คัดลอกรหัส"}
+        </button>
+        <p className="mt-8 text-sm opacity-70">
+          รอเพื่อนเข้าห้อง
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
+              .
+            </span>
+          ))}
+        </p>
       </div>
     );
   }

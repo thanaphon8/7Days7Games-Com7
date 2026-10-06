@@ -228,6 +228,10 @@ async function handle(body: any) {
     await mutate(col, code, (room) => {
       const existing = room.players.findIndex((p) => p.id === pid);
       if (existing >= 0) {
+        // เจ้าของห้องที่ยังรออยู่ กด join ห้องตัวเอง (มักเกิดจากเทสสองบัญชีใน browser เดียวกันที่ id ซ้ำกัน)
+        if (room.status === "waiting" && room.players.length < 2) {
+          throw new HttpError("คุณคือเจ้าของห้องนี้ ต้องใช้บัญชีหรือเบราว์เซอร์อื่นเข้าร่วม", 409);
+        }
         room.left[existing] = false; // กลับเข้าห้องเดิม
         return;
       }
