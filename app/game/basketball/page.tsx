@@ -9,12 +9,9 @@ import { useEffect, useRef, useState } from "react";
 
 // ===== โลกของเกม =====
 const G = 9.8;
-const DURATION = 60;
-const BASE_POINTS = 10;
-const SWISH_BONUS = 5;
-const BANK_BONUS = 3;
-const MAX_MULT = 10;
-const FIRE_STREAK = 3;
+const DURATION = 30;
+const POINT_PER_BASKET = 1; // ยิงเข้า 1 ลูก = 1 คะแนน (ไม่มีตัวคูณ)
+const FIRE_STREAK = 3; // ยิงเข้าติดกันกี่ลูกถึง "ติดไฟ"
 const TIME_BONUS_EVERY = 5; // ยิงเข้าติดกันทุก ๆ 5 ลูก ได้เวลาเพิ่ม
 const TIME_BONUS = 3;
 const MADE_PER_LEVEL = 5;
@@ -37,8 +34,8 @@ const LV_AMP = [0, 0.25, 0.4, 0.5, 0.6];
 const LV_W = [0, 1.0, 1.2, 1.4, 1.6];
 const FONT = 'ui-sans-serif, system-ui, "Noto Sans Thai", sans-serif';
 
-// คะแนนที่ต้องทำให้ได้ 1 / 2 / 3 ดาว ในหน้าสรุป
-const STAR_AT = [80, 250, 500];
+// คะแนน (จำนวนลูกที่เข้า) ที่ต้องทำให้ได้ 1 / 2 / 3 ดาว ในหน้าสรุป
+const STAR_AT = [2, 4, 6];
 const RANKS = ["ซ้อมต่ออีกนิด", "ตัวสำรอง", "ตัวจริง", "ซูเปอร์สตาร์"];
 
 type Skin = { base: string; shade: string; line: string };
@@ -317,14 +314,16 @@ function drawBallObj(ctx: CanvasRenderingContext2D, v: View, b: Ball, skin: Skin
   rs = Math.max(1, rs);
   const isActive = b === g.ball;
   const onFire = isActive && g.fire > 0.05;
+  // ยิ่งเข้าติดกันหลายลูก ไฟยิ่งแรงและใหญ่ขึ้น
+  const heat = clamp((g.streak - FIRE_STREAK) / 5, 0, 1);
 
   ctx.save();
   ctx.globalAlpha = fade;
   // รอยทางลูกบอล
   for (let i = 0; i < b.trail.length; i++) {
     const t = b.trail[i];
-    ctx.globalAlpha = fade * 0.16 * (i / b.trail.length);
-    ctx.fillStyle = skin.base;
+    ctx.globalAlpha = fade * (onFire ? 0.3 : 0.16) * (i / b.trail.length);
+    ctx.fillStyle = onFire ? "#FF7A1A" : skin.base;
     ctx.beginPath();
     ctx.arc(t.x, t.y, t.r * (0.5 + 0.5 * (i / b.trail.length)), 0, Math.PI * 2);
     ctx.fill();
@@ -332,12 +331,14 @@ function drawBallObj(ctx: CanvasRenderingContext2D, v: View, b: Ball, skin: Skin
   ctx.globalAlpha = fade;
   if (onFire) {
     ctx.globalCompositeOperation = "lighter";
-    const gl = ctx.createRadialGradient(p.x, p.y, rs * 0.4, p.x, p.y, rs * 2.7);
-    gl.addColorStop(0, `rgba(255,150,40,${0.55 * g.fire})`);
+    const gr0 = rs * (2.7 + 0.9 * heat);
+    const gl = ctx.createRadialGradient(p.x, p.y, rs * 0.4, p.x, p.y, gr0);
+    gl.addColorStop(0, `rgba(255,150,40,${(0.55 + 0.25 * heat) * g.fire})`);
+    gl.addColorStop(0.5, `rgba(255,90,20,${0.25 * g.fire})`);
     gl.addColorStop(1, "rgba(255,120,30,0)");
     ctx.fillStyle = gl;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, rs * 2.7, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, gr0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = "source-over";
   }
@@ -357,6 +358,15 @@ function drawBallObj(ctx: CanvasRenderingContext2D, v: View, b: Ball, skin: Skin
   ctx.beginPath();
   ctx.arc(p.x, p.y, rs, 0, Math.PI * 2);
   ctx.fill();
+  if (onFire) {
+    // ผิวลูกร้อนแดงเรือง
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = `rgba(255,110,30,${0.22 * g.fire})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, rs, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+  }
   ctx.restore();
 }
 
@@ -753,7 +763,7 @@ function Star({ on, delay }: { on: boolean; delay: number }) {
   );
 }
 
-// ข้อความไล่สีส้ม-เหลืองแบบเดียวกับตัวคูณ ×N ตอนติดไฟ (แยกชั้นแสงเรืองไว้ด้านหลัง และเว้นขอบกันตัวเอียงถูกตัด)
+// ข้อความไล่สีส้ม-เหลืองแบบไฟลุก (แยกชั้นแสงเรืองไว้ด้านหลัง และเว้นขอบกันตัวเอียงถูกตัด)
 function FireText({ text, size }: { text: string; size: string }) {
   return (
     <div className="relative inline-block px-6 py-2">
@@ -968,22 +978,21 @@ export default function BasketballPage() {
       b.resolved = true;
       const swish = b.rimHits === 0 && !b.board;
       const bank = b.board && b.rimHits === 0;
-      g.streak += 1;
+      g.streak += 1; // คอมโบต่อเนื่อง: ยิงเข้าติดกันไปเรื่อย ๆ จนกว่าจะพลาด
       g.best = Math.max(g.best, g.streak);
       g.made += 1;
       if (swish) g.swishes += 1;
-      const mult = Math.min(MAX_MULT, g.streak);
-      const pts = (BASE_POINTS + (swish ? SWISH_BONUS : bank ? BANK_BONUS : 0)) * mult;
-      g.score += pts;
+      g.score += POINT_PER_BASKET; // ลูกละ 1 คะแนน ไม่มีตัวคูณ
       g.hoopFlash = 1;
       g.netSwing = 1;
       g.crowd = 1;
       g.shake = 0.35;
       const hot = g.streak >= FIRE_STREAK;
+      const kind = swish ? "SWISH!" : bank ? "BANK SHOT!" : "NICE!";
       g.pops.push({
         x: g.hoopX, y: HOOP_Y + 0.5, z: HOOP_Z, life: 1.1,
-        title: swish ? "SWISH!" : bank ? "BANK SHOT!" : "NICE!",
-        text: `+${pts}${mult > 1 ? ` ×${mult}` : ""}`,
+        title: g.streak >= 2 ? `${kind} · COMBO ${g.streak}` : kind,
+        text: `+${POINT_PER_BASKET}`,
         color: hot ? "#E8643C" : "#27272A",
       });
       burst(g, hot);
@@ -1011,7 +1020,7 @@ export default function BasketballPage() {
     const missBall = (g: Game, b: Ball) => {
       b.resolved = true;
       if (g.streak > 0) {
-        g.pops.push({ x: clamp(b.x, -1.5, 1.5), y: HOOP_Y - 0.4, z: HOOP_Z, life: 0.9, title: "", text: "พลาด", color: "#71717A" });
+        g.pops.push({ x: clamp(b.x, -1.5, 1.5), y: HOOP_Y - 0.4, z: HOOP_Z, life: 0.9, title: "", text: g.streak >= 2 ? "คอมโบหลุด" : "พลาด", color: "#71717A" });
       }
       g.streak = 0;
       syncHud();
@@ -1189,17 +1198,17 @@ export default function BasketballPage() {
         if (g.ball === b && !b.resolved) {
           const p = proj(view, b.x, b.y, b.z);
           b.trail.push({ x: p.x, y: p.y, r: BALL_R * p.s });
-          if (b.trail.length > 10) b.trail.shift();
+          if (b.trail.length > (g.streak >= FIRE_STREAK ? 16 : 10)) b.trail.shift();
           if ((b.vy < 0 && b.y < HOOP_Y - 0.2) || b.age > 5 || b.z > BOARD_Z + 4) missBall(g, b);
         }
       }
 
-      // ไฟลุกรอบลูกบาส
+      // ไฟลุกรอบลูกบาส: ยิ่งคอมโบสูง ไฟยิ่งเยอะ (ทั้งตอนรอยิงและตอนลูกลอยอยู่)
       if (g.streak >= FIRE_STREAK && playing) {
         const cur = g.ball;
         const p = proj(view, cur.x, cur.y, cur.z);
         const r = BALL_R * p.s;
-        const n = 3 + Math.min(4, g.streak - FIRE_STREAK);
+        const n = 3 + Math.min(6, g.streak - FIRE_STREAK);
         const ps = view.h / 640;
         for (let i = 0; i < n; i++) {
           g.particles.push({
@@ -1307,7 +1316,6 @@ export default function BasketballPage() {
   }
 
   // ===== ค่าที่ใช้แสดงผล =====
-  const nextMult = Math.min(MAX_MULT, hud.streak + 1);
   const onFire = hud.streak >= FIRE_STREAK && phase === "playing";
   const timeLow = timeLeft <= 10 && phase === "playing";
   const over = phase === "over";
@@ -1330,10 +1338,17 @@ export default function BasketballPage() {
         @keyframes bb-bump { 0% { transform: scale(1.35) } 100% { transform: scale(1) } }
         @keyframes bb-glow { 0% { opacity: .65; transform: scale(1) } 100% { opacity: 1; transform: scale(1.06) } }
         @keyframes bb-rise-fire { 0% { transform: translateY(14px) scale(.6); opacity: 0 } 30% { opacity: 1 } 100% { transform: translateY(-16px) scale(1.1); opacity: 0 } }
+        @keyframes bb-shake {
+          0%,100% { transform: translate(0,0) rotate(0deg) }
+          15% { transform: translate(-4px,2px) rotate(-2deg) }
+          30% { transform: translate(4px,-3px) rotate(2deg) }
+          45% { transform: translate(-3px,-2px) rotate(-1.5deg) }
+          60% { transform: translate(3px,3px) rotate(1.5deg) }
+          80% { transform: translate(-2px,1px) rotate(-1deg) }
+        }
         @keyframes bb-intro { 0% { transform: scale(.4); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
         @keyframes bb-go { 0% { transform: scale(.4); opacity: 0 } 25% { transform: scale(1.18); opacity: 1 } 65% { transform: scale(1); opacity: 1 } 100% { transform: scale(1.6); opacity: 0 } }
-        @keyframes bb-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-8px) } }
-        @media (prefers-reduced-motion: reduce) { .bb-anim, .bb-anim * { animation: none !important } }
+        @media (prefers-reduced-motion: reduce) { .bb-anim, .bb-anim *, .bb-shake { animation: none !important } }
       `}</style>
 
       <main className="h-full w-full">
@@ -1357,19 +1372,27 @@ export default function BasketballPage() {
                 style={{ padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)" }}
               >
                 <div className="relative h-full w-full">
-                  {/* หลอดเวลา มุมบนซ้าย */}
-                  <div className="absolute left-3 top-3 w-36 sm:left-4 sm:top-4 sm:w-48">
-                    <div className="rounded-2xl bg-white/90 px-3 py-2 shadow-sm ring-1 ring-black/5 backdrop-blur">
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-[11px] text-zinc-500">เวลา</span>
-                        <span className={`text-lg font-semibold leading-none tabular-nums ${timeLow ? "text-[#E8643C]" : "text-zinc-900"}`}>{timeLeft}</span>
-                      </div>
-                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-100">
-                        <div
-                          className={`h-full rounded-full ${timeLow ? "animate-pulse bg-[#F4806A]" : "bg-[#7FC8A9]"}`}
-                          style={{ width: `${clamp(timeLeft / DURATION, 0, 1) * 100}%`, transition: "width 1s linear, background-color .3s" }}
-                        />
-                      </div>
+                  {/* เวลา มุมบนซ้าย: ตัวเลขใหญ่แบบเดียวกับคอมโบ ใกล้หมดเวลาจะเป็นสีแดงและสั่น */}
+                  <div className="absolute left-3 top-2 select-none sm:left-4 sm:top-3">
+                    <p
+                      className={`pl-1 text-sm font-bold tracking-wide ${timeLow ? "text-[#E5484D]" : "text-zinc-500"}`}
+                      style={{ textShadow: "0 1px 0 rgba(255,255,255,.9)" }}
+                    >
+                      เวลา
+                    </p>
+                    <div className={`-mt-1 ${timeLow ? "bb-shake" : ""}`} style={timeLow ? { animation: "bb-shake .35s ease-in-out infinite" } : undefined}>
+                      <p
+                        className={`px-1 text-7xl font-black italic leading-[1.05] tabular-nums tracking-tighter sm:text-8xl ${timeLow ? "text-[#E5484D]" : "text-zinc-900"}`}
+                        style={{ textShadow: timeLow ? "0 2px 0 rgba(255,255,255,.95), 0 0 16px rgba(229,72,77,.55)" : "0 2px 0 rgba(255,255,255,.9), 0 0 12px rgba(255,255,255,.9)" }}
+                      >
+                        {timeLeft}
+                      </p>
+                    </div>
+                    <div className="mt-1 h-2 w-28 overflow-hidden rounded-full bg-white/80 ring-1 ring-black/5 sm:w-40">
+                      <div
+                        className={`h-full rounded-full ${timeLow ? "bg-[#E5484D]" : "bg-[#7FC8A9]"}`}
+                        style={{ width: `${clamp(timeLeft / DURATION, 0, 1) * 100}%`, transition: "width 1s linear, background-color .3s" }}
+                      />
                     </div>
                   </div>
 
@@ -1392,7 +1415,7 @@ export default function BasketballPage() {
                     </span>
                   </div>
 
-                  {/* ตัวคูณคอมโบ มุมล่างขวา ไม่มีกรอบ ติดไฟเมื่อ onFire */}
+                  {/* คอมโบต่อเนื่อง มุมล่างขวา (ยิงเข้าติดกันกี่ลูก) ติดไฟเมื่อ onFire */}
                   <div className="absolute bottom-3 right-3 select-none text-right sm:bottom-5 sm:right-5">
                     <div className="relative inline-block px-4 pt-7">
                       {onFire && (
@@ -1403,7 +1426,7 @@ export default function BasketballPage() {
                             className="absolute bottom-0 right-4 text-7xl font-black italic leading-[1.05] tracking-tighter text-[#FF7A1A] blur-md sm:text-8xl"
                             style={{ animation: "bb-glow .5s ease-in-out infinite alternate" }}
                           >
-                            ×{nextMult}
+                            {hud.streak}
                           </span>
                           <span className="absolute left-4 top-3 text-2xl" style={{ animation: "bb-rise-fire 1s ease-out infinite" }} aria-hidden>🔥</span>
                           <span className="absolute left-1/2 top-1 text-3xl" style={{ animation: "bb-rise-fire .85s .25s ease-out infinite" }} aria-hidden>🔥</span>
@@ -1411,20 +1434,27 @@ export default function BasketballPage() {
                         </>
                       )}
                       <p
-                        key={nextMult}
+                        key={hud.streak}
                         className={`relative px-3 py-1 text-7xl font-black italic leading-[1.05] tabular-nums tracking-tighter sm:text-8xl ${
-                          onFire ? "bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text text-transparent" : "text-zinc-900"
+                          onFire
+                            ? "bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text text-transparent"
+                            : hud.streak > 0
+                              ? "text-zinc-900"
+                              : "text-zinc-400"
                         }`}
                         style={{
                           animation: "bb-bump .3s ease-out",
                           ...(onFire ? {} : { textShadow: "0 2px 0 rgba(255,255,255,.9), 0 0 12px rgba(255,255,255,.9)" }),
                         }}
                       >
-                        ×{nextMult}
+                        {hud.streak}
                       </p>
                     </div>
-                    <p className={`-mt-1 pr-4 text-sm font-semibold ${onFire ? "text-[#FFB347]" : "text-zinc-500"}`}>
-                      {onFire ? "ติดไฟ!" : `ติดกัน ${hud.streak}`}
+                    <p
+                      className={`-mt-1 pr-4 text-sm font-bold tracking-wide ${onFire ? "text-[#FFB347]" : "text-zinc-500"}`}
+                      style={onFire ? undefined : { textShadow: "0 1px 0 rgba(255,255,255,.9)" }}
+                    >
+                      {onFire ? "COMBO ติดไฟ!" : "COMBO"}
                     </p>
                   </div>
 
@@ -1476,7 +1506,7 @@ export default function BasketballPage() {
                     <p className="mt-1 text-sm font-medium text-zinc-500">{RANKS[stars]}</p>
 
                     <div className="mt-4 rounded-3xl bg-[#F4D35E] px-4 py-5">
-                      <p className="text-xs text-zinc-700">คะแนนรอบนี้</p>
+                      <p className="text-xs text-zinc-700">คะแนนรอบนี้ (ลูกละ 1 คะแนน)</p>
                       <p className="text-7xl font-semibold leading-none tabular-nums tracking-tight">{shownScore}</p>
                     </div>
 
@@ -1494,7 +1524,7 @@ export default function BasketballPage() {
                         <p className="text-xs text-zinc-600">SWISH</p>
                       </div>
                       <div className="rounded-2xl bg-[#F2994A]/40 py-3">
-                        <p className="text-xl font-semibold tabular-nums">×{Math.min(MAX_MULT, hud.best)}</p>
+                        <p className="text-xl font-semibold tabular-nums">{hud.best}</p>
                         <p className="text-xs text-zinc-600">คอมโบสูงสุด</p>
                       </div>
                     </div>

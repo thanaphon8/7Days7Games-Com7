@@ -6,8 +6,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 const GAME_ID = "com7quiz";
 const TIME_PER_Q = 15; // วินาทีต่อข้อ
-const BASE_POINT = 100; // คะแนนพื้นฐานต่อข้อที่ตอบถูก
-const BONUS_PER_SEC = 5; // โบนัสต่อวินาทีที่เหลือ
+const POINT_PER_CORRECT = 1; // ตอบถูก 1 ข้อ = 1 คะแนน (เต็ม TOTAL คะแนน)
 
 const GREEN = "#17FFA2";
 const GREEN_MID = "#0FD98A";
@@ -18,7 +17,7 @@ const MUTED = "text-[#8fa6a1]";
 
 type Raw = { tag: string; q: string; options: string[]; explain: string }; // options[0] คือคำตอบที่ถูก
 type Question = { tag: string; q: string; options: string[]; answer: number; explain: string };
-type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number };
+type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number; praise: string };
 
 // ===== คำถามเกี่ยวกับบริษัท COM7 (ตัวเลือกแรกของแต่ละข้อคือคำตอบที่ถูก ระบบจะสลับลำดับให้เอง) =====
 // ที่มา: ควิซ "รู้จัก COM7 แค่ไหน?" (COM7 E-SPORT FUN DAY) ข้อมูลอ้างอิงจาก comseven.com
@@ -28,7 +27,7 @@ const BANK: Raw[] = [
   { tag: "ประวัติบริษัท", q: "บริษัทจดทะเบียนก่อตั้งอย่างเป็นทางการวันที่เท่าไหร่?", options: ["27 ก.พ. 2004", "1 ม.ค. 2004", "7 ก.ค. 2007", "27 ก.พ. 1996"], explain: "บริษัทก่อตั้งอย่างเป็นทางการเมื่อวันที่ 27 กุมภาพันธ์ 2004" },
   { tag: "ประวัติบริษัท", q: "ตอนก่อตั้งบริษัท ธุรกิจหลักของ COM7 คืออะไร?", options: ["ค้าส่งสินค้าไอทีให้ร้านค้าทั่วประเทศ", "ร้านค้าปลีกในห้าง", "ศูนย์ซ่อม", "ขายออนไลน์"], explain: "ช่วงแรกของบริษัทเน้นค้าส่งสินค้าไอทีให้ร้านค้าทั่วประเทศ" },
   { tag: "ธุรกิจ", q: "ข้อไหน \"ไม่ใช่\" ธุรกิจของ COM7?", options: ["ผลิตสมาร์ตโฟนแบรนด์ของตัวเอง", "ขายปลีกสินค้าไอทีผ่านหน้าร้าน", "ขายสินค้าให้บริษัทและสถานศึกษา", "ศูนย์ซ่อมและบริการ"], explain: "COM7 เป็นผู้ค้าปลีก ไม่ได้ผลิตสมาร์ตโฟนเอง" },
-  { tag: "ผู้บริหาร", q: "CEO ของ COM7 คือใคร?", options: ["คุณสุระ คณิตทวีกุล", "คุณณรงค์ ศรีวรรณวิทย์", "คุณคงศักดิ์ บรรณสถิตย์กุล", "คุณภาคภูมิ สตะรัต"], explain: "คุณสุระ คนิทวีกุล ดำรงตำแหน่งประธานเจ้าหน้าที่บริหาร (CEO)" },
+  { tag: "ผู้บริหาร", q: "CEO ของ COM7 คือใคร?", options: ["คุณสุระ คณิตทวีกุล", "คุณณรงค์ ศรีวรรณวิทย์", "คุณคงศักดิ์ บรรณสถิตย์กุล", "คุณภาคภูมิ สตะรัต"], explain: "คุณสุระ คณิตทวีกุล ดำรงตำแหน่งประธานเจ้าหน้าที่บริหาร (CEO)" },
   { tag: "บริการ", q: "\"iCare\" ให้บริการอะไร?", options: ["ศูนย์ซ่อมและบริการสินค้า Apple", "ประกันสุขภาพ", "ร้านขายแว่นตา", "แอปดูแลสัตว์เลี้ยง"], explain: "iCare คือศูนย์ซ่อมและบริการสินค้า Apple" },
   { tag: "บริษัทในเครือ", q: "บริษัทในเครือไหนดูแลร้าน \"TRUE by COM7\"?", options: ["Double 7", "Adept", "Prime Solution", "Novus Integration"], explain: "ร้าน TRUE by COM7 ดูแลโดยบริษัท ดับเบิ้ลเซเว่น จำกัด (Double 7)" },
   { tag: "บริษัทในเครือ", q: "\"See Know How\" (SKH) ในเครือ COM7 ทำอะไร?", options: ["ศูนย์เรียนรู้และอบรมพนักงานในเครือ", "ทำคอนเทนต์รีวิวสินค้า", "บริษัทที่ปรึกษา", "ร้านขายหนังสือ"], explain: "SKH คือศูนย์การเรียนรู้และอบรมพนักงานในเครือ COM7" },
@@ -82,7 +81,8 @@ function buildRound(): Question[] {
   });
 }
 
-const WIN_MSG = ["รู้จัก COM7 จริง!", "เลือดเขียวแท้", "แม่นมาก!", "ใช่เลย!"];
+// คำชมตอนตอบถูก (สุ่มทีละข้อ ไม่ซ้ำกับข้อก่อนหน้า)
+const PRAISE = ["รู้จัก COM7 จริง!", "เลือดเขียวแท้", "แม่นมาก!", "ใช่เลย!", "เก่งมาก!", "จำแม่นสุดๆ", "สุดยอด!", "ตอบได้เฉียบ!", "COM7 เต็มสิบ!", "ยอดเยี่ยม!"];
 const LOSE_MSG = ["เกือบไปแล้วนะ", "ข้อนี้ต้องจำไว้", "พลาดนิดเดียว", "ไว้แก้มือรอบหน้า"];
 const TIMEOUT_MSG = "หมดเวลาซะแล้ว";
 
@@ -91,14 +91,6 @@ function rating(correct: number) {
   if (correct >= 10) return "รู้จัก COM7 ดีเยี่ยม";
   if (correct >= 6) return "เริ่มคุ้นเคยกับ COM7";
   return "ต้องไปเดินดูร้าน COM7 เพิ่มแล้ว";
-}
-
-// คำชมตามคอมโบ
-function streakLabel(n: number) {
-  if (n >= 8) return "COM7 เต็มสิบ!";
-  if (n >= 5) return "ไฟลุกแล้ว!";
-  if (n >= 2) return "คอมโบ";
-  return "";
 }
 
 // ทำให้คำว่า "ไม่ใช่" ในโจทย์เด่นขึ้น กันอ่านพลาด
@@ -188,12 +180,10 @@ export default function Com7QuizPage() {
   const [timeLeft, setTimeLeft] = useState(TIME_PER_Q);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [bestStreak, setBestStreak] = useState(0);
+  const [times, setTimes] = useState<number[]>([]); // เวลาที่ใช้ต่อข้อ (วินาที)
   const [results, setResults] = useState<boolean[]>([]); // ผลรายข้อ ใช้โชว์ตอนจบ
   const [fx, setFx] = useState<Fx | null>(null); // เอฟเฟกต์ของข้อปัจจุบัน
-  const [shown, setShown] = useState(0); // แต้มที่แสดง (นับขึ้นแบบแอนิเมชัน)
-  const shownRef = useRef(0);
+  const lastPraise = useRef(-1);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "guest" | "error">("idle");
   const [saveErr, setSaveErr] = useState("");
   const [gameTotal, setGameTotal] = useState<number | null>(null); // แต้มสะสมของเกมนี้ทั้งหมด
@@ -209,36 +199,36 @@ export default function Com7QuizPage() {
     setTimeLeft(TIME_PER_Q);
     setScore(0);
     setCorrect(0);
-    setStreak(0);
-    setBestStreak(0);
+    setTimes([]);
     setResults([]);
     setFx(null);
-    shownRef.current = 0;
-    setShown(0);
     setGameTotal(null);
     savedRound.current = false;
     setSaveState("idle");
     setPhase("play");
   }
 
+  function pickPraise() {
+    let n = 0;
+    do {
+      n = Math.floor(Math.random() * PRAISE.length);
+    } while (n === lastPraise.current);
+    lastPraise.current = n;
+    return PRAISE[n];
+  }
+
   function choose(i: number) {
     if (phase !== "play" || picked !== null) return;
     setPicked(i);
+    setTimes((t) => [...t, TIME_PER_Q - timeLeft]);
     if (i === qs[idx].answer) {
-      const gain = BASE_POINT + timeLeft * BONUS_PER_SEC;
-      setScore((s) => s + gain);
+      setScore((s) => s + POINT_PER_CORRECT);
       setCorrect((c) => c + 1);
       setResults((r) => [...r, true]);
-      setStreak((s) => {
-        const n = s + 1;
-        setBestStreak((b) => Math.max(b, n));
-        return n;
-      });
-      setFx({ id: Date.now(), kind: "win", gain });
+      setFx({ id: Date.now(), kind: "win", gain: POINT_PER_CORRECT, praise: pickPraise() });
     } else {
-      setStreak(0);
       setResults((r) => [...r, false]);
-      setFx({ id: Date.now(), kind: "lose", gain: 0 });
+      setFx({ id: Date.now(), kind: "lose", gain: 0, praise: "" });
     }
   }
 
@@ -258,9 +248,9 @@ export default function Com7QuizPage() {
     if (phase !== "play" || picked !== null) return;
     if (timeLeft <= 0) {
       setPicked(-1);
-      setStreak(0);
+      setTimes((t) => [...t, TIME_PER_Q]);
       setResults((r) => [...r, false]);
-      setFx({ id: Date.now(), kind: "timeout", gain: 0 });
+      setFx({ id: Date.now(), kind: "timeout", gain: 0, praise: "" });
       return;
     }
     const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
@@ -274,25 +264,6 @@ export default function Com7QuizPage() {
   useEffect(() => {
     if (picked !== null) explainRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [picked]);
-
-  // นับแต้มขึ้นแบบแอนิเมชัน
-  useEffect(() => {
-    const from = shownRef.current;
-    const to = score;
-    if (from === to) return;
-    const t0 = performance.now();
-    const dur = 700;
-    let raf = 0;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / dur);
-      const v = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)));
-      shownRef.current = v;
-      setShown(v);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [score]);
 
   // คีย์ลัด: 1-4 เลือกคำตอบ, Enter ไปข้อถัดไป / เริ่มเล่น
   useEffect(() => {
@@ -364,6 +335,7 @@ export default function Com7QuizPage() {
   const isRight = revealed && q && picked === q.answer;
   const playing = phase === "play";
   const panic = playing && !revealed && timeLeft <= 5;
+  const avgTime = times.length ? times.reduce((a, b) => a + b, 0) / times.length : 0;
 
   return (
     <div className="relative isolate flex min-h-[100dvh] flex-col items-center overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white">
@@ -472,10 +444,10 @@ export default function Com7QuizPage() {
         )}
       </div>
 
-      {/* ===== เอฟเฟกต์ตอบถูก: คอนเฟตติ + แต้มลอยขึ้น ===== */}
+      {/* ===== เอฟเฟกต์ตอบถูก: คอนเฟตติ + คะแนนลอยขึ้น พร้อมคำชม ===== */}
       {playing && fx?.kind === "win" && (
         <>
-          <Burst key={`b${fx.id}`} count={fx.gain >= 160 ? 44 : 30} power={fx.gain >= 160 ? 1.2 : 1} />
+          <Burst key={`b${fx.id}`} count={30} />
           <div aria-hidden className="pointer-events-none fixed left-1/2 top-[38%] z-40">
             <span className="fx-ring absolute -left-24 -top-24 block h-48 w-48 rounded-full border-4 border-[#17FFA2]" />
           </div>
@@ -486,11 +458,12 @@ export default function Com7QuizPage() {
             >
               +{fx.gain}
             </p>
-            {streak >= 2 && (
-              <p className="mt-1 text-xl font-bold text-white" style={{ textShadow: "0 2px 0 #04110a, 0 0 18px rgba(23,255,162,.8)" }}>
-                {streakLabel(streak)} ×{streak}
-              </p>
-            )}
+            <p
+              className="mt-1 whitespace-nowrap text-2xl font-bold text-white sm:text-3xl"
+              style={{ textShadow: "0 2px 0 #04110a, 0 0 18px rgba(23,255,162,.8)" }}
+            >
+              {fx.praise}
+            </p>
           </div>
         </>
       )}
@@ -551,7 +524,7 @@ export default function Com7QuizPage() {
               {[
                 [`${TOTAL}`, "คำถาม"],
                 [`${TIME_PER_Q} วิ`, "ต่อข้อ"],
-                [`${(BASE_POINT + TIME_PER_Q * BONUS_PER_SEC) * TOTAL}`, "แต้มสูงสุด"],
+                [`${TOTAL * POINT_PER_CORRECT}`, "คะแนนเต็ม"],
               ].map(([n, l]) => (
                 <div key={l} className="border border-white/10 bg-[#0a1014]/90 px-3 py-5 text-center backdrop-blur-sm">
                   <p className="text-2xl font-bold tabular-nums text-[#17FFA2] [text-shadow:0_0_18px_rgba(23,255,162,0.5)] md:text-3xl">{n}</p>
@@ -566,11 +539,11 @@ export default function Com7QuizPage() {
                 {[
                   `คำถามเกี่ยวกับ COM7 ทั้งหมด ${TOTAL} ข้อ แต่ละข้อมี 4 ตัวเลือกและเวลา ${TIME_PER_Q} วินาที`,
                   "ลำดับข้อและลำดับตัวเลือกถูกสุ่มใหม่ทุกรอบ",
-                  `ตอบถูกได้ ${BASE_POINT} แต้ม บวกโบนัส ${BONUS_PER_SEC} แต้มต่อทุกวินาทีที่เหลือ`,
-                  "ตอบถูกติดกันหลายข้อจะได้เอฟเฟกต์คอมโบสุดเดือด",
-                  "ตอบผิดหรือหมดเวลาไม่ได้แต้ม แต่จะเฉลยให้ทุกข้อ",
+                  `ตอบถูกได้ ${POINT_PER_CORRECT} คะแนนต่อข้อ เต็ม ${TOTAL * POINT_PER_CORRECT} คะแนน (ไม่มีโบนัสความเร็ว แต่ต้องตอบให้ทันเวลา)`,
+                  "ตอบถูกทุกข้อจะมีคำชมและเอฟเฟกต์ฉลองให้",
+                  "ตอบผิดหรือหมดเวลาไม่ได้คะแนน แต่จะเฉลยให้ทุกข้อ",
                   "กดปุ่ม 1–4 บนคีย์บอร์ดเพื่อเลือกคำตอบ และกด Enter เพื่อไปข้อถัดไป",
-                  "แต้มของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
+                  "คะแนนของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
                 ].map((r) => (
                   <li key={r} className="flex gap-3 text-base leading-7 text-white/75">
                     <span className="mt-2.5 h-2.5 w-2.5 shrink-0 rotate-45 bg-[#17FFA2]" />
@@ -590,17 +563,11 @@ export default function Com7QuizPage() {
                 ข้อ <span className="font-bold tabular-nums text-[#17FFA2]">{idx + 1}</span> / {TOTAL}
               </p>
 
-              {streak >= 2 && (
-                <p key={streak} className="fx-pop min-w-0 -skew-x-6 truncate bg-[#17FFA2] px-3 py-1.5 text-xs font-black text-[#04110a] shadow-[0_0_18px_rgba(23,255,162,0.6)] sm:px-4 sm:py-2 sm:text-sm">
-                  {streakLabel(streak)} ×{streak}
-                </p>
-              )}
-
               <p
                 key={score}
                 className={`whitespace-nowrap border border-[#17FFA2]/40 bg-[#0a1014]/90 px-3 py-1.5 text-xs font-bold tabular-nums text-[#17FFA2] sm:px-4 sm:py-2 sm:text-sm ${score > 0 ? "fx-pop" : ""}`}
               >
-                {shown.toLocaleString()} <span className="font-medium text-white/50">แต้ม</span>
+                {score}/{TOTAL} <span className="font-medium text-white/50">คะแนน</span>
               </p>
             </div>
 
@@ -696,7 +663,7 @@ export default function Com7QuizPage() {
                   {picked === -1
                     ? TIMEOUT_MSG
                     : isRight
-                      ? `${WIN_MSG[idx % WIN_MSG.length]} +${fx?.gain ?? 0} แต้ม`
+                      ? `${fx?.praise || "เก่งมาก!"} +${POINT_PER_CORRECT} คะแนน`
                       : LOSE_MSG[idx % LOSE_MSG.length]}
                 </p>
                 <p className="mt-2 text-base leading-7 text-white/75">{q.explain}</p>
@@ -720,15 +687,18 @@ export default function Com7QuizPage() {
             >
               <span aria-hidden className="absolute inset-0 bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgba(0,0,0,0.06)_18px_36px)]" />
               <p className="relative text-lg font-bold">{rating(correct)}</p>
-              <p className="fx-pop relative mt-2 text-7xl font-black tabular-nums tracking-tight sm:text-8xl md:text-9xl">{score.toLocaleString()}</p>
-              <p className="relative mt-1 text-sm font-semibold opacity-75">แต้มรอบนี้</p>
+              <p className="fx-pop relative mt-2 text-7xl font-black tabular-nums tracking-tight sm:text-8xl md:text-9xl">
+                {score}
+                <span className="ml-1 text-3xl font-bold opacity-70 sm:text-4xl">/{TOTAL}</span>
+              </p>
+              <p className="relative mt-1 text-sm font-semibold opacity-75">คะแนนรอบนี้ (ข้อละ {POINT_PER_CORRECT} คะแนน)</p>
             </section>
 
             <section className="mt-4 grid grid-cols-3 gap-3">
               {[
                 [`${correct}/${TOTAL}`, "ตอบถูก"],
-                [`×${bestStreak}`, "คอมโบสูงสุด"],
-                [gameTotal !== null ? gameTotal.toLocaleString() : "–", "แต้มสะสมเกมนี้"],
+                [`${avgTime.toFixed(1)} วิ`, "เฉลี่ยต่อข้อ"],
+                [gameTotal !== null ? gameTotal.toLocaleString() : "–", "คะแนนสะสมเกมนี้"],
               ].map(([n, l]) => (
                 <div key={l} className="border border-white/10 bg-[#0a1014]/90 px-2 py-5 text-center backdrop-blur-sm sm:px-3 sm:py-6">
                   <p className="text-2xl font-bold tabular-nums tracking-tight text-[#17FFA2] [text-shadow:0_0_18px_rgba(23,255,162,0.5)] sm:text-3xl md:text-4xl">{n}</p>
@@ -757,7 +727,7 @@ export default function Com7QuizPage() {
 
             <p className={`mt-4 text-center text-sm ${MUTED}`} aria-live="polite">
               {saveState === "saving" && "กำลังบันทึกคะแนน..."}
-              {saveState === "saved" && `สะสม +${score.toLocaleString()} แต้มให้บัญชี ${player?.name} เรียบร้อยแล้ว`}
+              {saveState === "saved" && `สะสม +${score} คะแนนให้บัญชี ${player?.name} เรียบร้อยแล้ว`}
               {saveState === "guest" && (
                 <>
                   <Link href="/login" className="font-bold text-[#17FFA2] underline underline-offset-4">เข้าสู่ระบบ</Link> เพื่อบันทึกคะแนนเข้าอันดับ

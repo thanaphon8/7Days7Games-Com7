@@ -7,12 +7,12 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 const GAME_ID = "thinkfast";
 const TOTAL = 10; // จำนวนข้อต่อรอบ
 const TIME_PER_Q = 20; // วินาทีต่อข้อ
-const BASE_POINT = 100; // คะแนนพื้นฐานต่อข้อที่ตอบถูก
-const BONUS_PER_SEC = 5; // โบนัสต่อวินาทีที่เหลือ
+const POINT_PER_CORRECT = 1; // ตอบถูก 1 ข้อ = 1 คะแนน (เต็ม TOTAL คะแนน)
+const STAR_AT = [4, 7, 9]; // คะแนนที่ต้องได้ 1 / 2 / 3 ดาว
 
 type Raw = { tag: string; q: string; options: string[]; explain: string }; // options[0] คือคำตอบที่ถูก
 type Question = { tag: string; q: string; options: string[]; answer: number; explain: string };
-type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number };
+type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number; praise: string };
 
 // ===== คลังคำถามกวนๆ (ตัวเลือกแรกของแต่ละข้อคือคำตอบที่ถูก ระบบจะสลับลำดับให้เอง) =====
 const BANK: Raw[] = [
@@ -96,7 +96,7 @@ function buildRound(): Question[] {
     });
 }
 
-const WIN_MSG = ["ไม่โดนหลอก!", "สมองไวมาก", "เฉียบ!", "ผ่านกับดักไปได้"];
+const PRAISE = ["เก่งมาก!", "เยี่ยมไปเลย!", "สมองไวสุดๆ", "ไม่โดนหลอกง่ายๆ เลยนะ", "คิดได้เฉียบขาด!", "สุดยอด!", "ฉลาดมาก!", "ผ่านกับดักไปได้!", "ตาถึงจริงๆ", "ยอดเยี่ยม!"];
 const LOSE_MSG = ["โดนหลอกซะแล้ว", "เกือบไปแล้วนะ", "กับดักข้อนี้ร้ายนะ", "อุ๊ย คิดเร็วไปหน่อย"];
 const TIMEOUT_MSG = "หมดเวลา สมองค้างเหรอ";
 
@@ -105,14 +105,6 @@ function rating(correct: number) {
   if (correct >= 7) return "ฉลาดแกมกวน";
   if (correct >= 4) return "โดนหลอกพอประมาณ";
   return "โดนหลอกจนหมดตัว";
-}
-
-// คำชมตามคอมโบ
-function streakLabel(n: number) {
-  if (n >= 6) return "สมองระเบิด!";
-  if (n >= 4) return "ไฟลุกแล้ว!";
-  if (n >= 2) return "คอมโบ";
-  return "";
 }
 
 // ===== พื้นหลังลอยๆ (ตำแหน่งตายตัว กัน hydration mismatch) =====
@@ -175,6 +167,17 @@ function Burst({ count, power = 1 }: { count: number; power?: number }) {
   );
 }
 
+function Star({ on, delay }: { on: boolean; delay: number }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-14 w-14" style={{ animation: `tf-star .55s ${delay}s cubic-bezier(.2,1.4,.4,1) both` }} aria-hidden>
+      <path d="M12 2l2.9 6.9 7.5.6-5.7 4.9 1.8 7.3L12 17.8 5.5 21.7l1.8-7.3L1.6 9.5l7.5-.6z" fill={on ? "#F4D35E" : "#E4E4E7"} strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-50";
+const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] text-sm font-medium transition-colors hover:bg-black/[.04]";
+
 export default function ThinkFastPage() {
   const [phase, setPhase] = useState<"intro" | "play" | "end">("intro");
   const [qs, setQs] = useState<Question[]>([]);
@@ -183,16 +186,19 @@ export default function ThinkFastPage() {
   const [timeLeft, setTimeLeft] = useState(TIME_PER_Q);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [bestStreak, setBestStreak] = useState(0);
+  const [results, setResults] = useState<boolean[]>([]); // ผลรายข้อ ใช้โชว์ในหน้าสรุป
+  const [times, setTimes] = useState<number[]>([]); // เวลาที่ใช้ต่อข้อ (วินาที)
+  const lastPraise = useRef(-1);
   const [fx, setFx] = useState<Fx | null>(null); // เอฟเฟกต์ของข้อปัจจุบัน
-  const [shown, setShown] = useState(0); // แต้มที่แสดง (นับขึ้นแบบแอนิเมชัน)
-  const shownRef = useRef(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "guest" | "error">("idle");
   const [saveErr, setSaveErr] = useState("");
   const [gameTotal, setGameTotal] = useState<number | null>(null); // แต้มสะสมของเกมนี้ทั้งหมด
   const savedRound = useRef(false); // กันบันทึกซ้ำในรอบเดียว (แต้มสะสมถ้าบันทึกซ้ำจะบวกเบิ้ล)
   const [player, setPlayer] = useState<Player | null>(null); // บัญชีที่เริ่มเล่นรอบนี้
+  const [dims, setDims] = useState({ w: 360, h: 640 });
+  const [natH, setNatH] = useState(640);
+  const sumRef = useRef<HTMLDivElement>(null);
+  const explRef = useRef<HTMLDivElement>(null);
 
   function start() {
     setPlayer(getStoredPlayer()); // จดบัญชีตอนเริ่มเล่น ไม่ไปอ่านใหม่ตอนจบเกม
@@ -202,33 +208,36 @@ export default function ThinkFastPage() {
     setTimeLeft(TIME_PER_Q);
     setScore(0);
     setCorrect(0);
-    setStreak(0);
-    setBestStreak(0);
+    setResults([]);
+    setTimes([]);
     setFx(null);
-    shownRef.current = 0;
-    setShown(0);
     setGameTotal(null);
     savedRound.current = false;
     setSaveState("idle");
     setPhase("play");
   }
 
+  function pickPraise() {
+    let n = 0;
+    do {
+      n = Math.floor(Math.random() * PRAISE.length);
+    } while (n === lastPraise.current);
+    lastPraise.current = n;
+    return PRAISE[n];
+  }
+
   function choose(i: number) {
     if (phase !== "play" || picked !== null) return;
     setPicked(i);
+    setTimes((t) => [...t, TIME_PER_Q - timeLeft]);
     if (i === qs[idx].answer) {
-      const gain = BASE_POINT + timeLeft * BONUS_PER_SEC;
-      setScore((s) => s + gain);
+      setScore((s) => s + POINT_PER_CORRECT);
       setCorrect((c) => c + 1);
-      setStreak((s) => {
-        const n = s + 1;
-        setBestStreak((b) => Math.max(b, n));
-        return n;
-      });
-      setFx({ id: Date.now(), kind: "win", gain });
+      setResults((r) => [...r, true]);
+      setFx({ id: Date.now(), kind: "win", gain: POINT_PER_CORRECT, praise: pickPraise() });
     } else {
-      setStreak(0);
-      setFx({ id: Date.now(), kind: "lose", gain: 0 });
+      setResults((r) => [...r, false]);
+      setFx({ id: Date.now(), kind: "lose", gain: 0, praise: "" });
     }
   }
 
@@ -248,32 +257,39 @@ export default function ThinkFastPage() {
     if (phase !== "play" || picked !== null) return;
     if (timeLeft <= 0) {
       setPicked(-1);
-      setStreak(0);
-      setFx({ id: Date.now(), kind: "timeout", gain: 0 });
+      setTimes((t) => [...t, TIME_PER_Q]);
+      setResults((r) => [...r, false]);
+      setFx({ id: Date.now(), kind: "timeout", gain: 0, praise: "" });
       return;
     }
     const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [phase, picked, timeLeft]);
 
-  // นับแต้มขึ้นแบบแอนิเมชัน
+  // ขนาดจอ ใช้ย่อหน้าสรุปผลให้พอดีจอโดยไม่ต้องเลื่อน
   useEffect(() => {
-    const from = shownRef.current;
-    const to = score;
-    if (from === to) return;
-    const t0 = performance.now();
-    const dur = 700;
-    let raf = 0;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / dur);
-      const v = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)));
-      shownRef.current = v;
-      setShown(v);
-      if (p < 1) raf = requestAnimationFrame(tick);
+    const calc = () => {
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      setDims({ w: Math.floor(window.innerWidth), h: Math.floor(vh) });
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [score]);
+    calc();
+    window.addEventListener("resize", calc);
+    window.visualViewport?.addEventListener("resize", calc);
+    return () => {
+      window.removeEventListener("resize", calc);
+      window.visualViewport?.removeEventListener("resize", calc);
+    };
+  }, []);
+
+  // offsetHeight ไม่ถูกกระทบจาก transform: scale จึงได้ความสูงเต็มของเนื้อหา
+  useEffect(() => {
+    if (phase === "end" && sumRef.current) setNatH(sumRef.current.offsetHeight);
+  });
+
+  // เฉลยโผล่ใต้จอบนมือถือ ให้เลื่อนมาให้เห็นอัตโนมัติ
+  useEffect(() => {
+    if (picked !== null) explRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [picked]);
 
   // คีย์ลัด: 1-4 เลือกคำตอบ, Enter ไปข้อถัดไป / เริ่มเล่น
   useEffect(() => {
@@ -311,7 +327,6 @@ export default function ThinkFastPage() {
         if (!res.ok || !result?.success) {
           throw new Error(result?.message || result?.error || `PATCH failed: ${res.status}`);
         }
-        // แต้มสะสมของเกมนี้หลังบวกแล้ว (API ส่งเอกสารผู้ใช้ที่อัปเดตแล้วกลับมา)
         const total = Number(result.data?.gameScores?.[GAME_ID]);
         if (Number.isFinite(total)) setGameTotal(total);
         if (score > 0) addPendingGain(player.id, score); // ให้ Navbar โชว์ +N เท่ากับแต้มรอบนี้
@@ -339,9 +354,104 @@ export default function ThinkFastPage() {
   const isRight = revealed && q && picked === q.answer;
   const playing = phase === "play";
   const panic = playing && !revealed && timeLeft <= 5;
+  const stars = STAR_AT.filter((s) => score >= s).length;
+  const avgTime = times.length ? times.reduce((a, b) => a + b, 0) / times.length : 0;
+
+  // ===== เลย์เอาต์หน้าสรุป: จอกว้าง = 2 คอลัมน์, มือถือ = คอลัมน์เดียวย่อให้พอดีจอ =====
+  const wide = dims.w >= 900 && dims.h >= 560;
+  const sumW = wide ? 900 : 340;
+  const sumScale = Math.min((dims.h * 0.92) / natH, (dims.w * 0.94) / sumW, wide ? 1.2 : 1.35);
+
+  const sumHeader = (
+    <div className="text-center">
+      <span className="inline-block rounded-full bg-zinc-100 px-4 py-1 text-sm font-medium text-zinc-600">จบเกมแล้ว!</span>
+      <div className="mt-4 flex items-end justify-center gap-1">
+        {STAR_AT.map((_, i) => (
+          <div key={i} className={i === 1 ? "-translate-y-2" : ""}>
+            <Star on={i < stars} delay={0.3 + i * 0.22} />
+          </div>
+        ))}
+      </div>
+      <p className="mt-1 text-sm font-medium text-zinc-500">{rating(correct)}</p>
+    </div>
+  );
+
+  const sumScore = (
+    <div className="rounded-3xl bg-[#F4D35E] px-4 py-5 text-center text-[#4A3B00]">
+      <p className="text-xs opacity-70">คะแนนรอบนี้</p>
+      <p className={`font-semibold leading-none tabular-nums tracking-tight ${wide ? "text-8xl" : "text-7xl"}`}>
+        {score}
+        <span className="ml-1 text-2xl font-medium opacity-70">/{TOTAL}</span>
+      </p>
+      <p className="mt-2 text-xs opacity-70">ตอบถูก 1 ข้อ = 1 คะแนน</p>
+    </div>
+  );
+
+  const sumResults = (
+    <div className="rounded-3xl bg-white px-3 py-3 shadow-sm ring-1 ring-black/5">
+      <p className="mb-2 text-center text-xs text-zinc-500">ผลรายข้อ</p>
+      <div className="flex justify-center gap-1">
+        {Array.from({ length: TOTAL }, (_, i) => {
+          const r = results[i];
+          return (
+            <span
+              key={i}
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-zinc-900 ${r ? "bg-[#B7CBB0]" : "bg-[#F4A58A]"}`}
+              aria-label={`ข้อ ${i + 1} ${r ? "ถูก" : "ผิด"}`}
+            >
+              {r ? "✓" : "✕"}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const sumStats = (
+    <div className="grid grid-cols-3 gap-2 text-center text-sm">
+      <div className="rounded-2xl bg-[#B7CBB0]/60 py-3">
+        <p className="text-xl font-semibold tabular-nums">{correct}/{TOTAL}</p>
+        <p className="text-xs text-zinc-600">ตอบถูก</p>
+      </div>
+      <div className="rounded-2xl bg-[#A8B5E8]/50 py-3">
+        <p className="text-xl font-semibold tabular-nums">{avgTime.toFixed(1)} วิ</p>
+        <p className="text-xs text-zinc-600">เฉลี่ยต่อข้อ</p>
+      </div>
+      <div className="rounded-2xl bg-[#F4A58A]/50 py-3">
+        <p className="text-xl font-semibold tabular-nums">{gameTotal !== null ? gameTotal.toLocaleString() : "–"}</p>
+        <p className="text-xs text-zinc-600">คะแนนสะสม</p>
+      </div>
+    </div>
+  );
+
+  const sumFooter = (
+    <div className="text-center">
+      <p className="min-h-4 text-xs text-zinc-500" aria-live="polite">
+        {saveState === "saving" && "กำลังบันทึกคะแนน..."}
+        {saveState === "saved" && `สะสม +${score} คะแนนให้บัญชี ${player?.name} แล้ว`}
+        {saveState === "guest" && (
+          <>
+            <Link href="/login" className="font-medium text-zinc-900 underline underline-offset-4">เข้าสู่ระบบ</Link> เพื่อบันทึกคะแนนเข้าอันดับ
+          </>
+        )}
+        {saveState === "error" && `บันทึกคะแนนไม่สำเร็จ${saveErr ? `: ${saveErr}` : ""}`}
+      </p>
+      <button onClick={start} disabled={lockNav} className={`${BTN_MAIN} mt-3`}>
+        เล่นอีกครั้ง
+      </button>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Link href="/rank" className={`${BTN_SUB}${lockCls}`} {...lockProps}>
+          ดูอันดับ
+        </Link>
+        <Link href="/" className={`${BTN_SUB}${lockCls}`} {...lockProps}>
+          กลับหน้าแรก
+        </Link>
+      </div>
+    </div>
+  );
 
   return (
-    <div className={`relative flex min-h-screen flex-col items-center font-sans text-zinc-900 ${playing ? "bg-[#F4A58A]" : "bg-white"}`}>
+    <div className={`relative flex min-h-[100dvh] flex-col items-center font-sans text-zinc-900 ${playing ? "bg-[#F4A58A]" : "bg-white"}`}>
       <style>{`
         @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
         @keyframes burst {
@@ -373,8 +483,9 @@ export default function ThinkFastPage() {
         @keyframes panic { 0%,100% { opacity: .15; } 50% { opacity: .5; } }
         @keyframes glow { 0%,100% { box-shadow: 0 0 0 0 rgba(183,203,176,.0); } 50% { box-shadow: 0 0 0 10px rgba(183,203,176,.55); } }
         @keyframes bgshift { 0% { background-position: 0% 50%; } 100% { background-position: 100% 50%; } }
+        @keyframes tf-star { 0% { transform: scale(0) rotate(-25deg); opacity: 0 } 70% { transform: scale(1.2) rotate(6deg); opacity: 1 } 100% { transform: scale(1) rotate(0); opacity: 1 } }
         @media (prefers-reduced-motion: reduce) {
-          .rise, .fx-burst, .fx-float, .fx-flash, .fx-shake, .fx-pop, .fx-ring, .fx-drift, .fx-panic, .fx-glow, .fx-bg { animation: none !important; }
+          .rise, .fx-burst, .fx-float, .fx-flash, .fx-shake, .fx-pop, .fx-ring, .fx-drift, .fx-panic, .fx-glow, .fx-bg, .tf-anim, .tf-anim * { animation: none !important; }
           .fx-burst, .fx-float { display: none; }
         }
         .fx-burst { animation: burst 1100ms cubic-bezier(.15,.7,.3,1) both; }
@@ -414,12 +525,7 @@ export default function ThinkFastPage() {
             </span>
           ))}
           {/* เวลาใกล้หมด: ขอบจอกะพริบแดง */}
-          {panic && (
-            <div
-              className="fx-panic absolute inset-0"
-              style={{ boxShadow: "inset 0 0 160px 30px rgba(229,72,77,.85)" }}
-            />
-          )}
+          {panic && <div className="fx-panic absolute inset-0" style={{ boxShadow: "inset 0 0 160px 30px rgba(229,72,77,.85)" }} />}
           {/* วาบสีตามผลคำตอบ */}
           {fx && (
             <div
@@ -431,92 +537,79 @@ export default function ThinkFastPage() {
         </div>
       )}
 
-      {/* ===== เอฟเฟกต์ตอบถูก: คอนเฟตติ + แต้มลอยขึ้น ===== */}
+      {/* ===== เอฟเฟกต์ตอบถูก: คอนเฟตติ + คะแนนลอยขึ้น ===== */}
       {playing && fx?.kind === "win" && (
         <>
-          <Burst key={`b${fx.id}`} count={fx.gain >= 180 ? 44 : 30} power={fx.gain >= 180 ? 1.2 : 1} />
+          <Burst key={`b${fx.id}`} count={30} />
           <div aria-hidden className="pointer-events-none fixed left-1/2 top-[38%] z-40">
             <span className="fx-ring absolute -left-24 -top-24 block h-48 w-48 rounded-full border-4 border-white" />
           </div>
-          <div
-            key={`f${fx.id}`}
-            aria-hidden
-            className="fx-float pointer-events-none fixed left-1/2 top-[34%] z-50 text-center"
-          >
+          <div key={`f${fx.id}`} aria-hidden className="fx-float pointer-events-none fixed left-1/2 top-[34%] z-50 text-center">
             <p
               className="text-7xl font-black tabular-nums tracking-tight text-white md:text-8xl"
               style={{ textShadow: "0 4px 0 #4A2412, 0 0 28px rgba(244,211,94,.9)" }}
             >
               +{fx.gain}
             </p>
-            {streak >= 2 && (
-              <p className="mt-1 text-xl font-bold text-[#4A2412]" style={{ textShadow: "0 2px 0 rgba(255,255,255,.7)" }}>
-                {streakLabel(streak)} ×{streak}
-              </p>
-            )}
+            <p className="mt-1 whitespace-nowrap text-2xl font-bold text-[#4A2412] sm:text-3xl" style={{ textShadow: "0 2px 0 rgba(255,255,255,.7)" }}>
+              {fx.praise}
+            </p>
           </div>
         </>
       )}
 
       {/* ตอบผิด / หมดเวลา: ข้อความสั้นๆ เด้งกลางจอ */}
       {playing && fx && fx.kind !== "win" && (
-        <div
-          key={`l${fx.id}`}
-          aria-hidden
-          className="fx-float pointer-events-none fixed left-1/2 top-[34%] z-50 text-center"
-        >
-          <p
-            className="text-6xl font-black tracking-tight text-white md:text-7xl"
-            style={{ textShadow: "0 4px 0 #4A2412" }}
-          >
+        <div key={`l${fx.id}`} aria-hidden className="fx-float pointer-events-none fixed left-1/2 top-[34%] z-50 text-center">
+          <p className="text-5xl font-black tracking-tight text-white sm:text-6xl md:text-7xl" style={{ textShadow: "0 4px 0 #4A2412" }}>
             {fx.kind === "lose" ? "✕ พลาด" : "⏱ หมดเวลา"}
           </p>
         </div>
       )}
 
-      <header className="relative z-10 flex w-full max-w-5xl items-center justify-between px-6 py-6">
+      <header className="relative z-10 flex w-full max-w-5xl items-center justify-between px-4 py-3 sm:px-6 sm:py-6">
         <Link href="/" aria-label="COM7 หน้าแรก" className={`flex items-center${lockCls}`} {...lockProps}>
-          <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto origin-left scale-[2.1]" />
+          <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-8 w-auto origin-left scale-[1.8] sm:h-9 sm:scale-[2.1]" />
         </Link>
         <Link
           href="/"
-          className={`flex h-10 items-center rounded-full border px-5 text-sm font-medium transition-colors ${playing ? "border-[#4A2412]/20 bg-white/40 hover:bg-white/70" : "border-black/[.08] hover:bg-black/[.04]"}${lockCls}`}
+          className={`flex h-9 items-center rounded-full border px-4 text-sm font-medium transition-colors sm:h-10 sm:px-5 ${playing ? "border-[#4A2412]/20 bg-white/40 hover:bg-white/70" : "border-black/[.08] hover:bg-black/[.04]"}${lockCls}`}
           {...lockProps}
         >
           กลับหน้าแรก
         </Link>
       </header>
 
-      <main className="relative z-10 w-full max-w-3xl px-6 pb-24">
+      <main className="relative z-10 w-full max-w-3xl px-4 pb-10 sm:px-6 sm:pb-24 lg:max-w-5xl">
         {/* ===== หน้าเริ่มเกม ===== */}
         {phase === "intro" && (
-          <div className="rise" style={{ animation: "rise 500ms both cubic-bezier(.2,.8,.2,1)" }}>
-            <section className="relative mt-6 overflow-hidden rounded-[2rem] bg-[#F4A58A] p-8 text-[#4A2412] md:p-12">
-              <span aria-hidden className="absolute -right-4 -top-10 text-[12rem] font-light leading-none opacity-20 md:text-[16rem]">∴</span>
+          <div className="rise grid gap-4 lg:grid-cols-2 lg:items-stretch" style={{ animation: "rise 500ms both cubic-bezier(.2,.8,.2,1)" }}>
+            <section className="relative overflow-hidden rounded-[2rem] bg-[#F4A58A] p-6 text-[#4A2412] sm:p-8 md:p-12 lg:flex lg:flex-col lg:justify-center">
+              <span aria-hidden className="absolute -right-4 -top-10 text-[10rem] font-light leading-none opacity-20 sm:text-[12rem] md:text-[16rem]">∴</span>
               <p className="relative text-sm opacity-70">ตรรกะ · ประมาณ 3 นาที</p>
-              <h1 className="relative mt-2 text-6xl font-semibold leading-[1.05] tracking-tight md:text-7xl">ตอบปัญหาเชาว์</h1>
-              <p className="relative mt-5 max-w-md text-lg leading-8 opacity-80">
+              <h1 className="relative mt-2 text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl md:text-7xl">ตอบปัญหาเชาว์</h1>
+              <p className="relative mt-5 max-w-md text-base leading-7 opacity-80 sm:text-lg sm:leading-8">
                 {TOTAL} ข้อ คำถามกวนๆ ที่ฟังเผินๆ ง่ายนิดเดียว แต่ตอบเร็วเมื่อไรก็โดนหลอกเมื่อนั้น อ่านดีๆ แล้วลองดูว่าคุณจะรอดกี่ข้อ
               </p>
               <button
                 onClick={start}
-                className="relative mt-8 h-14 rounded-full bg-[#4A2412] px-8 text-base font-medium text-white transition-opacity hover:opacity-85"
+                className="relative mt-8 h-14 w-full rounded-full bg-[#4A2412] px-8 text-base font-medium text-white transition-opacity hover:opacity-85 sm:w-auto"
               >
                 เริ่มเล่น
               </button>
             </section>
 
-            <section className="mt-4 rounded-[2rem] bg-zinc-50 p-8">
+            <section className="rounded-[2rem] bg-zinc-50 p-6 sm:p-8">
               <h2 className="text-xl font-semibold tracking-tight">กติกา</h2>
               <ul className="mt-5 flex flex-col gap-4">
                 {[
                   `สุ่มคำถามกวนๆ ${TOTAL} ข้อจากคลังทั้งหมด ${BANK.length} ข้อ แต่ละข้อมี 4 ตัวเลือกและเวลา ${TIME_PER_Q} วินาที`,
                   "คำตอบที่ดูชัดเจนที่สุดมักเป็นกับดัก อ่านโจทย์ให้ดี",
-                  `ตอบถูกได้ ${BASE_POINT} แต้ม บวกโบนัส ${BONUS_PER_SEC} แต้มต่อทุกวินาทีที่เหลือ`,
-                  "ตอบถูกติดกันหลายข้อจะได้เอฟเฟกต์คอมโบสุดเดือด",
-                  "ตอบผิดหรือหมดเวลาไม่ได้แต้ม แต่จะเฉลยให้ทุกข้อ",
+                  `ตอบถูกได้ ${POINT_PER_CORRECT} คะแนนต่อข้อ เต็ม ${TOTAL} คะแนน (ไม่มีโบนัสความเร็ว แต่ต้องตอบให้ทันเวลา)`,
+                  "ตอบถูกทุกข้อจะมีคำชมและเอฟเฟกต์ฉลองให้",
+                  "ตอบผิดหรือหมดเวลาไม่ได้คะแนน แต่จะเฉลยให้ทุกข้อ",
                   "กดปุ่ม 1–4 บนคีย์บอร์ดเพื่อเลือกคำตอบ และกด Enter เพื่อไปข้อถัดไป",
-                  "แต้มของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
+                  "คะแนนของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
                 ].map((r) => (
                   <li key={r} className="flex gap-3 text-base leading-7 text-zinc-600">
                     <span className="mt-2.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#F4A58A]" />
@@ -530,33 +623,21 @@ export default function ThinkFastPage() {
 
         {/* ===== กำลังเล่น ===== */}
         {phase === "play" && q && (
-          <div
-            className={`mt-2 ${fx?.kind === "lose" ? "fx-shake" : ""}`}
-            // key ผูกกับ id เอฟเฟกต์ที่ผิด เพื่อให้สั่นใหม่ทุกครั้งโดยไม่รีเซ็ตเนื้อหา
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="rounded-full bg-white/60 px-4 py-2 text-sm text-[#4A2412]">
+          <div className={`mt-1 ${fx?.kind === "lose" ? "fx-shake" : ""}`}>
+            <div className="flex items-center justify-between gap-2 sm:gap-3">
+              <p className="rounded-full bg-white/60 px-3 py-2 text-xs text-[#4A2412] sm:px-4 sm:text-sm">
                 ข้อ <span className="font-semibold tabular-nums">{idx + 1}</span> / {TOTAL}
               </p>
 
-              {streak >= 2 && (
-                <p
-                  key={streak}
-                  className="fx-pop rounded-full bg-[#4A2412] px-4 py-2 text-sm font-bold text-[#F4D35E]"
-                >
-                  {streakLabel(streak)} ×{streak}
-                </p>
-              )}
-
               <p
                 key={score}
-                className={`rounded-full bg-white/80 px-4 py-2 text-sm font-semibold tabular-nums text-[#4A2412] ${score > 0 ? "fx-pop" : ""}`}
+                className={`rounded-full bg-white/80 px-3 py-2 text-xs font-semibold tabular-nums text-[#4A2412] sm:px-4 sm:text-sm ${score > 0 ? "fx-pop" : ""}`}
               >
-                {shown.toLocaleString()} <span className="font-medium opacity-60">แต้ม</span>
+                {score}/{TOTAL} <span className="font-medium opacity-60">คะแนน</span>
               </p>
             </div>
 
-            <div className="mt-4 flex gap-1.5" aria-hidden>
+            <div className="mt-3 flex gap-1.5 sm:mt-4" aria-hidden>
               {Array.from({ length: TOTAL }).map((_, i) => (
                 <span
                   key={i}
@@ -565,142 +646,125 @@ export default function ThinkFastPage() {
               ))}
             </div>
 
-            <div
-              key={idx}
-              className="rise relative mt-6 rounded-[2rem] bg-[#4A2412] p-8 text-[#FFF3EC] shadow-[0_20px_50px_-20px_rgba(74,36,18,.7)] md:p-10"
-              style={{ animation: "rise 400ms both cubic-bezier(.2,.8,.2,1)" }}
-            >
-              <div className="flex items-center justify-between gap-4">
-                <span className="rounded-full bg-[#F4A58A] px-3 py-1 text-xs font-semibold text-[#4A2412]">{q.tag}</span>
-                <span
-                  className={`flex items-center gap-2 text-sm font-semibold tabular-nums ${panic ? "text-[#FF8A8E]" : ""}`}
-                  role="timer"
-                  aria-label={`เหลือเวลา ${timeLeft} วินาที`}
-                >
-                  {timeLeft} วิ
-                </span>
-              </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/20" aria-hidden>
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${(timeLeft / TIME_PER_Q) * 100}%`,
-                    backgroundColor: timeLeft <= 5 ? "#E5484D" : "#F4A58A",
-                    transition: "width 1s linear, background-color 300ms",
-                  }}
-                />
-              </div>
-              <h1 className="mt-6 text-2xl font-semibold leading-snug tracking-tight md:text-3xl">{q.q}</h1>
-            </div>
-
-            <ol className="mt-4 flex flex-col gap-3">
-              {q.options.map((opt, i) => {
-                const isAns = revealed && i === q.answer;
-                const isWrongPick = revealed && i === picked && i !== q.answer;
-                const state = !revealed
-                  ? "bg-white/90 hover:-translate-y-0.5 hover:bg-white active:scale-[.98]"
-                  : isAns
-                    ? "scale-[1.02] bg-[#B7CBB0] text-[#1F3D1A]"
-                    : isWrongPick
-                      ? "bg-[#E5484D] text-white"
-                      : "bg-white/40 opacity-60";
-                return (
-                  <li key={i}>
-                    <button
-                      onClick={() => choose(i)}
-                      disabled={revealed}
-                      className={`flex w-full items-center gap-4 rounded-full p-3 pr-6 text-left text-lg font-medium outline-none transition-all duration-200 focus-visible:ring-4 focus-visible:ring-blue-400 ${state} ${isAns ? "fx-glow" : ""} ${revealed ? "cursor-default" : ""}`}
-                    >
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-zinc-900 ring-1 ring-black/5">{i + 1}</span>
-                      <span className="flex-1">{opt}</span>
-                      {isAns && <span aria-hidden className="fx-pop text-xl">✓</span>}
-                      {isWrongPick && <span aria-hidden className="fx-pop text-xl">✕</span>}
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-
-            {revealed && (
+            {/* มือถือ: เรียงบนลงล่าง / คอม: โจทย์ซ้าย ตัวเลือกขวา */}
+            <div className="mt-4 grid gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-2 lg:items-start lg:gap-6">
               <div
-                aria-live="polite"
-                className="rise mt-4 rounded-[2rem] bg-white/90 p-6 backdrop-blur md:p-8"
-                style={{ animation: "rise 300ms both cubic-bezier(.2,.8,.2,1)" }}
+                key={idx}
+                className="rise relative rounded-[1.75rem] bg-[#4A2412] p-5 text-[#FFF3EC] shadow-[0_20px_50px_-20px_rgba(74,36,18,.7)] sm:rounded-[2rem] sm:p-8 lg:min-h-[22rem] lg:p-10"
+                style={{ animation: "rise 400ms both cubic-bezier(.2,.8,.2,1)" }}
               >
-                <p className="text-xl font-semibold tracking-tight">
-                  {picked === -1
-                    ? TIMEOUT_MSG
-                    : isRight
-                      ? `${WIN_MSG[idx % WIN_MSG.length]} +${fx?.gain ?? 0} แต้ม`
-                      : LOSE_MSG[idx % LOSE_MSG.length]}
-                </p>
-                <p className="mt-2 text-base leading-7 text-zinc-600">{q.explain}</p>
-                <button
-                  onClick={next}
-                  className="mt-6 h-12 rounded-full bg-[#4A2412] px-6 text-sm font-medium text-white transition-colors hover:opacity-85"
+                <div className="flex items-center justify-between gap-4">
+                  <span className="rounded-full bg-[#F4A58A] px-3 py-1 text-xs font-semibold text-[#4A2412]">{q.tag}</span>
+                  <span
+                    className={`flex items-center gap-2 text-sm font-semibold tabular-nums ${panic ? "text-[#FF8A8E]" : ""}`}
+                    role="timer"
+                    aria-label={`เหลือเวลา ${timeLeft} วินาที`}
+                  >
+                    {timeLeft} วิ
+                  </span>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/20" aria-hidden>
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${(timeLeft / TIME_PER_Q) * 100}%`,
+                      backgroundColor: timeLeft <= 5 ? "#E5484D" : "#F4A58A",
+                      transition: "width 1s linear, background-color 300ms",
+                    }}
+                  />
+                </div>
+                <h1 className="mt-5 text-xl font-semibold leading-snug tracking-tight sm:mt-6 sm:text-2xl lg:text-3xl">{q.q}</h1>
+              </div>
+
+              <ol className="flex flex-col gap-2.5 sm:gap-3">
+                {q.options.map((opt, i) => {
+                  const isAns = revealed && i === q.answer;
+                  const isWrongPick = revealed && i === picked && i !== q.answer;
+                  const state = !revealed
+                    ? "bg-white/90 hover:-translate-y-0.5 hover:bg-white active:scale-[.98]"
+                    : isAns
+                      ? "scale-[1.02] bg-[#B7CBB0] text-[#1F3D1A]"
+                      : isWrongPick
+                        ? "bg-[#E5484D] text-white"
+                        : "bg-white/40 opacity-60";
+                  return (
+                    <li key={i}>
+                      <button
+                        onClick={() => choose(i)}
+                        disabled={revealed}
+                        className={`flex w-full items-center gap-3 rounded-3xl p-2 pr-4 text-left text-base font-medium outline-none transition-all duration-200 focus-visible:ring-4 focus-visible:ring-blue-400 sm:gap-4 sm:rounded-full sm:p-3 sm:pr-6 sm:text-lg ${state} ${isAns ? "fx-glow" : ""} ${revealed ? "cursor-default" : ""}`}
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-zinc-900 ring-1 ring-black/5 sm:h-12 sm:w-12">{i + 1}</span>
+                        <span className="flex-1">{opt}</span>
+                        {isAns && <span aria-hidden className="fx-pop text-xl">✓</span>}
+                        {isWrongPick && <span aria-hidden className="fx-pop text-xl">✕</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              {revealed && (
+                <div
+                  ref={explRef}
+                  aria-live="polite"
+                  className="rise rounded-[1.75rem] bg-white/90 p-5 backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8 lg:col-span-2"
+                  style={{ animation: "rise 300ms both cubic-bezier(.2,.8,.2,1)" }}
                 >
-                  {idx + 1 >= TOTAL ? "ดูผลคะแนน" : "ข้อถัดไป"}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ===== สรุปผล ===== */}
-        {phase === "end" && (
-          <div className="rise" style={{ animation: "rise 500ms both cubic-bezier(.2,.8,.2,1)" }}>
-            {correct >= 7 && <Burst count={60} power={1.5} />}
-
-            <section className="mt-6 rounded-[2rem] bg-[#F4D35E] p-8 text-center text-[#4A3B00] md:p-12">
-              <p className="text-sm opacity-70">{rating(correct)}</p>
-              <p className="fx-pop mt-2 text-8xl font-semibold tabular-nums tracking-tight md:text-9xl">{score.toLocaleString()}</p>
-              <p className="mt-1 text-sm opacity-70">แต้มรอบนี้</p>
-            </section>
-
-            <section className="mt-4 grid grid-cols-3 gap-3">
-              <div className="rounded-3xl bg-zinc-50 px-3 py-6 text-center">
-                <p className="text-3xl font-semibold tabular-nums tracking-tight md:text-4xl">{correct}/{TOTAL}</p>
-                <p className="mt-1 text-sm text-zinc-500">ตอบถูก</p>
-              </div>
-              <div className="rounded-3xl bg-zinc-50 px-3 py-6 text-center">
-                <p className="text-3xl font-semibold tabular-nums tracking-tight md:text-4xl">×{bestStreak}</p>
-                <p className="mt-1 text-sm text-zinc-500">คอมโบสูงสุด</p>
-              </div>
-              <div className="rounded-3xl bg-zinc-50 px-3 py-6 text-center">
-                <p className="text-3xl font-semibold tabular-nums tracking-tight md:text-4xl">{gameTotal !== null ? gameTotal.toLocaleString() : "–"}</p>
-                <p className="mt-1 text-sm text-zinc-500">แต้มสะสมเกมนี้</p>
-              </div>
-            </section>
-
-            <p className="mt-4 text-center text-sm text-zinc-500" aria-live="polite">
-              {saveState === "saving" && "กำลังบันทึกคะแนน..."}
-              {saveState === "saved" && `สะสม +${score.toLocaleString()} แต้มให้บัญชี ${player?.name} เรียบร้อยแล้ว`}
-              {saveState === "guest" && (
-                <>
-                  <Link href="/login" className="font-medium text-zinc-900 underline underline-offset-4">เข้าสู่ระบบ</Link> เพื่อบันทึกคะแนนเข้าอันดับ
-                </>
+                  <p className="text-lg font-semibold tracking-tight sm:text-xl">
+                    {picked === -1
+                      ? TIMEOUT_MSG
+                      : isRight
+                        ? `${fx?.praise || "เก่งมาก!"} +${POINT_PER_CORRECT} คะแนน`
+                        : LOSE_MSG[idx % LOSE_MSG.length]}
+                  </p>
+                  <p className="mt-2 text-base leading-7 text-zinc-600">{q.explain}</p>
+                  <button
+                    onClick={next}
+                    className="mt-5 h-12 w-full rounded-full bg-[#4A2412] px-6 text-sm font-medium text-white transition-colors hover:opacity-85 sm:mt-6 sm:w-auto"
+                  >
+                    {idx + 1 >= TOTAL ? "ดูผลคะแนน" : "ข้อถัดไป"}
+                  </button>
+                </div>
               )}
-              {saveState === "error" && `บันทึกคะแนนไม่สำเร็จ${saveErr ? `: ${saveErr}` : ""}`}
-            </p>
-
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <button
-                onClick={start}
-                disabled={lockNav}
-                className="h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50"
-              >
-                เล่นอีกครั้ง
-              </button>
-              <Link href="/rank" className={`inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]${lockCls}`} {...lockProps}>
-                ดูอันดับ
-              </Link>
-              <Link href="/" className={`inline-flex h-12 items-center rounded-full border border-black/[.08] px-6 text-sm font-medium transition-colors hover:bg-black/[.04]${lockCls}`} {...lockProps}>
-                กลับหน้าแรก
-              </Link>
             </div>
           </div>
         )}
       </main>
+
+      {/* ===== สรุปผล (เต็มจอ ย่อให้พอดีมือถือ / 2 คอลัมน์บนคอม) ===== */}
+      {phase === "end" && (
+        <>
+          {correct >= 7 && <Burst count={60} power={1.5} />}
+          <div className="tf-anim fixed inset-0 z-30 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
+            <div style={{ width: sumW, height: natH, transform: `scale(${sumScale})` }} className="shrink-0">
+              <div ref={sumRef} style={{ animation: "rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
+                {wide ? (
+                  <div className="grid grid-cols-2 items-center gap-10">
+                    <div className="flex flex-col gap-4">
+                      {sumHeader}
+                      {sumScore}
+                      {sumResults}
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {sumStats}
+                      {sumFooter}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {sumHeader}
+                    {sumScore}
+                    {sumResults}
+                    {sumStats}
+                    {sumFooter}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
