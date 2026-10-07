@@ -331,42 +331,6 @@ function Crown({ className = "" }: { className?: string }) {
   );
 }
 
-// ===== สายฟ้านีออน (เหมือนหน้า /rank) =====
-type Bolt = { id: number; d: string; delay: number; dur: number; w: number };
-type Pt = [number, number];
-const fmt = (pts: Pt[]) => pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L");
-
-function jag(x1: number, y1: number, x2: number, y2: number, segs: number, amp: number): Pt[] {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len;
-  const ny = dx / len;
-  const pts: Pt[] = [[x1, y1]];
-  for (let i = 1; i < segs; i++) {
-    const t = i / segs;
-    const o = (Math.random() - 0.5) * 2 * amp;
-    pts.push([x1 + dx * t + nx * o, y1 + dy * t + ny * o]);
-  }
-  pts.push([x2, y2]);
-  return pts;
-}
-
-function boltPath(x1: number, y1: number, x2: number, y2: number): string {
-  const len = Math.hypot(x2 - x1, y2 - y1);
-  const segs = Math.max(6, Math.round(len / 38));
-  const pts = jag(x1, y1, x2, y2, segs, Math.min(40, len * 0.12));
-  let d = "M" + fmt(pts);
-  for (let b = 0; b < 2; b++) {
-    const k = 2 + Math.floor(Math.random() * (pts.length - 4));
-    const [bx, by] = pts[k];
-    const ang = Math.atan2(y2 - y1, x2 - x1) + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5);
-    const bl = len * (0.12 + Math.random() * 0.15);
-    d += " M" + fmt(jag(bx, by, bx + Math.cos(ang) * bl, by + Math.sin(ang) * bl, 4, 10));
-  }
-  return d;
-}
-
 // ตัวเลขวิ่งจาก 0 ไปหยุดที่ค่าจริง (เริ่มเมื่อ run = true) แล้วเรียก onDone ตอนหยุด
 function useCountUp(target: number, run: boolean, ms: number, onDone: () => void) {
   const [v, setV] = useState(0);
@@ -585,12 +549,10 @@ export default function Home() {
   const [score, setScore] = useState<number | null>(null);
   const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
 
-  // เอฟเฟกต์อันดับ 1: เลขวิ่ง + สายฟ้า (เริ่มเมื่อเลื่อนมาเห็นแท่นรับรางวัล)
+  // เอฟเฟกต์อันดับ 1: เลขคะแนนวิ่ง (เริ่มเมื่อเลื่อนมาเห็นแท่นรับรางวัล)
   const [inView, setInView] = useState(false);
   const [done, setDone] = useState(false);
-  const [bolts, setBolts] = useState<Bolt[]>([]);
   const podiumRef = useRef<HTMLDivElement>(null);
-  const firstRef = useRef<HTMLElement>(null);
   const hasPodium = topUsers.length > 0;
 
   useEffect(() => {
@@ -613,38 +575,9 @@ export default function Home() {
     return () => io.disconnect();
   }, [hasPodium]);
 
-  function fire() {
-    setDone(true);
-    const el = firstRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const out: Bolt[] = [];
-    let id = 0;
-
-    // ฟ้าผ่าจากบนจอลงมาที่การ์ด
-    for (let i = 0; i < 4; i++) {
-      const sx = rect.left + Math.random() * rect.width + (Math.random() - 0.5) * 200;
-      const ex = rect.left + rect.width * (0.15 + Math.random() * 0.7);
-      const ey = rect.top + rect.height * (0.1 + Math.random() * 0.3);
-      out.push({ id: id++, d: boltPath(sx, -20, ex, ey), delay: i * 90, dur: 900 + Math.random() * 300, w: 2 + Math.random() * 1.5 });
-    }
-    // สายฟ้าแผ่ออกจากการ์ดรอบทิศ
-    for (let i = 0; i < 6; i++) {
-      const ang = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
-      const sx = cx + Math.cos(ang) * rect.width * 0.4;
-      const sy = cy + Math.sin(ang) * rect.height * 0.4;
-      const r = 160 + Math.random() * 140;
-      out.push({ id: id++, d: boltPath(sx, sy, sx + Math.cos(ang) * r, sy + Math.sin(ang) * r), delay: 120 + i * 70, dur: 800 + Math.random() * 300, w: 1.5 + Math.random() * 1.2 });
-    }
-    setBolts(out);
-    setTimeout(() => setBolts([]), 1800);
-  }
-
   const champ = topUsers[0];
   const champScore = useCountUp(champ?.score ?? 0, inView && !!champ, COUNT_MS, () => {
-    if ((champ?.score ?? 0) > 0) fire();
+    if ((champ?.score ?? 0) > 0) setDone(true);
   });
 
   useEffect(() => {
@@ -848,20 +781,7 @@ export default function Home() {
         .events-stage { position: relative; overflow: hidden; }
 
         @keyframes score-pop { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
-        @keyframes bolt {
-          0% { stroke-dashoffset: 1; opacity: 0; }
-          12% { stroke-dashoffset: 0; opacity: 1; }
-          22% { opacity: .35; }
-          32% { opacity: 1; }
-          55% { opacity: .5; }
-          100% { stroke-dashoffset: 0; opacity: 0; }
-        }
-        @keyframes flash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
-        .bolt { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: bolt var(--dur) linear var(--d) forwards; }
-        .flash { background: radial-gradient(circle at 50% 35%, rgba(23,255,162,.28), rgba(23,255,162,.06) 60%, transparent); opacity: 0; animation: flash 600ms ease-out forwards; }
-
         @media (prefers-reduced-motion: reduce) {
-          .bolt, .flash { display: none; }
           .score-pop { animation: none !important; }
           html { scroll-behavior: auto; }
           .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
@@ -872,27 +792,6 @@ export default function Home() {
       `}</style>
 
       <BackdropText />
-
-      {/* ชั้นสายฟ้านีออน (ไม่รับการคลิก) */}
-      {bolts.length > 0 && (
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-          <div className="flash absolute inset-0" />
-          <svg
-            className="absolute inset-0 h-full w-full"
-            style={{ filter: "drop-shadow(0 0 6px #17FFA2) drop-shadow(0 0 18px #17FFA2)" }}
-          >
-            {bolts.map((b) => {
-              const v = { "--d": `${b.delay}ms`, "--dur": `${b.dur}ms` } as React.CSSProperties;
-              return (
-                <g key={b.id}>
-                  <path d={b.d} pathLength={1} className="bolt" style={{ ...v, stroke: "#17FFA2", strokeWidth: b.w * 3 }} />
-                  <path d={b.d} pathLength={1} className="bolt" style={{ ...v, stroke: "#FFFFFF", strokeWidth: b.w }} />
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-      )}
 
       <Navbar
         saved={[...saved, ...savedGames]}
@@ -1064,7 +963,6 @@ export default function Home() {
                       className={`${podiumOrder[i]} min-w-0 ${first ? "-mt-4 sm:-mt-6" : ""}`}
                     >
                       <article
-                        ref={first ? firstRef : undefined}
                         style={{
                           backgroundColor: TONE[i],
                           color: INK[i],
