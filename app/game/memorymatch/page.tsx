@@ -210,22 +210,6 @@ const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-ful
 const BTN_ROUND = "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
 const POP_SHADOW = "0 2px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 0 14px rgba(255,255,255,.9)";
 
-/* Component แสดงพรีวิววิดีโอตัวอย่างเกม */
-function GameVideoPreview() {
-  return (
-    <div className="relative overflow-hidden rounded-2xl bg-black/5 shadow-inner">
-      <video
-        src="/video/memorymatch/memorymatch.mp4"
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="h-full w-full object-cover"
-      />
-    </div>
-  );
-}
-
 /* =========================================================
    หน้าเกม
    ========================================================= */
@@ -248,6 +232,8 @@ export default function MemoryMatchPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [record, setRecord] = useState(0);
   const [newRecord, setNewRecord] = useState(false);
+  const sumRef = useRef<HTMLDivElement>(null); // วัดความสูงจริงของหน้าสรุปผล เพื่อย่อให้พอดีจอมือถือโดยไม่ต้องเลื่อน
+  const [natH, setNatH] = useState(620);
 
   const later = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
@@ -539,6 +525,11 @@ export default function MemoryMatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // offsetHeight ไม่ถูกกระทบจาก transform: scale จึงได้ความสูงเต็มของเนื้อหาเสมอ
+  useEffect(() => {
+    if (g.phase === "over" && sumRef.current) setNatH(sumRef.current.offsetHeight);
+  });
+
   // ===== ค่าที่ใช้แสดงผล =====
   const lay = layout(g.deck.length, dims.w, dims.h);
   layoutRef.current = lay;
@@ -780,19 +771,14 @@ export default function MemoryMatchPage() {
         </div>
       )}
 
-      {/* ===== หน้าสรุปคะแนน / พรีวิวรายละเอียดตัวอย่างเกม ===== */}
+      {/* ===== หน้าสรุปคะแนน ===== */}
       {over && (
         <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
-          <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 590, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
-            <div className="text-center" style={{ animation: "mm-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
+          <div style={{ width: 340, height: natH, transform: `scale(${Math.min((dims.h * 0.9) / natH, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
+            <div ref={sumRef} className="text-center" style={{ animation: "mm-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
               <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${newRecord ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
                 {newRecord ? "🏆 สถิติใหม่!" : "หมดเวลา!"}
               </span>
-
-              {/* ส่วนพรีวิววิดีโอแสดงผลตัวอย่างการเล่น */}
-              <div className="mt-3 px-4">
-                <GameVideoPreview />
-              </div>
 
               <div className="mt-4 flex items-end justify-center gap-1">
                 {STAR_AT.map((_, i) => (
@@ -831,8 +817,10 @@ export default function MemoryMatchPage() {
               <p className="h-4 text-xs text-zinc-500" role="status">{saveText[saveState]}</p>
 
               <button onClick={beginRound} className={`${BTN_MAIN} mt-4`}>เล่นอีกครั้ง</button>
-              <Link href="/rank" className={`${BTN_SUB} mt-3`}>ดูอันดับ</Link>
-              <Link href="/#games" className="mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <Link href="/rank" className={BTN_SUB}>ดูอันดับ</Link>
+                <Link href="/" className={BTN_SUB}>หน้าหลัก</Link>
+              </div>
             </div>
           </div>
         </div>

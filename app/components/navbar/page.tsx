@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useState, type MouseEvent } from "react";
 import { HEART_PATH } from "../events/page";
 
 export type Profile = { userId?: string; name: string; avatar: string };
@@ -72,6 +73,17 @@ export default function Navbar({
   onOpenFavorites,
 }: NavbarProps) {
   const userId = profile?.userId;
+  const pathname = usePathname();
+
+  // กดหน้าหลัก: ถ้าอยู่หน้าหลักอยู่แล้วให้เลื่อนขึ้นบนสุด ถ้าอยู่หน้าอื่นให้ไปหน้าหลัก
+  function goHome(e: MouseEvent) {
+    if (pathname === "/") {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (window.location.hash) history.replaceState(null, "", "/");
+    }
+  }
+
   const [shown, setShown] = useState<number | null>(null); // คะแนนที่แสดงอยู่ (ไล่ขึ้นทีละน้อย)
   const [gain, setGain] = useState<number | null>(null); // คะแนนที่เพิ่มมา ใช้โชว์ +N
   const [bump, setBump] = useState(false);
@@ -139,7 +151,7 @@ export default function Navbar({
 
   return (
     <header className="sticky top-0 z-40 flex w-full justify-center bg-black/50 text-white backdrop-blur-xl backdrop-saturate-150">
-      <div className="flex h-20 w-full max-w-7xl items-center justify-between px-6">
+      <div className="flex h-20 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
         <style>{`
           @keyframes score-gain {
             0%   { opacity: 0; transform: translateY(-10px) scale(.6); }
@@ -152,19 +164,22 @@ export default function Navbar({
         `}</style>
 
         {/* Logo COM7 กลับหน้าแรก (แปลงเป็นสีขาวให้เห็นชัดบนพื้นดำ) */}
-        <Link href="/" aria-label="COM7 หน้าแรก" className="flex items-center">
+        <Link href="/" aria-label="COM7 หน้าแรก" onClick={goHome} className="flex min-w-0 shrink items-center">
           <Image
             src="/img/com7logo.png"
             alt="COM7"
             width={213}
             height={64}
             priority
-            className="h-16 w-auto object-contain brightness-0 invert"
+            className="h-12 w-auto max-w-full object-contain object-left brightness-0 invert sm:h-16"
           />
         </Link>
 
         {/* Desktop Navigation */}
         <nav className="hidden items-center gap-8 text-sm font-medium text-white sm:flex">
+          <Link href="/" onClick={goHome} className="transition-opacity hover:opacity-60">
+            หน้าหลัก
+          </Link>
           <a href="#events" className="transition-opacity hover:opacity-60">
             Events
           </a>
@@ -191,7 +206,56 @@ export default function Navbar({
         </nav>
 
         {/* Right Section (Mobile Fav Icon + Score + Profile) */}
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {/* ปุ่มหน้าหลักสำหรับมือถือ (ไอคอนรูปบ้าน) */}
+          <Link
+            href="/"
+            onClick={goHome}
+            aria-label="หน้าหลัก"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 sm:hidden"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M3 10.5L12 3l9 7.5" />
+              <path d="M5 9.5V21h14V9.5" />
+              <path d="M10 21v-6h4v6" />
+            </svg>
+          </Link>
+
+          {/* ปุ่มอันดับสำหรับมือถือ (ไอคอนถ้วยรางวัล) อยู่ระหว่างหน้าหลักกับรายการโปรด */}
+          <Link
+            href="/rank"
+            aria-label="อันดับ"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition-colors hover:bg-white/10 sm:hidden"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M8 21h8" />
+              <path d="M12 17v4" />
+              <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
+              <path d="M17 5h3v2a3 3 0 0 1-3 3" />
+              <path d="M7 5H4v2a3 3 0 0 0 3 3" />
+            </svg>
+          </Link>
+
           {/* ปุ่มรายการโปรดสำหรับมือถือ */}
           <button
             onClick={onOpenFavorites}
