@@ -1112,6 +1112,7 @@ export default function Home() {
         saved={saved}
         savedGames={savedGames}
         gamesList={GAMES}
+        covers={COVERS}
         toggleSave={toggleSave}
         toggleSaveGame={toggleSaveGame}
         onOpenEvent={setOpenId}

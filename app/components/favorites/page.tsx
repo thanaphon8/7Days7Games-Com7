@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import {
   CloseButton,
@@ -181,12 +182,15 @@ function EsButton({
 }
 
 // การ์ดเกม: มือถือเป็นแถวแนวนอน, จอใหญ่เป็นการ์ดแนวตั้ง
+// ถ้ามีรูปปก (cover) จะใช้เป็นพื้นหลังการ์ดเหมือนหน้าหลัก ไม่มีก็ใช้พื้นไล่สี + ไอคอนเหมือนเดิม
 function FavoriteGameCard({
   game,
+  cover,
   onOpen,
   onToggle,
 }: {
   game: Game;
+  cover?: string;
   onOpen: () => void;
   onToggle: () => void;
 }) {
@@ -204,31 +208,58 @@ function FavoriteGameCard({
           onOpen();
         }
       }}
-      style={{ background: `linear-gradient(160deg, ${accent}55, #05080a 75%)` }}
-      className="group relative flex min-h-36 cursor-pointer items-center gap-4 overflow-hidden border border-white/10 p-5 text-white outline-none transition-all duration-300 hover:-translate-y-1.5 hover:border-[#17FFA2] hover:shadow-[0_0_28px_rgba(23,255,162,0.25)] focus-visible:ring-4 focus-visible:ring-[#17FFA2] sm:min-h-72 sm:flex-col sm:items-stretch sm:justify-between sm:gap-6 sm:p-8"
+      style={cover ? { backgroundColor: "#05080a" } : { background: `linear-gradient(160deg, ${accent}55, #05080a 75%)` }}
+      className={`group relative flex min-h-36 cursor-pointer items-center gap-4 overflow-hidden border border-white/10 p-5 text-white outline-none transition-all duration-300 hover:-translate-y-1.5 hover:border-[#17FFA2] hover:shadow-[0_0_28px_rgba(23,255,162,0.25)] focus-visible:ring-4 focus-visible:ring-[#17FFA2] sm:min-h-72 sm:flex-col sm:items-stretch sm:gap-6 sm:p-8 ${
+        cover ? "sm:justify-end" : "sm:justify-between"
+      }`}
     >
-      {/* glyph ใหญ่จางๆ เป็นลายพื้นหลังการ์ด */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-2 -top-2 select-none text-[9rem] font-bold leading-none text-black/30 transition-transform duration-500 group-hover:-translate-x-3 group-hover:scale-110"
-      >
-        {game.glyph}
-      </span>
+      {cover ? (
+        <>
+          <Image
+            src={cover}
+            alt=""
+            fill
+            sizes="(min-width: 640px) 480px, 100vw"
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+          {/* มือถือ: เงาไล่จากซ้ายให้ข้อความอ่านง่าย / จอใหญ่: เงาไล่จากล่าง */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 sm:hidden"
+            style={{ background: "linear-gradient(to right, rgba(5,8,10,.95) 0%, rgba(5,8,10,.8) 45%, rgba(5,8,10,.2) 100%)" }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 hidden sm:block"
+            style={{ background: "linear-gradient(to top, rgba(5,8,10,.95) 0%, rgba(5,8,10,.6) 40%, rgba(5,8,10,0) 75%)" }}
+          />
+        </>
+      ) : (
+        <>
+          {/* glyph ใหญ่จางๆ เป็นลายพื้นหลังการ์ด */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-2 -top-2 select-none text-[9rem] font-bold leading-none text-black/30 transition-transform duration-500 group-hover:-translate-x-3 group-hover:scale-110"
+          >
+            {game.glyph}
+          </span>
 
-      <span
-        style={{ borderColor: accent, color: accent }}
-        className="relative flex h-20 w-20 shrink-0 items-center justify-center border-2 bg-black/40 text-5xl font-bold sm:h-24 sm:w-24 sm:text-6xl"
-      >
-        {game.glyph}
-      </span>
+          <span
+            style={{ borderColor: accent, color: accent }}
+            className="relative flex h-20 w-20 shrink-0 items-center justify-center border-2 bg-black/40 text-5xl font-bold sm:h-24 sm:w-24 sm:text-6xl"
+          >
+            {game.glyph}
+          </span>
+        </>
+      )}
 
       <div className="relative min-w-0 flex-1 sm:flex-none">
-        <p className={`text-xs ${MUTED}`}>
+        <p className={`text-xs ${cover ? "text-white/70" : MUTED}`}>
           {game.category} · {game.time}
           {soon && " · เปิดเร็วๆ นี้"}
         </p>
         <h4 className="mt-1 truncate text-xl font-bold uppercase tracking-tight sm:text-3xl">{game.name}</h4>
-        <p className={`mt-1 line-clamp-3 text-sm leading-5 sm:mt-2 sm:leading-6 ${MUTED}`}>{game.desc}</p>
+        <p className={`mt-1 line-clamp-3 text-sm leading-5 sm:mt-2 sm:leading-6 ${cover ? "text-white/75" : MUTED}`}>{game.desc}</p>
       </div>
 
       <div className="relative shrink-0 sm:absolute sm:right-4 sm:top-4">
@@ -264,6 +295,7 @@ type FavoritesSheetProps = {
   saved: string[];
   savedGames: string[];
   gamesList: Game[];
+  covers?: Record<string, string>; // id เกม -> รูปปก (ใช้ชุดเดียวกับหน้าหลัก)
   toggleSave: (id: string) => void;
   toggleSaveGame: (id: string) => void;
   onOpenEvent: (id: string) => void;
@@ -277,6 +309,7 @@ export default function FavoritesSheet({
   saved,
   savedGames,
   gamesList,
+  covers = {},
   toggleSave,
   toggleSaveGame,
   onOpenEvent,
@@ -478,6 +511,7 @@ export default function FavoritesSheet({
                     <FavoriteGameCard
                       key={g.id}
                       game={g}
+                      cover={covers[g.id]}
                       onOpen={() => onOpenGame(g.id)}
                       onToggle={() => toggleSaveGame(g.id)}
                     />
