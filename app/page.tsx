@@ -71,6 +71,15 @@ const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
 const RANK_LIMIT = 5;
 const COUNT_MS = 2000; // เวลาที่เลขคะแนนอันดับ 1 วิ่ง
 
+// ปกเกมในส่วน "เกมทั้งหมด" (เกมที่ไม่มีปกจะใช้พื้นไล่สี + ไอคอนเหมือนเดิม)
+const COVERS: Record<string, string> = {
+  typing: "/img/typinglogo.jpg",
+  thinkfast: "/img/matchlogo.jpg",
+  kickbattle: "/img/kickbattlelogo.jpg",
+  basketball: "/img/basketballlogo.jpg",
+  memorymatch: "/img/memorymatchlogo.jpg",
+};
+
 const toneHex = (g: Game) => g.tone.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? "#52525B";
 
 const savedGamesKey = (uid?: string | null) => `savedGames:${uid || "guest"}`;
@@ -399,6 +408,7 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
   const soon = game.status === "SOON";
   const playable = !!game.href && !soon;
   const accent = soon ? "#71717A" : toneHex(game);
+  const cover = COVERS[game.id];
   return (
     <div
       role="dialog"
@@ -409,9 +419,23 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
         backgroundSize: "auto, 56px 56px, 56px 56px, auto",
         animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)",
       }}
-      className="fixed inset-0 z-[60] overflow-y-auto text-white"
+      className="fixed inset-0 z-[60] isolate overflow-y-auto text-white"
     >
-      <div className="mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))]">
+      {/* พื้นหลังเป็นรูปปกเกม ไล่ความเข้มลงล่าง (ไม่เลื่อนตามเนื้อหา) */}
+      {cover && (
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10">
+          <Image src={cover} alt="" fill priority sizes="100vw" className="object-cover" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to bottom, rgba(5,8,10,0.25) 0%, rgba(5,8,10,0.55) 35%, rgba(5,8,10,0.9) 70%, #05080a 100%)",
+            }}
+          />
+        </div>
+      )}
+
+      <div className="relative mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Badge status={game.status} dark />
@@ -924,6 +948,7 @@ export default function Home() {
           {list.map((g, i) => {
             const soon = g.status === "SOON";
             const accent = soon ? "#52525B" : toneHex(g);
+            const cover = COVERS[g.id];
             return (
               <Reveal key={g.id} delay={(i % 3) * 110} className="h-full">
                 <article
@@ -943,9 +968,22 @@ export default function Home() {
                     className="relative flex h-56 items-end overflow-hidden"
                     style={{ background: `linear-gradient(160deg, ${accent}, #05080a 90%)` }}
                   >
-                    <span className="absolute -right-2 top-0 select-none text-[9rem] font-bold leading-none text-black/30 transition-transform duration-500 group-hover:-translate-x-3 group-hover:scale-110">
-                      {g.glyph}
-                    </span>
+                    {cover ? (
+                      <>
+                        <Image
+                          src={cover}
+                          alt={g.name}
+                          fill
+                          sizes="(min-width: 1024px) 400px, (min-width: 640px) 50vw, 100vw"
+                          className="object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05080a]/70 via-transparent to-transparent" aria-hidden="true" />
+                      </>
+                    ) : (
+                      <span className="absolute -right-2 top-0 select-none text-[9rem] font-bold leading-none text-black/30 transition-transform duration-500 group-hover:-translate-x-3 group-hover:scale-110">
+                        {g.glyph}
+                      </span>
+                    )}
                     <div className="relative m-4">
                       <Badge status={g.status} dark={soon} />
                     </div>
