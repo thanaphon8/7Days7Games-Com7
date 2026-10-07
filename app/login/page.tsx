@@ -495,8 +495,8 @@ export default function Login() {
           {/* glyph ใหญ่จางๆ ตกแต่งพื้นหลัง */}
           <span aria-hidden className="pointer-events-none absolute -bottom-8 -right-4 select-none text-[14rem] font-bold leading-none text-black/30">▦</span>
 
-          <Link href="/" aria-label="กลับหน้าแรก" className="relative flex w-fit items-center bg-white px-3 py-1.5">
-            <Image src="/img/com7logo.png" alt="COM7" width={120} height={36} priority className="h-9 w-auto" />
+          <Link href="/" aria-label="กลับหน้าแรก" className="relative flex w-fit items-center">
+            <Image src="/img/com7logo.png" alt="COM7" width={240} height={72} priority className="h-12 w-auto sm:h-14 md:h-16" />
           </Link>
           <div className="relative">
             <span className="mb-5 block h-1.5 w-16 -skew-x-12 bg-[#17FFA2] shadow-[0_0_14px_#17FFA2]" />
