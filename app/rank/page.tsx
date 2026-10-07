@@ -496,10 +496,10 @@ export default function RankPage() {
                       animation: `rise 600ms ${i * 120}ms both cubic-bezier(.2,.8,.2,1)`,
                       // ออร่านีออนรอบการ์ดอันดับ 1
                       boxShadow: first
-                        ? `${mine ? "0 0 0 4px #fff, " : ""}0 0 18px 4px rgba(23,255,162,.85), 0 0 60px 14px rgba(23,255,162,.5), 0 0 130px 36px rgba(23,255,162,.28)`
+                        ? "0 0 18px 4px rgba(23,255,162,.85), 0 0 60px 14px rgba(23,255,162,.5), 0 0 130px 36px rgba(23,255,162,.28)"
                         : undefined,
                     }}
-                    className={`rise relative flex min-w-0 flex-col items-center text-center ${pad} ${order[rank]} ${mine ? "ring-2 ring-white sm:ring-4" : ""}`}
+                    className={`rise relative flex min-w-0 flex-col items-center text-center outline outline-2 outline-white sm:outline-4 ${pad} ${order[rank]}`}
                   >
                     <span className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-xs font-bold sm:left-5 sm:top-5 sm:h-9 sm:w-9 sm:text-sm">{rank}</span>
                     <div className="relative mt-2 sm:mt-4">

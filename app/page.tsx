@@ -64,6 +64,13 @@ const CATEGORIES = ["ทั้งหมด", "ความจำ", "ตรรก
 const RED = "#ff2a55";
 const MUTED = "text-[#8fa6a1]";
 
+// สีแท่นอันดับ 1-3 (เหมือนหน้า /rank) และจำนวนอันดับที่โชว์ในหน้าหลัก
+const TONE = ["#17FFA2", "#0FD98A", "#0AB373"];
+const INK = ["#00301B", "#00301B", "#00301B"];
+const FALLBACK_BG = ["#F4D35E", "#A8B5E8", "#B7CBB0", "#F4A58A"];
+const RANK_LIMIT = 5;
+const COUNT_MS = 2000; // เวลาที่เลขคะแนนอันดับ 1 วิ่ง
+
 const toneHex = (g: Game) => g.tone.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? "#52525B";
 
 const savedGamesKey = (uid?: string | null) => `savedGames:${uid || "guest"}`;
@@ -277,6 +284,111 @@ function HeartButton({ saved, onToggle, label, size = 44 }: { saved: boolean; on
   );
 }
 
+/* ---------- ส่วนประกอบของอันดับ (เหมือนหน้า /rank) ---------- */
+
+function RankAvatar({ id, size }: { id?: string; size: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    const num = Number(id?.replace(/\D/g, "")) || 1;
+    return (
+      <span
+        style={{ backgroundColor: FALLBACK_BG[(num - 1) % 4] }}
+        className={`flex shrink-0 items-center justify-center rounded-full font-bold text-zinc-900 ${size}`}
+      >
+        {num}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={getAvatarSrc(id)}
+      alt=""
+      onError={() => setFailed(true)}
+      className={`shrink-0 rounded-full object-cover ${size}`}
+    />
+  );
+}
+
+function Crown({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 24" aria-hidden className={`drop-shadow ${className}`}>
+      <path d="M3 9l6 5 7-10 7 10 6-5-3 13H6L3 9z" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" strokeLinejoin="round" />
+      {[[3, 9], [16, 4], [29, 9]].map(([x, y]) => (
+        <circle key={x} cx={x} cy={y} r="2" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" />
+      ))}
+    </svg>
+  );
+}
+
+// ===== สายฟ้านีออน (เหมือนหน้า /rank) =====
+type Bolt = { id: number; d: string; delay: number; dur: number; w: number };
+type Pt = [number, number];
+const fmt = (pts: Pt[]) => pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L");
+
+function jag(x1: number, y1: number, x2: number, y2: number, segs: number, amp: number): Pt[] {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const pts: Pt[] = [[x1, y1]];
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs;
+    const o = (Math.random() - 0.5) * 2 * amp;
+    pts.push([x1 + dx * t + nx * o, y1 + dy * t + ny * o]);
+  }
+  pts.push([x2, y2]);
+  return pts;
+}
+
+function boltPath(x1: number, y1: number, x2: number, y2: number): string {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const segs = Math.max(6, Math.round(len / 38));
+  const pts = jag(x1, y1, x2, y2, segs, Math.min(40, len * 0.12));
+  let d = "M" + fmt(pts);
+  for (let b = 0; b < 2; b++) {
+    const k = 2 + Math.floor(Math.random() * (pts.length - 4));
+    const [bx, by] = pts[k];
+    const ang = Math.atan2(y2 - y1, x2 - x1) + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5);
+    const bl = len * (0.12 + Math.random() * 0.15);
+    d += " M" + fmt(jag(bx, by, bx + Math.cos(ang) * bl, by + Math.sin(ang) * bl, 4, 10));
+  }
+  return d;
+}
+
+// ตัวเลขวิ่งจาก 0 ไปหยุดที่ค่าจริง (เริ่มเมื่อ run = true) แล้วเรียก onDone ตอนหยุด
+function useCountUp(target: number, run: boolean, ms: number, onDone: () => void) {
+  const [v, setV] = useState(0);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+
+  useEffect(() => {
+    if (!run) return;
+    if (target <= 0) {
+      setV(0);
+      return;
+    }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setV(target);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / ms);
+      setV(Math.round(target * (1 - Math.pow(1 - k, 4)))); // เร็วก่อนแล้วค่อยๆ ช้าลงจนหยุด
+      if (k < 1) raf = requestAnimationFrame(step);
+      else doneRef.current();
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, run, ms]);
+
+  return v;
+}
+
 /* ------------------------------------------------------------------ */
 /*  GAME DETAIL                                                        */
 /* ------------------------------------------------------------------ */
@@ -449,6 +561,68 @@ export default function Home() {
   const [score, setScore] = useState<number | null>(null);
   const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
 
+  // เอฟเฟกต์อันดับ 1: เลขวิ่ง + สายฟ้า (เริ่มเมื่อเลื่อนมาเห็นแท่นรับรางวัล)
+  const [inView, setInView] = useState(false);
+  const [done, setDone] = useState(false);
+  const [bolts, setBolts] = useState<Bolt[]>([]);
+  const podiumRef = useRef<HTMLDivElement>(null);
+  const firstRef = useRef<HTMLElement>(null);
+  const hasPodium = topUsers.length > 0;
+
+  useEffect(() => {
+    const el = podiumRef.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setInView(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) {
+          setInView(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.5 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasPodium]);
+
+  function fire() {
+    setDone(true);
+    const el = firstRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const out: Bolt[] = [];
+    let id = 0;
+
+    // ฟ้าผ่าจากบนจอลงมาที่การ์ด
+    for (let i = 0; i < 4; i++) {
+      const sx = rect.left + Math.random() * rect.width + (Math.random() - 0.5) * 200;
+      const ex = rect.left + rect.width * (0.15 + Math.random() * 0.7);
+      const ey = rect.top + rect.height * (0.1 + Math.random() * 0.3);
+      out.push({ id: id++, d: boltPath(sx, -20, ex, ey), delay: i * 90, dur: 900 + Math.random() * 300, w: 2 + Math.random() * 1.5 });
+    }
+    // สายฟ้าแผ่ออกจากการ์ดรอบทิศ
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
+      const sx = cx + Math.cos(ang) * rect.width * 0.4;
+      const sy = cy + Math.sin(ang) * rect.height * 0.4;
+      const r = 160 + Math.random() * 140;
+      out.push({ id: id++, d: boltPath(sx, sy, sx + Math.cos(ang) * r, sy + Math.sin(ang) * r), delay: 120 + i * 70, dur: 800 + Math.random() * 300, w: 1.5 + Math.random() * 1.2 });
+    }
+    setBolts(out);
+    setTimeout(() => setBolts([]), 1800);
+  }
+
+  const champ = topUsers[0];
+  const champScore = useCountUp(champ?.score ?? 0, inView && !!champ, COUNT_MS, () => {
+    if ((champ?.score ?? 0) > 0) fire();
+  });
+
   useEffect(() => {
     async function fetchRanking() {
       try {
@@ -481,7 +655,7 @@ export default function Home() {
           });
 
           list.sort((a, b) => b.score - a.score);
-          setTopUsers(list.slice(0, 3));
+          setTopUsers(list.slice(0, RANK_LIMIT + 1)); // +1 เพื่อโชว์อันดับถัดไปแบบจางๆ
           setScoreMap(
             Object.fromEntries(list.filter((u) => u.userId).map((u) => [u.userId as string, u.score]))
           );
@@ -612,6 +786,12 @@ export default function Home() {
 
   const myScore = score ?? (profile?.userId ? scoreMap[profile.userId] ?? null : null);
 
+  // แบ่งเป็นแท่นรับรางวัล 1-3 และรายการอันดับ 4-5
+  const podium = topUsers.slice(0, 3);
+  const rest = topUsers.slice(3, RANK_LIMIT);
+  const peek = topUsers[RANK_LIMIT] ?? null; // อันดับ 6 โชว์จางๆ
+  const podiumOrder = ["order-2", "order-1", "order-3"]; // เรียง 2-1-3 (อันดับ 1 อยู่กลาง)
+
   return (
     <div className="relative isolate flex min-h-[100dvh] flex-col items-center overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white">
       <style>{`
@@ -643,7 +823,22 @@ export default function Home() {
 
         .events-stage { position: relative; overflow: hidden; }
 
+        @keyframes score-pop { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
+        @keyframes bolt {
+          0% { stroke-dashoffset: 1; opacity: 0; }
+          12% { stroke-dashoffset: 0; opacity: 1; }
+          22% { opacity: .35; }
+          32% { opacity: 1; }
+          55% { opacity: .5; }
+          100% { stroke-dashoffset: 0; opacity: 0; }
+        }
+        @keyframes flash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+        .bolt { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: bolt var(--dur) linear var(--d) forwards; }
+        .flash { background: radial-gradient(circle at 50% 35%, rgba(23,255,162,.28), rgba(23,255,162,.06) 60%, transparent); opacity: 0; animation: flash 600ms ease-out forwards; }
+
         @media (prefers-reduced-motion: reduce) {
+          .bolt, .flash { display: none; }
+          .score-pop { animation: none !important; }
           html { scroll-behavior: auto; }
           .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
           .bar-grow { width: 4rem; transition: none; }
@@ -653,6 +848,27 @@ export default function Home() {
       `}</style>
 
       <BackdropText />
+
+      {/* ชั้นสายฟ้านีออน (ไม่รับการคลิก) */}
+      {bolts.length > 0 && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+          <div className="flash absolute inset-0" />
+          <svg
+            className="absolute inset-0 h-full w-full"
+            style={{ filter: "drop-shadow(0 0 6px #17FFA2) drop-shadow(0 0 18px #17FFA2)" }}
+          >
+            {bolts.map((b) => {
+              const v = { "--d": `${b.delay}ms`, "--dur": `${b.dur}ms` } as React.CSSProperties;
+              return (
+                <g key={b.id}>
+                  <path d={b.d} pathLength={1} className="bolt" style={{ ...v, stroke: "#17FFA2", strokeWidth: b.w * 3 }} />
+                  <path d={b.d} pathLength={1} className="bolt" style={{ ...v, stroke: "#FFFFFF", strokeWidth: b.w }} />
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
 
       <Navbar
         saved={[...saved, ...savedGames]}
@@ -778,68 +994,140 @@ export default function Home() {
         </section>
       )}
 
-      {/* ---------------- RANKING (การ์ดยื่น) ---------------- */}
+      {/* ---------------- RANKING (TOP 5 แบบเดียวกับหน้า /rank) ---------------- */}
       <section id="ranking" className="mt-16 w-full bg-[#0a1014]/70 py-16 sm:mt-24 sm:py-24">
-        <div className={wrap}>
+        <div className="mx-auto w-full max-w-5xl px-4 sm:px-6">
           <SectionHead
             title="ผู้นำตอนนี้"
-            intro="แต้มสะสมจากทุกรอบที่เล่น อัปเดตทุกครั้งที่มีคนเล่นจบ"
-            action={<Button href="/rank" variant="outline">ดูอันดับทั้งหมด</Button>}
+            intro={`${RANK_LIMIT} อันดับแรก แต้มสะสมจากทุกรอบที่เล่น อัปเดตทุกครั้งที่มีคนเล่นจบ`}
           />
+
           {topUsers.length === 0 ? (
-            <p className="border border-white/10 p-10 text-center text-sm text-zinc-500">ยังไม่มีข้อมูลอันดับ</p>
-          ) : (
-            <div className="mx-auto grid max-w-3xl grid-cols-3 items-end gap-2 sm:gap-4">
-              {topUsers.map((r, i) => {
-                const rank = i + 1;
-                const first = rank === 1;
-                const me = !!profile?.userId && r.userId === profile.userId;
-                const tone = first
-                  ? "bg-[#17FFA2] shadow-[0_0_60px_rgba(23,255,162,0.55)]"
-                  : rank === 2
-                  ? "bg-[#12e594]"
-                  : "bg-[#0cb577]";
-                const height = first ? "h-[330px] sm:h-[470px]" : "h-[290px] sm:h-[410px]";
-                const order = first ? "order-2" : rank === 2 ? "order-1" : "order-3";
-                const avCls = first ? "h-16 w-16 sm:h-28 sm:w-28" : "h-12 w-12 sm:h-[92px] sm:w-[92px]";
-                return (
-                  <Reveal key={r.name + i} delay={i * 100} className={`${order} min-w-0`}>
-                    <article
-                      className={`relative flex flex-col items-center justify-center px-1.5 py-6 text-center text-[#04251a] transition-transform duration-300 hover:-translate-y-1 sm:px-4 sm:py-10 ${height} ${tone} ${
-                        me ? "outline outline-2 outline-white sm:outline-4" : ""
-                      }`}
-                    >
-                      <span className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-xs font-bold sm:left-4 sm:top-4 sm:h-10 sm:w-10 sm:text-base">
-                        {rank}
-                      </span>
-                      {first && (
-                        <svg width="68" height="46" viewBox="0 0 68 46" className="relative z-10 -mb-3 h-auto w-9 sm:-mb-5 sm:w-[68px]" aria-hidden="true">
-                          <path d="M6 38 10 12l16 14L34 6l8 20 16-14 4 26z" fill="#F4D35E" stroke="#4A3B00" strokeWidth="3" strokeLinejoin="round" />
-                          <circle cx="10" cy="10" r="4" fill="#F4D35E" stroke="#4A3B00" strokeWidth="2.5" />
-                          <circle cx="34" cy="5" r="4" fill="#F4D35E" stroke="#4A3B00" strokeWidth="2.5" />
-                          <circle cx="58" cy="10" r="4" fill="#F4D35E" stroke="#4A3B00" strokeWidth="2.5" />
-                        </svg>
-                      )}
-                      <img
-                        src={getAvatarSrc(r.avatarId)}
-                        alt={r.name}
-                        className={`${avCls} rounded-full border-2 border-white/80 bg-zinc-500 object-cover sm:border-4`}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = "/img/p01.png";
-                        }}
-                      />
-                      <h3 className="mt-3 line-clamp-2 w-full break-words text-xs font-bold leading-tight sm:mt-5 sm:text-xl">
-                        {r.name}
-                        {me && " (คุณ)"}
-                      </h3>
-                      <p className="mt-1 text-[10px] opacity-60 sm:text-sm">เล่นแล้ว {r.games} เกม</p>
-                      <p className="mt-3 text-xl font-bold tabular-nums sm:mt-5 sm:text-4xl">{r.score.toLocaleString("en-US")}</p>
-                      <p className="text-[10px] opacity-60 sm:text-sm">แต้ม</p>
-                    </article>
-                  </Reveal>
-                );
-              })}
+            <div className="flex flex-col items-center border border-[#17FFA2]/40 bg-[#0a1014]/90 px-6 py-14 text-center shadow-[10px_10px_0_0_#ff2a55] backdrop-blur-sm">
+              <Crown className="w-16" />
+              <h3 className="mt-4 text-2xl font-bold uppercase tracking-tight">ยังไม่มีข้อมูลอันดับ</h3>
+              <p className={`mt-2 max-w-xs text-sm leading-6 ${MUTED}`}>เล่นเกมรอบแรกเพื่อเป็นคนแรกบนกระดาน</p>
             </div>
+          ) : (
+            <>
+              {/* 3 อันดับแรก เรียง 2-1-3 ทุกขนาดจอ */}
+              <div ref={podiumRef} className="grid grid-cols-3 items-end gap-2 pt-6 sm:gap-4">
+                {podium.map((p, i) => {
+                  const rank = i + 1;
+                  const first = rank === 1;
+                  const mine = !!profile?.userId && p.userId === profile.userId;
+                  const pad = first
+                    ? "px-1.5 pb-9 pt-12 sm:px-6 sm:pb-12 sm:pt-14"
+                    : "px-1.5 pb-5 pt-9 sm:px-6 sm:pb-8 sm:pt-10";
+                  return (
+                    <Reveal
+                      key={p.userId || i}
+                      delay={i * 100}
+                      className={`${podiumOrder[i]} min-w-0 ${first ? "-mt-4 sm:-mt-6" : ""}`}
+                    >
+                      <article
+                        ref={first ? firstRef : undefined}
+                        style={{
+                          backgroundColor: TONE[i],
+                          color: INK[i],
+                          // ออร่านีออนรอบการ์ดอันดับ 1
+                          boxShadow: first
+                            ? "0 0 18px 4px rgba(23,255,162,.85), 0 0 60px 14px rgba(23,255,162,.5), 0 0 130px 36px rgba(23,255,162,.28)"
+                            : undefined,
+                        }}
+                        className={`relative flex min-w-0 flex-col items-center text-center outline outline-2 outline-white transition-transform duration-300 hover:-translate-y-1 sm:outline-4 ${pad}`}
+                      >
+                        <span className="absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-xs font-bold sm:left-5 sm:top-5 sm:h-9 sm:w-9 sm:text-sm">
+                          {rank}
+                        </span>
+                        <div className="relative mt-2 sm:mt-4">
+                          {first && <Crown className="absolute -top-6 left-1/2 w-9 -translate-x-1/2 -rotate-6 sm:-top-9 sm:w-14" />}
+                          <RankAvatar
+                            id={p.avatarId}
+                            size={`${first ? "h-16 w-16 sm:h-32 sm:w-32" : "h-12 w-12 sm:h-24 sm:w-24"} ring-2 ring-white/80 sm:ring-4`}
+                          />
+                        </div>
+                        <p className={`mt-2 max-w-full truncate font-bold tracking-tight sm:mt-5 ${first ? "text-sm sm:text-2xl" : "text-xs sm:text-2xl"}`}>
+                          {p.name}
+                          {mine && " (คุณ)"}
+                        </p>
+                        <p className="mt-0.5 text-[10px] opacity-60 sm:mt-1 sm:text-sm">เล่นแล้ว {p.games} เกม</p>
+                        {first ? (
+                          // อันดับ 1: เลขวิ่งขึ้นแล้วหยุดที่คะแนนจริง
+                          <p
+                            className="score-pop mt-2 max-w-full text-xl font-bold tabular-nums tracking-tight sm:mt-5 sm:text-5xl"
+                            style={done ? { animation: "score-pop 500ms ease-out" } : undefined}
+                            aria-label={`${p.score.toLocaleString("en-US")} แต้ม`}
+                          >
+                            {champScore.toLocaleString("en-US")}
+                          </p>
+                        ) : (
+                          <p className="mt-2 max-w-full text-base font-bold tabular-nums tracking-tight sm:mt-5 sm:text-5xl">
+                            {p.score.toLocaleString("en-US")}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-[10px] opacity-60 sm:mt-1 sm:text-xs">แต้ม</p>
+                      </article>
+                    </Reveal>
+                  );
+                })}
+              </div>
+
+              {/* อันดับที่ 4-5 */}
+              {rest.length > 0 && (
+                <ol className="mt-8 flex flex-col gap-2 sm:gap-3">
+                  {rest.map((p, i) => {
+                    const mine = !!profile?.userId && p.userId === profile.userId;
+                    return (
+                      <Reveal key={p.userId || i} delay={i * 90}>
+                        <li
+                          className={`flex items-center gap-3 border p-2.5 pr-4 backdrop-blur-sm transition-all duration-200 hover:border-[#17FFA2]/60 sm:gap-4 sm:p-3 sm:pr-6 ${
+                            mine
+                              ? "border-[#17FFA2] bg-[#17FFA2]/10 shadow-[0_0_18px_rgba(23,255,162,0.25)]"
+                              : "border-white/10 bg-[#0a1014]/90"
+                          }`}
+                        >
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center bg-white/10 text-base font-bold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
+                          <RankAvatar id={p.avatarId} size="h-11 w-11 sm:h-12 sm:w-12" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-base font-semibold sm:text-lg">
+                              {p.name}
+                              {mine && " (คุณ)"}
+                            </p>
+                            <p className={`text-xs sm:hidden ${MUTED}`}>{p.games} เกม</p>
+                          </div>
+                          <span className={`hidden text-sm sm:inline ${MUTED}`}>{p.games} เกม</span>
+                          <span className="w-20 text-right text-lg font-bold tabular-nums text-[#17FFA2] sm:w-24 sm:text-xl">{p.score.toLocaleString("en-US")}</span>
+                        </li>
+                      </Reveal>
+                    );
+                  })}
+                </ol>
+              )}
+
+              {/* อันดับ 6 โชว์จางๆ เป็นการบอกใบ้ว่ายังมีต่อ */}
+              {peek && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none mt-2 select-none opacity-45 sm:mt-3 [mask-image:linear-gradient(to_bottom,black,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,black,transparent)]"
+                >
+                  <div className="flex items-center gap-3 border border-white/10 bg-[#0a1014]/90 p-2.5 pr-4 sm:gap-4 sm:p-3 sm:pr-6">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center bg-white/10 text-base font-bold tabular-nums sm:h-12 sm:w-12">{RANK_LIMIT + 1}</span>
+                    <RankAvatar id={peek.avatarId} size="h-11 w-11 sm:h-12 sm:w-12" />
+                    <p className="min-w-0 flex-1 truncate text-base font-semibold sm:text-lg">{peek.name}</p>
+                    <span className="w-20 text-right text-lg font-bold tabular-nums text-[#17FFA2] sm:w-24 sm:text-xl">{peek.score.toLocaleString("en-US")}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* ดูเพิ่มเติม -> หน้า /rank */}
+              <Reveal className={`${peek ? "mt-2" : "mt-10"} flex flex-col items-center gap-3`}>
+                <Button href="/rank">ดูเพิ่มเติม</Button>
+                {totalParticipants > RANK_LIMIT && (
+                  <p className={`text-sm ${MUTED}`}>และผู้เข้าร่วมอีก {(totalParticipants - RANK_LIMIT).toLocaleString("en-US")} คน</p>
+                )}
+              </Reveal>
+            </>
           )}
         </div>
       </section>
