@@ -10,16 +10,13 @@ import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 // ===== ตั้งค่าเกม (ปรับสมดุลได้ที่นี่) =====
 const GAME_ID = "memorymatch"; // key ที่ใช้บวกแต้มเข้า gameScores
 const DURATION = 60; // เวลาเริ่มต้น (วินาที)
-const PAIR_POINTS = 20; // แต้มต่อคู่ (คูณคอมโบ)
-const MAX_MULT = 5; // คอมโบสูงสุด
-const FIRE_COMBO = 3; // จับคู่ติดกันกี่ครั้งถึง "ติดไฟ"
-const CLEAR_BONUS = 50; // โบนัสผ่านด่าน (× เลขด่าน)
-const PERFECT_BONUS = 50; // โบนัสผ่านด่านโดยไม่พลาดเลย
+const STAGE_POINTS = 3; // คะแนนต่อด่านที่ผ่าน (ไม่มีตัวคูณ)
+const FIRE_COMBO = 3; // จับคู่ถูกติดกันกี่ครั้งถึง "ติดไฟ"
 const CLEAR_TIME = 6; // ผ่านด่านได้เวลาเพิ่ม (วินาที)
 const MISS_TIME = 2; // พลาดเสียเวลา (วินาที)
-const STAGE_PAIRS = [4, 6, 8, 10, 12]; // จำนวนคู่ในแต่ละด่าน (ด่านหลังจากนี้ใช้ขนาดสุดท้าย)
-const PEEK_MS = [2200, 2800, 3400, 4000, 4600]; // เวลาให้จำก่อนคว่ำการ์ด
-const STAR_AT = [150, 400, 800]; // คะแนนที่ต้องทำให้ได้ 1 / 2 / 3 ดาว
+const STAGE_PAIRS = [4, 6, 8]; // ด่าน 1=4 คู่, ด่าน 2=6 คู่, ด่าน 3 เป็นต้นไป=8 คู่ (คงที่)
+const PEEK_MS = [2200, 2800, 3400]; // เวลาให้จำก่อนคว่ำการ์ด (ด่าน 3 เป็นต้นไปเท่ากัน)
+const STAR_AT = [6, 15, 30]; // คะแนนที่ต้องทำให้ได้ 1 / 2 / 3 ดาว (2 / 5 / 10 ด่าน)
 const RANKS = ["ซ้อมต่ออีกนิด", "ความจำดี", "ความจำเยี่ยม", "ความจำเหนือมนุษย์"];
 const PALETTE = ["#A8B5E8", "#F4A58A", "#9CC593", "#F4D35E", "#B7CBB0"];
 const TOP_PAD = 132; // เว้นที่ให้ HUD ด้านบน
@@ -394,17 +391,17 @@ export default function MemoryMatchPage() {
     force();
   }
 
+  // ผ่านด่านได้ STAGE_POINTS คะแนนเท่ากันทุกด่าน (PERFECT! เป็นเอฟเฟกต์อย่างเดียว ไม่มีโบนัส)
   function stageClear(cur: G) {
     cur.phase = "clear";
     const perfect = cur.stageMisses === 0;
-    const bonus = CLEAR_BONUS * cur.stage + (perfect ? PERFECT_BONUS : 0);
-    cur.score += bonus;
+    cur.score += STAGE_POINTS;
     cur.timeLeft += CLEAR_TIME;
     cur.lastSec = Math.ceil(cur.timeLeft);
     if (perfect) cur.perfects += 1;
     sfx.clear();
     screenPop(0.3, `ด่าน ${cur.stage} สำเร็จ!`, "#1F2A5C", perfect ? "PERFECT!" : "", true, 1400);
-    screenPop(0.42, `+${bonus}`, "#27272A", "", false, 1400);
+    screenPop(0.42, `+${STAGE_POINTS} คะแนน`, "#27272A", "", false, 1400);
     screenPop(0.5, `+${CLEAR_TIME} วินาที`, "#4D7C3A", "", false, 1400);
     later(() => {
       if (gRef.current !== cur || cur.phase !== "clear") return;
@@ -413,24 +410,27 @@ export default function MemoryMatchPage() {
   }
 
   // ตัดสินคู่ทันทีที่เปิดใบที่สอง และไม่ล็อกกระดาน ผู้เล่นเปิดใบถัดไปได้ต่อเนื่องระหว่างที่เอฟเฟกต์ยังเล่นอยู่
+  // จับคู่ถูกไม่ได้คะแนน แต่นับคอมโบ (จับถูกติดกัน)
   function resolveMatch(cur: G, a: number, b: number) {
     cur.matched[a] = true;
     cur.matched[b] = true;
     cur.combo += 1;
     cur.best = Math.max(cur.best, cur.combo);
     cur.pairsDone += 1;
-    const mult = Math.min(MAX_MULT, cur.combo);
-    const pts = PAIR_POINTS * mult;
-    cur.score += pts;
     const A = cardCenter(a), B = cardCenter(b);
     const color = SHAPES[cur.deck[a]].color;
     const hot = cur.combo >= FIRE_COMBO;
+    const combo = cur.combo;
     // เลื่อนเฉพาะ "ภาพเอฟเฟกต์" ไปอีกนิดให้เห็นหน้าการ์ดที่เพิ่งพลิกก่อน ตัวเกมไม่รอ
     later(() => {
       if (gRef.current !== cur) return;
       addFx({ kind: "burst", x: A.x, y: A.y, color });
       addFx({ kind: "burst", x: B.x, y: B.y, color });
-      addFx({ kind: "text", x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, text: `+${pts}${mult > 1 ? ` ×${mult}` : ""}`, color: hot ? "#E8643C" : "#27272A" });
+      addFx({
+        kind: "text", x: (A.x + B.x) / 2, y: (A.y + B.y) / 2,
+        text: combo > 1 ? `คอมโบ ${combo}` : "ถูกต้อง!",
+        color: hot ? "#E8643C" : "#27272A",
+      });
     }, 180);
     sfx.match(cur.combo);
     if (cur.combo === FIRE_COMBO) {
@@ -537,7 +537,6 @@ export default function MemoryMatchPage() {
   const boardH = lay.rows * lay.size + (lay.rows - 1) * lay.gap;
   const over = g.phase === "over";
   const peek = g.phase === "peek";
-  const nextMult = Math.min(MAX_MULT, g.combo + 1);
   const onFire = g.combo >= FIRE_COMBO && g.phase === "playing";
   const timeLow = g.lastSec <= 10 && (g.phase === "playing" || g.phase === "clear");
   const pairsLeft = (g.deck.length - g.matched.filter(Boolean).length) / 2;
@@ -710,13 +709,13 @@ export default function MemoryMatchPage() {
               ) : null}
             </div>
 
-            {/* ตัวคูณคอมโบ มุมล่างขวา ติดไฟเมื่อ onFire */}
+            {/* คอมโบ (จับถูกติดกัน) มุมล่างขวา ติดไฟเมื่อ onFire */}
             <div className="absolute bottom-3 right-3 select-none text-right sm:bottom-5 sm:right-5">
               <div className="relative inline-block px-4 pt-7">
                 {onFire && (
                   <>
                     <span aria-hidden className="absolute bottom-0 right-4 text-6xl font-black italic leading-[1.05] tracking-tighter text-[#FF7A1A] blur-md sm:text-7xl" style={{ animation: "mm-glow .5s ease-in-out infinite alternate" }}>
-                      ×{nextMult}
+                      {g.combo}
                     </span>
                     <span className="absolute left-4 top-3 text-2xl" style={{ animation: "mm-rise-fire 1s ease-out infinite" }} aria-hidden>🔥</span>
                     <span className="absolute left-1/2 top-1 text-3xl" style={{ animation: "mm-rise-fire .85s .25s ease-out infinite" }} aria-hidden>🔥</span>
@@ -724,15 +723,15 @@ export default function MemoryMatchPage() {
                   </>
                 )}
                 <p
-                  key={nextMult}
+                  key={g.combo}
                   className={`relative px-3 py-1 text-6xl font-black italic leading-[1.05] tabular-nums tracking-tighter sm:text-7xl ${onFire ? "bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text text-transparent" : "text-zinc-900"}`}
                   style={{ animation: "mm-bump .3s ease-out", ...(onFire ? {} : { textShadow: "0 2px 0 rgba(255,255,255,.9), 0 0 12px rgba(255,255,255,.9)" }) }}
                 >
-                  ×{nextMult}
+                  {g.combo}
                 </p>
               </div>
               <p className={`-mt-1 pr-4 text-sm font-semibold ${onFire ? "text-[#E8884A]" : "text-zinc-500"}`}>
-                {onFire ? "ติดไฟ!" : `ติดกัน ${g.combo}`}
+                {onFire ? "คอมโบติดไฟ!" : "คอมโบ"}
               </p>
             </div>
 
@@ -804,11 +803,11 @@ export default function MemoryMatchPage() {
                   <p className="text-xs text-zinc-600">แม่นยำ</p>
                 </div>
                 <div className="rounded-2xl bg-[#F4A58A]/50 py-3">
-                  <p className="text-xl font-semibold tabular-nums">{g.stage}</p>
-                  <p className="text-xs text-zinc-600">ด่านสูงสุด</p>
+                  <p className="text-xl font-semibold tabular-nums">{g.score / STAGE_POINTS}</p>
+                  <p className="text-xs text-zinc-600">ด่านที่ผ่าน</p>
                 </div>
                 <div className="rounded-2xl bg-[#F2994A]/40 py-3">
-                  <p className="text-xl font-semibold tabular-nums">×{Math.min(MAX_MULT, g.best)}</p>
+                  <p className="text-xl font-semibold tabular-nums">{g.best}</p>
                   <p className="text-xs text-zinc-600">คอมโบสูงสุด</p>
                 </div>
               </div>
