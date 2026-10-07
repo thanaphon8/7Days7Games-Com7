@@ -31,12 +31,10 @@ type View = {
   oppLeft: boolean;
 };
 type Anim = { entry: Shot; step: 0 | 1 | 2 };
-type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
 
 const TOTAL = 6;
 const TB_TARGET = 2;
 const TB_SHOTS = 3;
-const WIN_BONUS = 200;
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
 const COLORS = ["#F4D35E", "#A8B5E8"];
 const CONF = ["#F4D35E", "#A8B5E8", "#F4A58A", "#FFFFFF"];
@@ -434,7 +432,7 @@ function Pitch({
               className="mt-3 inline-block rounded-full px-5 py-1.5 text-2xl font-semibold tabular-nums sm:text-3xl"
               style={{ background: iScored ? "#27272A" : "#F4D35E", color: iScored ? "#F4D35E" : "#27272A" }}
             >
-              {iScored ? "+100 แต้ม" : "คู่แข่ง +100"}
+              {iScored ? "+1 แต้ม" : "คู่แข่ง +1"}
             </p>
           </div>
         </div>
@@ -500,7 +498,7 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
       </div>
       {gain && (
         <span key={gain} className="kb-gain absolute -top-2 right-4 z-20 rounded-full bg-zinc-900 px-3 py-1 text-sm font-semibold text-[#F4D35E] shadow-lg">
-          +100
+          +1
         </span>
       )}
     </div>
@@ -525,8 +523,6 @@ export default function KickBattle() {
   const [tbIntro, setTbIntro] = useState(false);
   const [portrait, setPortrait] = useState(false);
   const [confirmExit, setConfirmExit] = useState(false);
-  const [forfeit, setForfeit] = useState<SaveState>("idle");
-  const forfeitRef = useRef("");
   const initRef = useRef(false);
   const introKey = useRef("");
   const tbKey = useRef("");
@@ -554,54 +550,6 @@ export default function KickBattle() {
     []
   );
 
-  async function claimForfeit(v: View) {
-    const key = `kb_forfeit_${v.code}_${v.match}`;
-    if (v.awardSaved?.[v.you] || (v.earned?.[v.you] ?? 0) > 0) {
-      setForfeit("saved");
-      return;
-    }
-    try {
-      if (localStorage.getItem(key)) {
-        setForfeit("saved");
-        return;
-      }
-    } catch {}
-    let userId: string | null = null;
-    try {
-      const pr = JSON.parse(localStorage.getItem("profile") || "null");
-      userId = pr?.userId || pr?.id || pr?._id || null;
-    } catch {}
-    if (!userId) {
-      setForfeit("guest");
-      return;
-    }
-    setForfeit("saving");
-    try {
-      const r = await fetch("/api/user", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, gameKey: "kickbattle", score: v.total * 100 + WIN_BONUS }),
-      });
-      const j = await r.json().catch(() => null);
-      if (r.ok && j?.success) {
-        try {
-          localStorage.setItem(key, "1");
-        } catch {}
-        setForfeit("saved");
-      } else setForfeit("error");
-    } catch {
-      setForfeit("error");
-    }
-  }
-
-  useEffect(() => {
-    if (!view || !me || view.status !== "playing" || !view.oppLeft) return;
-    const key = `${view.code}-${view.match}`;
-    if (forfeitRef.current === key) return;
-    forfeitRef.current = key;
-    claimForfeit(view);
-  }, [view, me]);
-
   useEffect(() => {
     const f = () => setPortrait(window.innerWidth < window.innerHeight);
     f();
@@ -625,7 +573,6 @@ export default function KickBattle() {
     tbKey.current = "";
     setTbIntro(false);
     setConfirmExit(false);
-    setForfeit("idle");
     setCode(null);
     setView(null);
     setSel(null);
@@ -909,9 +856,9 @@ export default function KickBattle() {
           <h3 className="text-lg font-semibold tracking-tight">กติกา</h3>
           <ul className="mt-3 flex flex-col gap-2 text-sm leading-6 text-zinc-600">
             <li>ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
-            <li>ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 100 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 100 แต้ม และแต้มบวกเข้าคะแนนรวมทันที</li>
-            <li>สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ผู้ชนะรับโบนัสเพิ่ม 200 แต้ม</li>
-            <li>ถ้าผู้เล่นคนใดออกจากเกมระหว่างเล่น ห้องจะถูกยกเลิกและเกมจบ ผู้ที่ยังอยู่ชนะโดยปริยาย ได้แต้มเหมือนยิงเข้าทุกลูก (ลูกละ 100 แต้ม ครบ 6 ลูก = 600 แต้ม) บวกโบนัสผู้ชนะ 200 แต้ม รวม 800 แต้ม และบันทึกเข้าคะแนนรวม</li>
+            <li>ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 1 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 1 แต้ม และแต้มบวกเข้าคะแนนรวมทันที ทั้งผู้ชนะและผู้แพ้ได้แต้มตามลูกที่ตัวเองทำได้</li>
+            <li>สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ไม่มีโบนัสผู้ชนะ</li>
+            <li>ถ้าผู้เล่นคนใดออกจากเกมระหว่างเล่น ห้องจะถูกยกเลิกและเกมจบ ผู้ที่ยังอยู่ชนะโดยปริยาย ได้เฉพาะแต้มที่ทำได้จริงก่อนจบเกม</li>
             <li>วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
@@ -1024,8 +971,8 @@ export default function KickBattle() {
         style={{ padding: "calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px)" }}
       >
         <div className="mx-auto flex max-w-3xl gap-2 sm:gap-3">
-          <PlayerPill p={view.players[0]} score={sc[0] * 100} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou={you === 0} dots={dotsFor(0)} />
-          <PlayerPill p={view.players[1]} score={sc[1] * 100} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
+          <PlayerPill p={view.players[0]} score={sc[0]} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou={you === 0} dots={dotsFor(0)} />
+          <PlayerPill p={view.players[1]} score={sc[1]} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
         </div>
         <div className="mt-2 flex justify-center">
           <span className={`${PILL} !py-1 text-xs font-medium`}>{statusText}</span>
@@ -1106,7 +1053,6 @@ export default function KickBattle() {
             <p className="text-7xl">🔥</p>
             <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">แต้มเสมอ ต่อเวลา!</p>
             <p className="mt-3 text-sm leading-6 opacity-80">ยิงกันต่ออีกสูงสุด {TB_SHOTS} ลูก ใครได้ {TB_TARGET} แต้มก่อนชนะ</p>
-            <p className="mt-1 text-sm opacity-80">ผู้ชนะรับโบนัส +200 แต้ม</p>
           </div>
         </div>
       )}
@@ -1127,12 +1073,11 @@ export default function KickBattle() {
               {[you, opp].map((i, k) => (
                 <div key={i} className="rounded-3xl py-5 text-zinc-900" style={{ background: COLORS[i] }}>
                   <p className="truncate px-2 text-xs opacity-70">{k === 0 ? "คุณ" : view.players[i]?.name || "คู่แข่ง"}</p>
-                  <p className="text-5xl font-semibold tabular-nums tracking-tight">{sc[i] * 100}</p>
+                  <p className="text-5xl font-semibold tabular-nums tracking-tight">{sc[i]}</p>
                 </div>
               ))}
             </div>
 
-            {iWon && <p className="kb-pop mt-4 inline-block rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-[#F4D35E]">โบนัสผู้ชนะ +200 แต้ม</p>}
             {view.earned[you] > 0 &&
               (view.awardSaved[you] ? (
                 <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
@@ -1179,26 +1124,11 @@ export default function KickBattle() {
             <p className="mt-2 text-sm text-zinc-500">ห้องนี้ถูกยกเลิกและเกมจบลงแล้ว</p>
 
             <div className="mt-5 rounded-3xl bg-[#F4D35E] py-5 text-zinc-900">
-              <p className="text-xs opacity-70">เหมือนชนะแบบยิงเข้าทุกลูก</p>
-              <p className="text-6xl font-semibold tabular-nums tracking-tight">+{view.total * 100 + WIN_BONUS}</p>
-              <div className="mt-3 flex justify-center gap-2 text-xs">
-                <span className="rounded-full bg-white/70 px-3 py-1">ยิงเข้าทุกลูก {view.total * 100}</span>
-                <span className="kb-pop rounded-full bg-zinc-900 px-3 py-1 text-[#F4D35E]">โบนัสผู้ชนะ +{WIN_BONUS}</span>
-              </div>
+              <p className="text-xs opacity-70">แต้มที่คุณทำได้ในเกมนี้</p>
+              <p className="text-6xl font-semibold tabular-nums tracking-tight">+{view.earned[you]}</p>
             </div>
-
-            {forfeit === "saving" && <p className="mt-3 rounded-2xl bg-zinc-50 px-4 py-2.5 text-sm text-zinc-500">กำลังบันทึกแต้ม…</p>}
-            {forfeit === "saved" && (
-              <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">บวก {view.total * 100 + WIN_BONUS} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
-            )}
-            {forfeit === "guest" && <p className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">เข้าสู่ระบบเพื่อบันทึกแต้มเข้าอันดับ</p>}
-            {forfeit === "error" && (
-              <div className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">
-                บันทึกแต้มไม่สำเร็จ
-                <button onClick={() => claimForfeit(view)} className="ml-2 font-medium underline">
-                  ลองอีกครั้ง
-                </button>
-              </div>
+            {view.earned[you] > 0 && view.awardSaved[you] && (
+              <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
             )}
 
             <div className="mt-5 flex flex-col gap-2">
@@ -1218,7 +1148,7 @@ export default function KickBattle() {
           <div className="kb-pop w-full max-w-sm rounded-[2rem] bg-white p-7 text-center text-zinc-900">
             <p className="text-5xl">🚪</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight">ออกจากเกมนี้?</h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ ห้องจะถูกยกเลิกและเกมจะจบ คุณจะไม่ได้แต้มจากรอบนี้ และคู่แข่งจะชนะโดยได้แต้มเต็ม {view.total * 100} บวกโบนัสผู้ชนะ {WIN_BONUS} รวม {view.total * 100 + WIN_BONUS} แต้ม</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ ห้องจะถูกยกเลิกและเกมจะจบ แต้มที่คุณทำได้แล้วจะยังถูกเก็บไว้ ส่วนคู่แข่งจะชนะโดยปริยาย</p>
             <div className="mt-6 flex flex-col gap-2">
               <button onClick={() => setConfirmExit(false)} className={BTN_MAIN}>
                 เล่นต่อ

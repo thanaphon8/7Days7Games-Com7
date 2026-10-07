@@ -28,8 +28,7 @@ type RoomDoc = Room & { _id: string; v: number; updatedAt: Date };
 const DB_NAME = "7days7games";
 const ROOMS_COL = "kb_rooms";
 const GAME_KEY = "kickbattle";
-const POINTS_PER_HIT = 100;
-const WINNER_BONUS = 200;
+const POINTS_PER_HIT = 1; // ยิงเข้าหรือเซฟได้ +1 แต้ม (ไม่มีโบนัสผู้ชนะ)
 const TOTAL = 6;
 const TIEBREAK_TARGET = 2;
 const ROOM_TTL_SECONDS = 3 * 3600;
@@ -279,6 +278,7 @@ async function handle(body: any) {
         room.history.push({ round: room.history.length, shooter, shot, keep, goal });
         room.picks = {};
 
+        // ยิงเข้า -> ผู้ยิงได้แต้ม / เซฟได้ -> ผู้รับได้แต้ม
         gain[goal ? shooter : 1 - shooter] += POINTS_PER_HIT;
 
         const n = room.history.length;
@@ -293,7 +293,7 @@ async function handle(body: any) {
         if (winner !== null) {
           room.status = "finished";
           room.winner = winner;
-          gain[winner] += WINNER_BONUS;
+          // ไม่มีโบนัสผู้ชนะ
         }
         room.earned = [room.earned[0] + gain[0], room.earned[1] + gain[1]];
       }

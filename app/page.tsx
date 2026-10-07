@@ -78,7 +78,7 @@ const COVERS: Record<string, string> = {
   kickbattle: "/img/kickbattlelogo.jpg",
   basketball: "/img/basketballlogo.jpg",
   memorymatch: "/img/memorymatchlogo.jpg",
-  com7quiz: "/img/com7gamelogo.png",
+  com7quiz: "/img/com7gamelogo.jpg",
 };
 
 const toneHex = (g: Game) => g.tone.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? "#52525B";
