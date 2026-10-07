@@ -804,7 +804,7 @@ export default function Home() {
 
       {/* Events เต็มความกว้างจอ พร้อมเอฟเฟกต์เปิดแบบ hero */}
       <div className="events-stage w-full">
-        <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId} />
+        <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId} onPlayGame={(id) => { setOpenId(null); setGameId(id); }} />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_100%,rgba(23,255,162,0.16),transparent_45%)]" aria-hidden="true" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#17FFA2] to-transparent shadow-[0_0_14px_#17FFA2]" aria-hidden="true" />
       </div>
@@ -1124,6 +1124,10 @@ export default function Home() {
         saved={saved}
         toggleSave={toggleSave}
         onClose={() => setOpenId(null)}
+        onPlayGame={(id) => {
+          setOpenId(null);
+          setGameId(id);
+        }}
         onPlay={() => {
           setOpenId(null);
           setFavOpen(false);

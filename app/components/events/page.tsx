@@ -61,6 +61,8 @@ export type EventItem = {
   prize?: { rank: string; amount: string; unit: string };
   info: [string, string][];
   rules: string[];
+  gameId?: string; // ถ้ามี: ปุ่มเล่นจะเปิดหน้ารายละเอียดเกมนี้ก่อน (แทนการพาไปหน้าเกมทันที)
+  rulesTitle?: string; // หัวข้อรายการกติกา (ค่าเริ่มต้น "กติกา")
 };
 
 export const EVENTS: EventItem[] = [
@@ -78,25 +80,28 @@ export const EVENTS: EventItem[] = [
     },
   },
   {
-    id: "main", status: "NOW", meta: "เหลืออีก 4 วัน", lines: ["7 Days", "7 Games"],
-    desc: "พักสมองด้วยเกมสั้นๆ เล่นคนเดียว สะสมแต้ม แล้วลุ้นอันดับ เมื่อครบ 7 วันจะประกาศผู้ชนะ",
+    id: "main", status: "NOW", meta: "แนะนำเว็บไซต์", lines: ["7 Days", "7 Games"],
+    desc: "รวมมินิเกมสั้นๆ ให้เล่นพักสมอง เก็บคะแนนสะสมจากทุกรอบ ขึ้นอันดับเทียบกับเพื่อนร่วมงาน แล้วลุ้นเป็นผู้ชนะเมื่อครบ 7 วัน",
     cta: "เลือกเกม", href: "#games", bg: "#F4A58A", fg: "#4A2412", visual: "shapes",
-    info: [["ระยะเวลา", "7 วัน"], ["รูปแบบ", "เล่นคนเดียว"], ["การนับแต้ม", "คะแนนสูงสุดของแต่ละเกมรวมกัน"]],
-    rules: ["สมัครด้วยอีเมลบริษัทและตั้งชื่อที่จะแสดงบนอันดับ", "เลือกเล่นเกมไหนก็ได้ เล่นซ้ำเพื่อทำคะแนนให้สูงขึ้น", "ดูอันดับของตัวเองได้ตลอดเวลา", "เมื่อครบ 7 วัน ผู้ที่ได้แต้มรวมสูงสุดคือผู้ชนะ"],
+    rulesTitle: "ที่นี่ทำอะไรได้บ้าง",
+    info: [["เล่นมินิเกม", "หลายแนว เล่นจบภายใน 1-5 นาที"], ["เก็บคะแนน", "ทุกรอบที่เล่นจบ แต้มสะสมเข้าคะแนนรวมของคุณ"], ["จัดอันดับ", "ดูอันดับทั้งบริษัท อัปเดตทุกครั้งที่มีคนเล่นจบ"]],
+    rules: ["สมัครด้วยอีเมลบริษัทและตั้งชื่อที่จะแสดงบนอันดับ", "เลือกเล่นเกมไหนก็ได้ที่เปิดอยู่ เล่นซ้ำได้ไม่จำกัดเพื่อทำคะแนนให้สูงขึ้น", "แต้มจากทุกเกมถูกบวกสะสมเข้าคะแนนรวม และดูอันดับของตัวเองได้ตลอดเวลาในหน้าอันดับ", "กดหัวใจเพื่อบันทึกเกมและกิจกรรมที่สนใจไว้ดูในรายการโปรด", "ติดตามกิจกรรมพิเศษอย่าง PUBG Mobile Cup ได้จากหน้านี้", "เมื่อครบ 7 วัน ผู้ที่ได้แต้มรวมสูงสุดคือผู้ชนะ"],
   },
   {
-    id: "memory", status: "SOON", meta: "เริ่ม 12 ต.ค. 2026", lines: ["แข่งจับคู่", "ความจำ"],
-    desc: "ทุกคนเล่นรอบเดียว ใครจับคู่ได้ไวที่สุดและพลาดน้อยที่สุดคือผู้ชนะ",
-    cta: "ดูรายละเอียด", href: "#", bg: "#F4D35E", fg: "#4A3B00", visual: "memory",
-    info: [["เริ่มแข่ง", "12 ต.ค. 2026"], ["รูปแบบ", "เล่นได้รอบเดียวต่อคน"], ["ตัดสินจาก", "จำนวนครั้งที่พลิกและเวลาที่ใช้"]],
-    rules: ["ทุกคนเล่นได้เพียงหนึ่งรอบ", "คะแนนคิดจากจำนวนครั้งที่พลิกและเวลาที่ใช้", "ผู้ที่ได้คะแนนสูงสุดเป็นผู้ชนะ", "รายละเอียดรางวัลจะประกาศก่อนวันแข่ง"],
+    id: "event-basketball", status: "NOW", meta: "เล่นได้แล้ว", lines: ["Basketball", "Challenge"],
+    desc: "ปัดลูกบาสให้เข้าห่วงใน 1 นาที ยิงเข้าติดกันคะแนนคูณ ลูกบาสติดไฟ!",
+    cta: "เล่นเลย", href: "/game/basketball", gameId: "basketball", bg: "#F2B27A", fg: "#4A2A0A", visual: "shapes",
+    image: "/img/basketballlogo.jpg",
+    info: [["เวลาต่อรอบ", "1 นาที"], ["รูปแบบ", "เล่นคนเดียว"], ["การนับคะแนน", "10 แต้มต่อลูก คูณตามลูกที่เข้าติดกัน (สูงสุด ×10)"]],
+    rules: ["ลากลูกบาสแล้วปัดขึ้นไปทางห่วง ยิ่งปัดแรงลูกยิ่งลอยสูง", "เวลา 60 วินาที เริ่มนับถอยหลังหลังขึ้นคำว่า GO!!!", "ลูกเข้าได้ 10 แต้ม ถ้าเข้าติดกันจะคูณ ×2, ×3 ... สูงสุด ×10 พลาดแล้วคอมโบหลุด", "เข้าติดกัน 3 ลูกขึ้นไป ลูกบาสจะติดไฟ และแต้มทั้งหมดจะถูกบวกสะสมเข้าคะแนนรวม"],
   },
   {
-    id: "2048", status: "SOON", meta: "เริ่ม 19 ต.ค. 2026", lines: ["2048", "Showdown"],
-    desc: "รวมเลขให้ได้แต้มสูงสุดภายใน 10 นาที ลุ้นขึ้นอันดับหนึ่งของบริษัท",
-    cta: "ดูรายละเอียด", href: "#", bg: "#A8B5E8", fg: "#1F2A5C", visual: "tiles",
-    info: [["เริ่มแข่ง", "19 ต.ค. 2026"], ["เวลา", "10 นาทีต่อรอบ"], ["ตัดสินจาก", "แต้มสูงสุดที่ทำได้"]],
-    rules: ["มีเวลาเล่น 10 นาทีต่อรอบ", "นับแต้มจากรอบที่ดีที่สุดของแต่ละคน", "ผู้ที่ได้แต้มสูงสุดเป็นผู้ชนะ", "รายละเอียดรางวัลจะประกาศก่อนวันแข่ง"],
+    id: "event-memorymatch", status: "NOW", meta: "เล่นได้แล้ว", lines: ["Memory", "Match"],
+    desc: "จำตำแหน่งการ์ดให้แม่น จับคู่ให้ติดกันเพื่อคูณคะแนน แล้วผ่านด่านให้ไกลที่สุดก่อนหมดเวลา",
+    cta: "เล่นเลย", href: "/game/memorymatch", gameId: "memorymatch", bg: "#A8B5E8", fg: "#1F2A5C", visual: "memory",
+    image: "/img/memorymatchlogo.jpg",
+    info: [["เวลาเริ่มต้น", "60 วินาที"], ["รูปแบบ", "เล่นคนเดียว"], ["การนับคะแนน", "20 แต้มต่อคู่ × คอมโบ (สูงสุด ×5) บวกโบนัสผ่านด่าน"]],
+    rules: ["ทุกด่านจะเปิดการ์ดให้ดูสั้นๆ จำตำแหน่งให้แม่น แล้วการ์ดจะคว่ำลง เวลาจะเดินเมื่อการ์ดคว่ำ", "แตะการ์ดทีละ 2 ใบ ถ้าเหมือนกันถือว่าจับคู่ได้ ถ้าไม่เหมือนจะเสียเวลา 2 วินาทีและคอมโบหลุด", "จับคู่ได้คู่ละ 20 แต้ม จับติดกันจะคูณ ×2, ×3 ... สูงสุด ×5 ผ่านด่านได้โบนัสแต้มและเวลาเพิ่ม 6 วินาที", "ยิ่งผ่านด่านไกล การ์ดยิ่งเยอะ (8 → 24 ใบ) และแต้มทั้งหมดจะถูกบวกสะสมเข้าคะแนนรวม"],
   },
 ];
 
@@ -215,7 +220,7 @@ function HeartButton({ on, onClick, className = "", tabIndex = 0, style }: { on:
 type SlideState = "active" | "out" | "idle";
 
 function EventCard({
-  e, titleTag, saved, toggleSave, onOpen, state, animKey, onNavigate,
+  e, titleTag, saved, toggleSave, onOpen, state, animKey, onNavigate, onPlayGame,
 }: {
   e: EventItem;
   titleTag: "h1" | "h2" | "h3";
@@ -225,10 +230,17 @@ function EventCard({
   state: SlideState;
   animKey: number;
   onNavigate?: () => void;
+  onPlayGame?: (gameId: string) => void;
 }) {
   const Title = titleTag;
   const isMain = e.id === "main";
   const live = state === "active";
+  // จำ key ตอนที่สไลด์ขึ้นแสดง และคงไว้ตอนที่สไลด์กำลังออก
+  // (เดิม key เปลี่ยนทันทีที่สไลด์ออก ทำให้ข้อความ/ปุ่มถูกสร้างใหม่แล้วเล่นแอนิเมชันเข้าซ้ำ จึงกะพริบหายแล้วโผล่)
+  const actKey = useRef(animKey);
+  const wasLive = useRef(live);
+  if (live && !wasLive.current) actKey.current = animKey;
+  wasLive.current = live;
   const stop = (ev: React.MouseEvent) => {
     ev.stopPropagation();
     onNavigate?.();
@@ -268,8 +280,8 @@ function EventCard({
         className="absolute top-3 z-10 md:top-5"
       />
 
-      {/* key เปลี่ยนทุกครั้งที่สไลด์ขึ้น เพื่อให้แอนิเมชันข้อความเล่นใหม่ */}
-      <div key={live ? `on-${animKey}` : "off"} className="relative z-10 flex flex-col justify-between gap-4 p-2 md:p-4">
+      {/* key เปลี่ยนเฉพาะตอนสไลด์ขึ้น เพื่อให้แอนิเมชันข้อความเล่นใหม่ (ไม่เปลี่ยนตอนสไลด์ออก) */}
+      <div key={`act-${actKey.current}`} className="relative z-10 flex flex-col justify-between gap-4 p-2 md:p-4">
         <div className="ev-rise flex items-center gap-2.5">
           <Badge status={e.status} dark />
           <span className="text-xs text-white/70">{e.meta}</span>
@@ -287,7 +299,17 @@ function EventCard({
           <div className="ev-rise mt-5 flex flex-wrap gap-3" style={{ animationDelay: "300ms" }}>
             <a
               href={e.href}
-              onClick={e.href === "#" ? (ev) => { ev.preventDefault(); } : stop}
+              onClick={
+                e.gameId
+                  ? (ev) => {
+                      ev.preventDefault();
+                      ev.stopPropagation();
+                      onPlayGame?.(e.gameId!);
+                    }
+                  : e.href === "#"
+                  ? (ev) => { ev.preventDefault(); }
+                  : stop
+              }
               tabIndex={live ? 0 : -1}
               className={skewBtn("solid")}
             >
@@ -318,11 +340,13 @@ export default function EventsCarousel({
   toggleSave = () => {},
   setOpenId = () => {},
   overlayOpen = false,
+  onPlayGame = () => {},
 }: {
   saved?: string[];
   toggleSave?: (id: string) => void;
   setOpenId?: (id: string | null) => void;
   overlayOpen?: boolean;
+  onPlayGame?: (gameId: string) => void;
 }) {
   const n = EVENTS.length;
   const [active, setActive] = useState(0);
@@ -390,7 +414,7 @@ export default function EventsCarousel({
         @keyframes sheet-in { from { opacity: 0; transform: translateY(28px) scale(.98); } to { opacity: 1; transform: none; } }
 
         @keyframes evIn {
-          from { clip-path: inset(0 0 0 100%); transform: scale(1.18) translateX(50px); filter: brightness(2.2) saturate(1.5); }
+          from { clip-path: inset(0 0 0 100%); transform: scale(1.18) translateX(50px); filter: brightness(1.5) saturate(1.2); }
           to   { clip-path: inset(0 0 0 0); transform: none; filter: none; }
         }
         @keyframes evOut {
@@ -437,6 +461,7 @@ export default function EventsCarousel({
             saved={saved}
             toggleSave={toggleSave}
             onOpen={() => setOpenId(e.id)}
+            onPlayGame={onPlayGame}
             state={i === active ? "active" : i === prev ? "out" : "idle"}
             animKey={tick}
           />
@@ -556,7 +581,7 @@ function Bracket({ teams, accent }: { teams: string[]; accent: string }) {
   );
 }
 
-export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: EventItem | null; saved: string[]; toggleSave: (id: string) => void; onClose: () => void; onPlay: () => void }) {
+export function EventDetail({ sel, saved, toggleSave, onClose, onPlay, onPlayGame = () => {} }: { sel: EventItem | null; saved: string[]; toggleSave: (id: string) => void; onClose: () => void; onPlay: () => void; onPlayGame?: (gameId: string) => void }) {
   useOverlay(!!sel, onClose);
   const [fade, setFade] = useState(0);
   useEffect(() => setFade(0), [sel?.id]);
@@ -576,8 +601,18 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
         backgroundSize: "auto, 56px 56px, 56px 56px, auto",
         animation: "sheet-in 300ms cubic-bezier(.2,.8,.2,1)",
       }}
-      className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain text-white"
+      className="fixed inset-0 z-[60] isolate overflow-y-auto overscroll-contain text-white"
     >
+      {/* event ที่โปรโมทเกม: พื้นหลังเป็นรูปปกเต็มจอ ไล่ความเข้มลงล่าง เหมือนหน้ารายละเอียดเกม */}
+      {!sel.cover && sel.gameId && sel.image && (
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10">
+          <Image src={sel.image} alt="" fill priority sizes="100vw" className="object-cover" />
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(to bottom, rgba(5,8,10,0.25) 0%, rgba(5,8,10,0.55) 35%, rgba(5,8,10,0.9) 70%, #05080a 100%)" }}
+          />
+        </div>
+      )}
       {sel.cover && (
         <div aria-hidden className="fixed inset-x-0 top-0 h-[62svh] overflow-hidden">
           <Image src={sel.cover} alt="" fill priority sizes="100vw" className="object-cover" />
@@ -633,7 +668,7 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
         </div>
 
         <div className="mt-4 border-l-4 bg-[#0a1014] p-5 sm:p-8" style={{ borderColor: accent }}>
-          <h3 className="text-xl font-bold uppercase tracking-wide">กติกา</h3>
+          <h3 className="text-xl font-bold uppercase tracking-wide">{sel.rulesTitle ?? "กติกา"}</h3>
           <ul className="mt-5 flex flex-col gap-4">
             {sel.rules.map((r) => (
               <li key={r} className="flex gap-3 text-base leading-7 text-white/75">
@@ -662,11 +697,17 @@ export function EventDetail({ sel, saved, toggleSave, onClose, onPlay }: { sel: 
       <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#05080a] from-60% to-transparent px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-12 sm:px-6">
         <div className="w-full max-w-sm">
           <button
-            onClick={() => (sel.status === "NOW" ? onPlay() : toggleSave(sel.id))}
+            onClick={() =>
+              sel.status === "NOW"
+                ? sel.gameId
+                  ? onPlayGame(sel.gameId)
+                  : onPlay()
+                : toggleSave(sel.id)
+            }
             className={skewBtn(sel.status === "NOW" || !isSaved ? "solid" : "outline", true)}
           >
             <SkewInner>
-              {sel.status === "NOW" ? "เริ่มเล่น" : isSaved ? "บันทึกกิจกรรมแล้ว" : "บันทึกกิจกรรมนี้"}
+              {sel.status === "NOW" ? (sel.gameId ? "เล่นเลย" : "เริ่มเล่น") : isSaved ? "บันทึกกิจกรรมแล้ว" : "บันทึกกิจกรรมนี้"}
             </SkewInner>
           </button>
         </div>
@@ -707,6 +748,6 @@ export function FavoriteCard({ e, onOpen, toggleSave }: { e: EventItem; onOpen: 
         </h3>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/70">{e.desc}</p>
       </div>
-    </article>  
+    </article>
   );
 }
