@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useReducer, useRef, useState } from "react";
 
 /* =========================================================
-   Item Jam — จัดของชนิดเดียวกันไว้ช่องเดียวกัน ผ่านด่านให้ไกลที่สุดก่อนหมดเวลา
+   Item Jam — จัดของชนิดเดียวกันไว้ช่องเดียวกัน ผ่าน Level ให้ไกลที่สุดก่อนหมดเวลา
    วิธีเล่น: ลากของชิ้นบนสุดไปวางในช่องที่มีที่ว่าง (เมาส์/นิ้ว)
             หรือแตะช่องเพื่อหยิบ แล้วแตะช่องปลายทาง
    ========================================================= */
@@ -12,25 +12,25 @@ import { useEffect, useReducer, useRef, useState } from "react";
 // ===== ตั้งค่าเกม (ปรับสมดุลได้ที่นี่) =====
 const GAME_ID = "itemjam"; // key ที่ใช้บวกแต้มเข้า gameScores
 const DURATION = 60; // เวลาเริ่มต้น (วินาที)
-const STAGE_POINTS = 3; // คะแนนต่อด่านที่ผ่าน
+const STAGE_POINTS = 3; // คะแนนต่อ Level ที่ผ่าน
 const CAP = 4; // จำนวนของที่จุได้ต่อ 1 ช่อง (และจำนวนของต่อ 1 ชนิด)
-const MAX_TYPES = 6; // ชนิดของสูงสุดต่อด่าน (ด่าน 4 เป็นต้นไปเท่ากันหมด = 6 ชนิด + 1 ช่องว่าง = 7 ช่อง)
+const MAX_TYPES = 6; // ชนิดของสูงสุดต่อ Level (Level 4 เป็นต้นไปเท่ากันหมด = 6 ชนิด + 1 ช่องว่าง = 7 ช่อง)
 const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "ฟินเลย!", "ปุ๊กปิ๊ก!", "สุดยอด!", "เรียบร้อย!"];
 const CONFETTI = ["💖", "✨", "⭐", "🫧", "🎀", "💫", "🌸"];
 const STREAK_MS = 7000; // ครบชุดต่อกันภายในเวลานี้ = สตรีค (เอฟเฟกต์และเสียงสูงขึ้น ไม่มีผลกับแต้ม)
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const bonusTime = (types: number) => 6 + types * 3; // ผ่านด่านได้เวลาเพิ่ม (ด่านยากได้เยอะกว่า)
+const bonusTime = (types: number) => 6 + types * 3; // ผ่าน Level ได้เวลาเพิ่ม (Level ยากได้เยอะกว่า)
 
-// ด่าน 1 = 3 ชนิด, ด่าน 2 = 4, ด่าน 3 = 5, ด่าน 4 ขึ้นไป = 6 ชนิดเท่ากันหมด
-// ด่าน 1-3 มีช่องว่าง 2 ช่อง, ด่าน 4+ เหลือ 1 ช่อง (ด่าน 4 ขึ้นไปจึงมี 7 ช่องเท่ากัน)
+// Level 1 = 3 ชนิด, Level 2 = 4, Level 3 = 5, Level 4 ขึ้นไป = 6 ชนิดเท่ากันหมด
+// Level 1-3 มีช่องว่าง 2 ช่อง, Level 4+ เหลือ 1 ช่อง (Level 4 ขึ้นไปจึงมี 7 ช่องเท่ากัน)
 function stageConfig(stage: number) {
   return { types: Math.min(2 + stage, MAX_TYPES), empty: stage <= 3 ? 2 : 1 };
 }
 
 // ===== ดาวและคำชมตอนจบเกม =====
-// ถึงด่าน 2 = 1 ดาว, ถึงด่าน 3 = 2 ดาว, ถึงด่าน 4 ขึ้นไป = 5 ดาวพร้อมคำชม
-const starsFor = (stage: number) => (stage >= 4 ? 5 : stage === 3 ? 2 : stage === 2 ? 1 : 0);
-const RANKS: Record<number, string> = { 0: "ลองใหม่อีกนิด", 1: "มือใหม่หัดจัด", 2: "เริ่มเก่งแล้วนะ", 5: "เจ้าแห่งการจัดเรียง" };
+// ถึง Level 2 = 1 ดาว, ถึง Level 3 = 2 ดาว, ถึง Level 4 ขึ้นไป = 3 ดาวพร้อมคำชม
+const starsFor = (stage: number) => (stage >= 4 ? 3 : stage === 3 ? 2 : stage === 2 ? 1 : 0);
+const RANKS: Record<number, string> = { 0: "ลองใหม่อีกนิด", 1: "มือใหม่หัดจัด", 2: "เริ่มเก่งแล้วนะ", 3: "เจ้าแห่งการจัดเรียง" };
 const PRAISES = [
   "สุดยอดไปเลย! มือโปรชัดๆ 🏆",
   "เก่งมากกก! จัดของเป็นระเบียบสุดๆ 🎀",
@@ -39,9 +39,9 @@ const PRAISES = [
   "เก่งจนเพื่อนๆ ปรบมือให้เลย! 👏",
 ];
 
-// ===== คัตซีนก่อนเริ่มทุกด่าน =====
-// ด่าน 2-4: เพื่อนใหม่ 1 ตัวกระโดดออกจากกล่องของขวัญ
-// ด่าน 5 ขึ้นไป: จำนวนช่องเท่าเดิม แต่สุ่มสลับตัวละครเก่าออก ตัวใหม่เข้า 1-2 ตัวทุกด่าน
+// ===== คัตซีนก่อนเริ่มทุก Level =====
+// Level 2-4: เพื่อนใหม่ 1 ตัวกระโดดออกจากกล่องของขวัญ
+// Level 5 ขึ้นไป: จำนวนช่องเท่าเดิม แต่สุ่มสลับตัวละครเก่าออก ตัวใหม่เข้า 1-2 ตัวทุก Level
 const NEW_LINES = ["เก๊บๆ! ขอเข้าร่วมด้วยคนนะ", "สวัสดีทุกคน! ขอเล่นด้วยคน", "หวัดดีจ้า! มาแล้วนะ", "ว้าว! ที่นี่น่าอยู่จัง", "ฮัลโหล! ขอร่วมวงด้วย"];
 const REPEAT_TIPS = [
   "ลองเหลือช่องว่างไว้เสมอ จะวางแผนง่ายขึ้นนะ",
@@ -49,7 +49,7 @@ const REPEAT_TIPS = [
   "กดย้อนกลับ ↩ ได้ ถ้าย้ายพลาด",
 ];
 
-// ===== ของในเกม (ตัวการ์ตูนน่ารัก สีพาสเทล) — มี 12 ตัว ด่านละ 6 ตัว =====
+// ===== ของในเกม (ตัวการ์ตูนน่ารัก สีพาสเทล) — มี 12 ตัว Level ละ 6 ตัว =====
 const TYPES = [
   { e: "🐶", c: "#FFD66B" },
   { e: "🐱", c: "#FF9F86" },
@@ -177,7 +177,7 @@ type Fx = { id: number; kind: "text" | "burst" | "ring" | "screen"; x: number; y
 type Drag = { id: number; from: number; x: number; y: number; dy: number; tilt: number; hover: number };
 type G = {
   round: number; dealId: number; phase: Phase; stage: number; types: number; cut: number;
-  cast: number[]; cutNew: number[]; cutBye: number[]; cutFriends: number[]; // ตัวละครของด่านปัจจุบัน / คัตซีน
+  cast: number[]; cutNew: number[]; cutBye: number[]; cutFriends: number[]; // ตัวละครของ Level ปัจจุบัน / คัตซีน
   slots: Item[][]; sel: number | null; nope: number; lastMoved: number; nextId: number;
   drag: Drag | null; history: { from: number; to: number }[];
   score: number; timeLeft: number; lastSec: number;
@@ -196,7 +196,7 @@ function shuffle<T>(a: T[]) {
 }
 const isDone = (s: Item[]) => s.length === CAP && s.every((it) => it.t === s[0].t);
 
-// เริ่มต้นไม่มีของ (ไม่สุ่ม) เพื่อไม่ให้ hydration ไม่ตรงกัน แล้วค่อยสุ่มจัดวางตอนเริ่มด่าน
+// เริ่มต้นไม่มีของ (ไม่สุ่ม) เพื่อไม่ให้ hydration ไม่ตรงกัน แล้วค่อยสุ่มจัดวางตอนเริ่ม Level
 function newG(round: number): G {
   return {
     round, dealId: 0, phase: "intro", stage: 1, types: 3, cut: 0,
@@ -208,8 +208,8 @@ function newG(round: number): G {
   };
 }
 
-// เลือกตัวละครของด่านถัดไป
-// ด่าน 2-4: เพิ่มตัวใหม่ต่อท้าย / ด่าน 5+: สุ่มเอาออก 1-2 ตัว แล้วสุ่มตัวใหม่ (ที่ยังไม่อยู่ในด่าน) เข้ามาแทน
+// เลือกตัวละครของ Level ถัดไป
+// Level 2-4: เพิ่มตัวใหม่ต่อท้าย / Level 5+: สุ่มเอาออก 1-2 ตัว แล้วสุ่มตัวใหม่ (ที่ยังไม่อยู่ใน Level) เข้ามาแทน
 function nextCast(next: number, prev: number[]) {
   const { types } = stageConfig(next);
   if (next <= 4) {
@@ -225,11 +225,11 @@ function nextCast(next: number, prev: number[]) {
 
 function cutsceneInfo(stage: number, added: number[], bye: number[], friends: number[]) {
   let tip = "ช่วยจัดทุกคนให้อยู่ช่องเดียวกันกับพวกเดียวกันด้วยนะ";
-  if (stage === 4) tip = "ด่านนี้เหลือช่องว่างแค่ช่องเดียว วางแผนก่อนย้ายนะ";
-  else if (stage === 5) tip = "จากนี้ช่องจะเท่าเดิมทุกด่าน แต่เพื่อนๆ จะสลับหน้ากันไปเรื่อยๆ นะ";
+  if (stage === 4) tip = "Level นี้เหลือช่องว่างแค่ช่องเดียว วางแผนก่อนย้ายนะ";
+  else if (stage === 5) tip = "จากนี้ช่องจะเท่าเดิมทุก Level แต่เพื่อนๆ จะสลับหน้ากันไปเรื่อยๆ นะ";
   else if (stage > 5) tip = REPEAT_TIPS[stage % REPEAT_TIPS.length];
   return {
-    title: `ด่าน ${stage}`,
+    title: `Level ${stage}`,
     sub: stage <= 4 ? "มีเพื่อนใหม่มาเพิ่ม!" : "มีเพื่อนใหม่มาแทน!",
     line: NEW_LINES[(stage - 2) % NEW_LINES.length],
     tip,
@@ -278,7 +278,7 @@ function useCountUp(target: number, run: boolean, ms = 1000) {
 
 function Star({ on, delay }: { on: boolean; delay: number }) {
   return (
-    <svg viewBox="0 0 24 24" className="h-12 w-12" style={{ animation: `ij-star .55s ${delay}s cubic-bezier(.2,1.4,.4,1) both` }} aria-hidden>
+    <svg viewBox="0 0 24 24" className="h-16 w-16" style={{ animation: `ij-star .55s ${delay}s cubic-bezier(.2,1.4,.4,1) both` }} aria-hidden>
       <path d="M12 2l2.9 6.9 7.5.6-5.7 4.9 1.8 7.3L12 17.8 5.5 21.7l1.8-7.3L1.6 9.5l7.5-.6z" fill={on ? "#FFD66B" : "#E4E4E7"} strokeLinejoin="round" />
     </svg>
   );
@@ -514,7 +514,7 @@ export default function ItemJamPage() {
     }, 100);
   }
 
-  // เริ่มด่าน: ใช้ตัวละครที่กำหนดไว้ใน cur.cast (ด่าน 1 = 3 ตัวแรก, ด่านอื่นถูกเลือกไว้ตอนคัตซีน)
+  // เริ่ม Level: ใช้ตัวละครที่กำหนดไว้ใน cur.cast (Level 1 = 3 ตัวแรก, Level อื่นถูกเลือกไว้ตอนคัตซีน)
   function startStage(n: number) {
     const cur = gRef.current;
     const { empty } = stageConfig(n);
@@ -604,10 +604,10 @@ export default function ItemJamPage() {
       if (gRef.current !== cur) return;
       addFx({ kind: "burst", x: C.x, y: C.y, color: "#FF9EC0", big: true }, 1600);
     }, 350);
-    screenPop(0.3, `ด่าน ${cur.stage} สำเร็จ!`, "#C2457B", "เรียบร้อยสุดๆ", true, 1400);
+    screenPop(0.3, `Level ${cur.stage} สำเร็จ!`, "#C2457B", "เรียบร้อยสุดๆ", true, 1400);
     screenPop(0.42, `+${STAGE_POINTS} คะแนน`, "#27272A", "", false, 1400);
     screenPop(0.5, `+${bonus} วินาที`, "#2F8F6A", "", false, 1400);
-    // ทุกด่านมีคัตซีนก่อนเริ่มด่านถัดไป
+    // ทุก Level มีคัตซีนก่อนเริ่ม Level ถัดไป
     later(() => {
       if (gRef.current !== cur || cur.phase !== "clear") return;
       beginCutscene(cur, cur.stage + 1);
@@ -861,7 +861,7 @@ export default function ItemJamPage() {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  // คีย์ลัดบนคอม: Space/Enter = เล่นอีกครั้ง (หน้าสรุป) หรือเริ่มด่าน (หน้าคัตซีน), M = เสียง, Z = ย้อนกลับ
+  // คีย์ลัดบนคอม: Space/Enter = เล่นอีกครั้ง (หน้าสรุป) หรือเริ่ม Level (หน้าคัตซีน), M = เสียง, Z = ย้อนกลับ
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyM") toggleMute();
@@ -899,7 +899,7 @@ export default function ItemJamPage() {
   // ===== ค่าที่ใช้แสดงผล =====
   const compact = dims.h < 500; // มือถือแนวนอน
   const wide = dims.w >= 640;
-  const topPad = compact ? 72 : wide ? 136 : 118;
+  const topPad = compact ? 84 : wide ? 140 : 124; // เว้นที่ด้านบนให้ตัวเลขเวลาที่ใหญ่ขึ้น
   const bottomPad = compact ? 66 : wide ? 104 : 88;
   const n = g.slots.length || 7;
   const lay = layout(n, dims.w, dims.h, topPad, bottomPad);
@@ -972,7 +972,6 @@ export default function ItemJamPage() {
         @keyframes ij-bob { from { transform: translateY(0) scale(1) } to { transform: translateY(-26px) scale(1.06) } }
         @keyframes ij-badge { 0% { transform: translate(-50%,-50%) scale(0) } 70% { transform: translate(-50%,-50%) scale(1.25) } 100% { transform: translate(-50%,-50%) scale(1) } }
         @keyframes ij-alarm { 0%, 100% { transform: translateX(0) rotate(0) scale(1) } 20% { transform: translateX(-4px) rotate(-3deg) scale(1.05) } 40% { transform: translateX(4px) rotate(3deg) scale(1.05) } 60% { transform: translateX(-3px) rotate(-2deg) scale(1.02) } 80% { transform: translateX(3px) rotate(2deg) scale(1.02) } }
-        @keyframes ij-ringer { 0%, 100% { transform: rotate(-16deg) } 50% { transform: rotate(16deg) } }
         @keyframes ij-vignette { from { opacity: .3 } to { opacity: 1 } }
         @media (prefers-reduced-motion: reduce) { .ij-anim, .ij-anim * { animation: none !important } .ij-anim .ij-fxonly { display: none } }
       `}</style>
@@ -1182,50 +1181,52 @@ export default function ItemJamPage() {
       {!over && (
         <div className="pointer-events-none absolute inset-0" style={{ padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)" }}>
           <div className="relative h-full w-full">
-            {/* ด่าน มุมบนซ้าย */}
-            <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
-              <span className="inline-flex items-center rounded-full bg-white/90 px-3 py-1.5 text-sm font-bold text-zinc-700 shadow-sm ring-1 ring-black/5 backdrop-blur sm:px-4 sm:py-2 sm:text-base">
-                ด่าน {g.stage}
-              </span>
-            </div>
-
-            {/* เวลา ตัวใหญ่กลางบน (เวลาเหลือ ≤ 10 วิ: เป็นสีแดงและสั่นดึ๋งๆ) */}
-            <div className="absolute inset-x-0 top-2 flex flex-col items-center sm:top-3">
-              <div
-                className={`flex items-center gap-1.5 rounded-full px-4 shadow-md ring-2 ring-white backdrop-blur sm:gap-2 sm:px-6 ${compact ? "py-0.5" : "py-1 sm:py-1.5"} ${timeLow ? "bg-[#FF6B8A] text-white" : "bg-white/95 text-zinc-900"}`}
-                style={timeLow ? { animation: "ij-alarm .45s ease-in-out infinite" } : undefined}
+            {/* เวลา มุมบนซ้าย: ตัวเลขใหญ่ไล่สีชมพู-ส้ม-เหลือง ไม่มีกรอบขาว ไม่มีไอคอน (≤ 10 วิ: แดงและสั่น) */}
+            <div className="absolute left-3 top-2 sm:left-4 sm:top-3">
+              <p
+                className={`pl-1 text-sm font-bold tracking-wide ${timeLow ? "text-[#FF4D6D]" : "text-[#C2457B]"}`}
+                style={{ textShadow: "0 1px 0 rgba(255,255,255,.9)" }}
               >
-                <span
-                  aria-hidden
-                  className={compact ? "text-xl" : "text-2xl sm:text-4xl"}
-                  style={timeLow ? { display: "inline-block", animation: "ij-ringer .3s ease-in-out infinite" } : undefined}
-                >
-                  {timeLow ? "⏰" : "⏱️"}
-                </span>
-                <span
+                เวลา
+              </p>
+              <div className="-mt-1" style={timeLow ? { animation: "ij-alarm .45s ease-in-out infinite" } : undefined}>
+                <p
                   key={g.lastSec}
-                  className={`font-black leading-none tabular-nums ${compact ? "text-3xl" : "text-4xl sm:text-6xl"}`}
-                  style={{ animation: timeLow ? "ij-bump .35s ease-out" : undefined, textShadow: timeLow ? "0 2px 0 rgba(160,20,60,.35)" : undefined }}
+                  className={`px-1 font-black italic leading-[1.05] tabular-nums tracking-tighter ${compact ? "text-5xl" : "text-7xl sm:text-8xl"} ${
+                    timeLow ? "text-[#FF4D6D]" : "bg-gradient-to-t from-[#FF6FA3] via-[#FFA36B] to-[#FFD66B] bg-clip-text text-transparent"
+                  }`}
+                  style={{
+                    animation: timeLow ? "ij-bump .35s ease-out" : undefined,
+                    filter: timeLow
+                      ? "drop-shadow(0 2px 0 rgba(255,255,255,.95)) drop-shadow(0 0 14px rgba(255,77,109,.55))"
+                      : "drop-shadow(0 3px 0 rgba(255,255,255,.95))",
+                  }}
                 >
                   {g.lastSec}
-                </span>
-                <span className="self-end pb-1 text-xs font-bold opacity-70 sm:text-sm">วิ</span>
+                </p>
               </div>
-              <div className={`mt-1.5 h-2.5 overflow-hidden rounded-full bg-white/70 shadow-sm ${compact ? "w-24" : "w-28 sm:w-44"}`}>
+              <div className={`mt-1 h-2.5 overflow-hidden rounded-full bg-white/60 ${compact ? "w-24" : "w-28 sm:w-40"}`}>
                 <div
-                  className={`h-full rounded-full ${timeLow ? "animate-pulse bg-[#FF6B8A]" : "bg-[#7FD6C0]"}`}
+                  className={`h-full rounded-full ${timeLow ? "animate-pulse bg-[#FF4D6D]" : "bg-gradient-to-r from-[#7FD6C0] to-[#97D58C]"}`}
                   style={{ width: `${clamp(g.lastSec / DURATION, 0, 1) * 100}%`, transition: "width 1s linear, background-color .3s" }}
                 />
               </div>
-              {!compact && (playing || g.phase === "clear") && (
-                <span className="mt-1.5 max-w-[92vw] rounded-full bg-white/80 px-3 py-0.5 text-center text-xs font-semibold text-zinc-700 shadow-sm sm:text-sm">
-                  {showHint ? "ลากของไปวางในช่อง หรือแตะช่องเพื่อหยิบ/วาง" : `เหลืออีก ${Math.max(0, left)} ชุด`}
-                </span>
-              )}
             </div>
 
-            {/* ป้ายคะแนน มุมบนขวา */}
-            <div className="absolute right-3 top-3 sm:right-4 sm:top-4">
+            {/* คำใบ้/จำนวนชุดที่เหลือ: ข้อความล้วนตรงกลาง ไม่มีกรอบขาว */}
+            {!compact && (playing || g.phase === "clear") && (
+              <div className="absolute inset-x-0 flex justify-center" style={{ top: topPad - 30 }}>
+                <span
+                  className="max-w-[92vw] text-center text-xs font-bold text-[#C2457B] sm:text-sm"
+                  style={{ textShadow: POP_SHADOW }}
+                >
+                  {showHint ? "ลากของไปวางในช่อง หรือแตะช่องเพื่อหยิบ/วาง" : `เหลืออีก ${Math.max(0, left)} ชุด`}
+                </span>
+              </div>
+            )}
+
+            {/* ป้ายคะแนน + Level มุมบนขวา */}
+            <div className="absolute right-3 top-3 flex flex-col items-end gap-1 sm:right-4 sm:top-4">
               <div className="inline-flex items-center gap-1.5 rounded-full bg-[#FFD66B] px-3 py-1.5 shadow-sm sm:gap-2 sm:px-5 sm:py-2.5">
                 <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 sm:h-6 sm:w-6" fill="#4A3700" aria-hidden>
                   <path d="M12 2l2.9 6.9 7.5.6-5.7 4.9 1.8 7.3L12 17.8 5.5 21.7l1.8-7.3L1.6 9.5l7.5-.6z" strokeLinejoin="round" />
@@ -1234,6 +1235,13 @@ export default function ItemJamPage() {
                   {g.score.toLocaleString("en-US")}
                 </span>
               </div>
+              <span
+                key={g.stage}
+                className="bg-gradient-to-t from-[#FF6FA3] via-[#FFA36B] to-[#FFD66B] bg-clip-text pr-2 text-xl font-black italic leading-none tracking-tighter text-transparent sm:text-3xl"
+                style={{ filter: "drop-shadow(0 2px 0 rgba(255,255,255,.95))", animation: "ij-bump .4s ease-out" }}
+              >
+                Level {g.stage}
+              </span>
             </div>
 
             {/* ปุ่มย้อนกลับ มุมล่างขวา (กด Z บนคอมได้) */}
@@ -1260,7 +1268,7 @@ export default function ItemJamPage() {
         </div>
       )}
 
-      {/* ข้อความกลางจอ (ผ่านด่าน) */}
+      {/* ข้อความกลางจอ (ผ่าน Level) */}
       {g.fx.filter((f) => f.kind === "screen").map((f) => (
         <div key={f.id} className="pointer-events-none absolute inset-x-0 z-20 flex flex-col items-center" style={{ top: `${f.y * 100}%`, animation: "ij-screen 1.2s ease-out both" }}>
           {f.title && (
@@ -1274,7 +1282,7 @@ export default function ItemJamPage() {
         </div>
       ))}
 
-      {/* ===== คัตซีน (ก่อนเริ่มทุกด่านตั้งแต่ด่าน 2) — ผู้เล่นต้องกด "เริ่มเลย!" ก่อน เกมถึงจะเริ่ม ===== */}
+      {/* ===== คัตซีน (ก่อนเริ่มทุก Level ตั้งแต่ Level 2) — ผู้เล่นต้องกด "เริ่มเลย!" ก่อน เกมถึงจะเริ่ม ===== */}
       {cs && (
         <div
           className="absolute inset-0 z-30 flex items-center justify-center overflow-hidden"
@@ -1305,7 +1313,7 @@ export default function ItemJamPage() {
               <p className="-mt-1 text-lg font-bold text-[#C2457B]" style={{ textShadow: POP_SHADOW }}>{cs.sub}</p>
             </div>
 
-            {/* กล่องของขวัญ → เพื่อนใหม่กระโดดออกมา (ด่าน 5+ อาจมา 2 ตัว) */}
+            {/* กล่องของขวัญ → เพื่อนใหม่กระโดดออกมา (Level 5+ อาจมา 2 ตัว) */}
             <div className="relative mt-10 h-56 w-56">
               <div className="ij-fxonly absolute inset-0 flex items-center justify-center text-[7rem] leading-none" style={{ animation: "ij-giftin .55s .3s cubic-bezier(.2,1.4,.4,1) both, ij-giftshake .6s 1s ease-in-out, ij-giftout .25s 1.6s ease-in forwards" }}>
                 🎁
@@ -1397,17 +1405,17 @@ export default function ItemJamPage() {
                 {newRecord ? "🏆 สถิติใหม่!" : "หมดเวลา!"}
               </span>
 
-              {/* ดาว 5 ดวง: ถึงด่าน 2 = 1 ดาว, ด่าน 3 = 2 ดาว, ด่าน 4 ขึ้นไป = 5 ดาว */}
-              <div className="mt-4 flex items-end justify-center gap-1">
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <div key={i} className={i === 2 ? "-translate-y-3" : i === 1 || i === 3 ? "-translate-y-1.5" : ""}>
-                    <Star on={i < stars} delay={0.3 + i * 0.18} />
+              {/* ดาว 3 ดวง: ถึง Level 2 = 1 ดาว, Level 3 = 2 ดาว, Level 4 ขึ้นไป = 3 ดาว */}
+              <div className="mt-4 flex items-end justify-center gap-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className={i === 1 ? "-translate-y-3" : ""}>
+                    <Star on={i < stars} delay={0.3 + i * 0.22} />
                   </div>
                 ))}
               </div>
               <p className="mt-1 text-sm font-medium text-zinc-500">{RANKS[stars]}</p>
-              <p className="text-xs text-zinc-400">ไปถึงด่าน {g.stage}</p>
-              {stars === 5 && praise && (
+              <p className="text-xs text-zinc-400">ไปถึง Level {g.stage}</p>
+              {stars === 3 && praise && (
                 <p className="mx-auto mt-2 max-w-[18rem] rounded-2xl bg-[#FFF3C4] px-3 py-2 text-sm font-semibold text-[#8A5A00]">{praise}</p>
               )}
 
@@ -1419,7 +1427,7 @@ export default function ItemJamPage() {
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-[#97D58C]/55 py-3">
                   <p className="text-xl font-semibold tabular-nums">{stagesDone}</p>
-                  <p className="text-xs text-zinc-600">ด่านที่ผ่าน</p>
+                  <p className="text-xs text-zinc-600">Level ที่ผ่าน</p>
                 </div>
                 <div className="rounded-2xl bg-[#9DB4F2]/50 py-3">
                   <p className="text-xl font-semibold tabular-nums">{g.moves}</p>
@@ -1431,7 +1439,7 @@ export default function ItemJamPage() {
                 </div>
                 <div className="rounded-2xl bg-[#FFB874]/50 py-3">
                   <p className="text-xl font-semibold tabular-nums">{g.fastest > 0 ? `${g.fastest} วิ` : "-"}</p>
-                  <p className="text-xs text-zinc-600">ด่านที่เร็วที่สุด</p>
+                  <p className="text-xs text-zinc-600">Level ที่เร็วที่สุด</p>
                 </div>
               </div>
 
