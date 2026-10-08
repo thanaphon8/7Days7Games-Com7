@@ -14,15 +14,16 @@ const GAME_ID = "itemjam"; // key ที่ใช้บวกแต้มเข�
 const DURATION = 60; // เวลาเริ่มต้น (วินาที)
 const STAGE_POINTS = 3; // คะแนนต่อ Level ที่ผ่าน
 const CAP = 4; // จำนวนของที่จุได้ต่อ 1 ช่อง (และจำนวนของต่อ 1 ชนิด)
-const MAX_TYPES = 6; // ชนิดของสูงสุดต่อ Level (Level 4 เป็นต้นไปเท่ากันหมด = 6 ชนิด + 1 ช่องว่าง = 7 ช่อง)
+const MAX_TYPES = 12; // ชนิดของสูงสุดต่อ Level (Level 10 = 12 ชนิด + 1 ช่องว่าง = 13 ช่อง หลังจากนั้นช่องคงที่)
 const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "ฟินเลย!", "ปุ๊กปิ๊ก!", "สุดยอด!", "เรียบร้อย!"];
 const CONFETTI = ["💖", "✨", "⭐", "🫧", "🎀", "💫", "🌸"];
 const STREAK_MS = 7000; // ครบชุดต่อกันภายในเวลานี้ = สตรีค (เอฟเฟกต์และเสียงสูงขึ้น ไม่มีผลกับแต้ม)
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const bonusTime = (types: number) => 6 + types * 3; // ผ่าน Level ได้เวลาเพิ่ม (Level ยากได้เยอะกว่า)
 
-// Level 1 = 3 ชนิด, Level 2 = 4, Level 3 = 5, Level 4 ขึ้นไป = 6 ชนิดเท่ากันหมด
-// Level 1-3 มีช่องว่าง 2 ช่อง, Level 4+ เหลือ 1 ช่อง (Level 4 ขึ้นไปจึงมี 7 ช่องเท่ากัน)
+// Level 1 = 3 ชนิด, Level 2 = 4, Level 3 = 5, Level 4 = 6, Level 5 = 7 ... เพิ่มทีละ 1 ชนิดทุก Level จนถึง MAX_TYPES
+// Level 1-3 มีช่องว่าง 2 ช่อง, Level 4+ เหลือ 1 ช่อง
+// จำนวนช่องทั้งหมด = ชนิด + ช่องว่าง (เพิ่มช่องทุก Level จนชนิดถึงสูงสุด)
 function stageConfig(stage: number) {
   return { types: Math.min(2 + stage, MAX_TYPES), empty: stage <= 3 ? 2 : 1 };
 }
@@ -40,8 +41,9 @@ const PRAISES = [
 ];
 
 // ===== คัตซีนก่อนเริ่มทุก Level =====
-// Level 2-4: เพื่อนใหม่ 1 ตัวกระโดดออกจากกล่องของขวัญ
-// Level 5 ขึ้นไป: จำนวนช่องเท่าเดิม แต่สุ่มสลับตัวละครเก่าออก ตัวใหม่เข้า 1-2 ตัวทุก Level
+// Level 2-4: เพื่อนใหม่ 1 ตัวกระโดดออกจากกล่องของขวัญ (ตัวเรียงตามลำดับ)
+// Level 5 ขึ้นไป: เพิ่มช่อง + สุ่มเพื่อนใหม่ 1 ตัวทุก Level จนถึงช่องสูงสุด
+//   หลังจากนั้นช่องคงที่ แต่สุ่มสลับตัวเก่าออก ตัวใหม่เข้า 1-2 ตัวทุก Level
 const NEW_LINES = ["เก๊บๆ! ขอเข้าร่วมด้วยคนนะ", "สวัสดีทุกคน! ขอเล่นด้วยคน", "หวัดดีจ้า! มาแล้วนะ", "ว้าว! ที่นี่น่าอยู่จัง", "ฮัลโหล! ขอร่วมวงด้วย"];
 const REPEAT_TIPS = [
   "ลองเหลือช่องว่างไว้เสมอ จะวางแผนง่ายขึ้นนะ",
@@ -49,7 +51,7 @@ const REPEAT_TIPS = [
   "กดย้อนกลับ ↩ ได้ ถ้าย้ายพลาด",
 ];
 
-// ===== ของในเกม (ตัวการ์ตูนน่ารัก สีพาสเทล) — มี 12 ตัว Level ละ 6 ตัว =====
+// ===== ของในเกม (ตัวการ์ตูนน่ารัก สีพาสเทล) — มี 20 ตัว สุ่มเข้ามาทีละตัวตามแต่ละ Level =====
 const TYPES = [
   { e: "🐶", c: "#FFD66B" },
   { e: "🐱", c: "#FF9F86" },
@@ -63,6 +65,14 @@ const TYPES = [
   { e: "🐵", c: "#E3B98F" },
   { e: "🦄", c: "#F3B5F0" },
   { e: "🐙", c: "#FF8E8E" },
+  { e: "🐻", c: "#D8A77C" },
+  { e: "🐯", c: "#FFC26B" },
+  { e: "🦁", c: "#F5D27A" },
+  { e: "🐮", c: "#C9D6E8" },
+  { e: "🐹", c: "#F7C8A0" },
+  { e: "🦉", c: "#B7A58F" },
+  { e: "🐧", c: "#A9D3F5" },
+  { e: "🐢", c: "#A5DFA0" },
 ];
 
 // ===== เสียง ASMR (สังเคราะห์ด้วย WebAudio นุ่มๆ มีเอคโค่เบาๆ ไม่ต้องใช้ไฟล์) =====
@@ -209,28 +219,37 @@ function newG(round: number): G {
 }
 
 // เลือกตัวละครของ Level ถัดไป
-// Level 2-4: เพิ่มตัวใหม่ต่อท้าย / Level 5+: สุ่มเอาออก 1-2 ตัว แล้วสุ่มตัวใหม่ (ที่ยังไม่อยู่ใน Level) เข้ามาแทน
+// Level 2-4: เพิ่มตัวใหม่ต่อท้ายตามลำดับ
+// Level 5+: ถ้ายังไม่ถึงจำนวนชนิดสูงสุด = เพิ่มช่อง + สุ่มตัวใหม่ (ที่ยังไม่อยู่ใน Level) เข้ามา ตัวเก่าอยู่ครบ
+//           ถ้าถึงสูงสุดแล้ว = สุ่มเอาออก 1-2 ตัว แล้วสุ่มตัวใหม่เข้ามาแทน (ช่องเท่าเดิม)
 function nextCast(next: number, prev: number[]) {
   const { types } = stageConfig(next);
   if (next <= 4) {
     const cast = Array.from({ length: types }, (_, i) => i);
     return { cast, added: cast.filter((t) => !prev.includes(t)), bye: [] as number[], friends: prev.filter((t) => cast.includes(t)) };
   }
+  const pool = shuffle(TYPES.map((_, i) => i).filter((i) => !prev.includes(i)));
+  const need = types - prev.length;
+  if (need > 0) {
+    const ins = pool.slice(0, need);
+    return { cast: [...prev, ...ins], added: ins, bye: [] as number[], friends: [...prev] };
+  }
   const k = Math.random() < 0.5 ? 1 : 2;
   const outs = shuffle(prev).slice(0, k);
   const friends = prev.filter((t) => !outs.includes(t));
-  const ins = shuffle(TYPES.map((_, i) => i).filter((i) => !prev.includes(i))).slice(0, k);
+  const ins = pool.slice(0, k);
   return { cast: [...friends, ...ins], added: ins, bye: outs, friends };
 }
 
 function cutsceneInfo(stage: number, added: number[], bye: number[], friends: number[]) {
   let tip = "ช่วยจัดทุกคนให้อยู่ช่องเดียวกันกับพวกเดียวกันด้วยนะ";
   if (stage === 4) tip = "Level นี้เหลือช่องว่างแค่ช่องเดียว วางแผนก่อนย้ายนะ";
-  else if (stage === 5) tip = "จากนี้ช่องจะเท่าเดิมทุก Level แต่เพื่อนๆ จะสลับหน้ากันไปเรื่อยๆ นะ";
+  else if (stage === 5) tip = "จากนี้ทุก Level จะมีช่องและเพื่อนใหม่เพิ่มขึ้นเรื่อยๆ นะ";
+  else if (stage === MAX_TYPES - 2) tip = "ช่องเต็มที่สุดแล้ว! จากนี้เพื่อนๆ จะสลับหน้ากันไปเรื่อยๆ นะ";
   else if (stage > 5) tip = REPEAT_TIPS[stage % REPEAT_TIPS.length];
   return {
     title: `Level ${stage}`,
-    sub: stage <= 4 ? "มีเพื่อนใหม่มาเพิ่ม!" : "มีเพื่อนใหม่มาแทน!",
+    sub: bye.length > 0 ? "มีเพื่อนใหม่มาแทน!" : "มีเพื่อนใหม่มาเพิ่ม!",
     line: NEW_LINES[(stage - 2) % NEW_LINES.length],
     tip,
     added,
@@ -1313,7 +1332,7 @@ export default function ItemJamPage() {
               <p className="-mt-1 text-lg font-bold text-[#C2457B]" style={{ textShadow: POP_SHADOW }}>{cs.sub}</p>
             </div>
 
-            {/* กล่องของขวัญ → เพื่อนใหม่กระโดดออกมา (Level 5+ อาจมา 2 ตัว) */}
+            {/* กล่องของขวัญ → เพื่อนใหม่กระโดดออกมา (Level ที่สลับตัวอาจมา 2 ตัว) */}
             <div className="relative mt-10 h-56 w-56">
               <div className="ij-fxonly absolute inset-0 flex items-center justify-center text-[7rem] leading-none" style={{ animation: "ij-giftin .55s .3s cubic-bezier(.2,1.4,.4,1) both, ij-giftshake .6s 1s ease-in-out, ij-giftout .25s 1.6s ease-in forwards" }}>
                 🎁
@@ -1351,8 +1370,8 @@ export default function ItemJamPage() {
               </div>
             </div>
 
-            {/* เพื่อนเก่าที่ยังอยู่ โผล่มาต้อนรับ */}
-            <div className="mt-2 flex items-end justify-center" style={{ gap: 6 }}>
+            {/* เพื่อนเก่าที่ยังอยู่ โผล่มาต้อนรับ (ขึ้นบรรทัดใหม่ได้เมื่อมีหลายตัว) */}
+            <div className="mt-2 flex max-w-[22rem] flex-wrap items-end justify-center" style={{ gap: 6 }}>
               {cs.friends.map((t, i) => (
                 <div
                   key={t}
