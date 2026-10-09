@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useEffect, useReducer, useRef, useState } from "react";
 
 /* =========================================================
-   Item Jam — จัดของชนิดเดียวกันไว้ช่องเดียวกัน ผ่าน Level ให้ไกลที่สุดก่อนหมดเวลา
-   วิธีเล่น: ลากของชิ้นบนสุดไปวางในช่องที่มีที่ว่าง (เมาส์/นิ้ว)
+  Item Jam — จัดของชนิดเดียวกันไว้ช่องเดียวกัน ผ่าน Level ให้ไกลที่สุดก่อนหมดเวลา
+  วิธีเล่น: ลากของชิ้นบนสุดไปวางในช่องที่มีที่ว่าง (เมาส์/นิ้ว)
             หรือแตะช่องเพื่อหยิบ แล้วแตะช่องปลายทาง
-   ========================================================= */
+  ========================================================= */
 
 // ===== ตั้งค่าเกม (ปรับสมดุลได้ที่นี่) =====
 const GAME_ID = "itemjam"; // key ที่ใช้บวกแต้มเข้า gameScores
@@ -18,6 +18,7 @@ const MAX_TYPES = 12; // ชนิดของสูงสุดต่อ Level 
 const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "ฟินเลย!", "ปุ๊กปิ๊ก!", "สุดยอด!", "เรียบร้อย!"];
 const CONFETTI = ["💖", "✨", "⭐", "🫧", "🎀", "💫", "🌸"];
 const STREAK_MS = 7000; // ครบชุดต่อกันภายในเวลานี้ = สตรีค (เอฟเฟกต์และเสียงสูงขึ้น ไม่มีผลกับแต้ม)
+const DRAG_SCALE = 1.80; // ขนาดของที่กำลังลาก (ขยายเล็กน้อย)
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const bonusTime = (types: number) => 6 + types * 3; // ผ่าน Level ได้เวลาเพิ่ม (Level ยากได้เยอะกว่า)
 
@@ -184,7 +185,8 @@ type Phase = "intro" | "playing" | "clear" | "cutscene" | "over";
 type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
 type Item = { id: number; t: number; land: number };
 type Fx = { id: number; kind: "text" | "burst" | "ring" | "screen"; x: number; y: number; text?: string; title?: string; color: string; big?: boolean };
-type Drag = { id: number; from: number; x: number; y: number; dy: number; tilt: number; hover: number };
+// snap = true ช่วงสั้นๆ หลังเริ่มลาก ให้ของเลื่อนจากช่องมาที่นิ้วอย่างนุ่มนวล แล้วค่อยตามนิ้วแบบเรียลไทม์
+type Drag = { id: number; from: number; x: number; y: number; dy: number; tilt: number; hover: number; snap: boolean };
 type G = {
   round: number; dealId: number; phase: Phase; stage: number; types: number; cut: number;
   cast: number[]; cutNew: number[]; cutBye: number[]; cutFriends: number[]; // ตัวละครของ Level ปัจจุบัน / คัตซีน
@@ -259,25 +261,32 @@ function cutsceneInfo(stage: number, added: number[], bye: number[], friends: nu
 }
 
 // เลือกจำนวนแถวที่ทำให้ของใหญ่ที่สุด (รองรับทั้งจอมือถือแนวตั้ง/แนวนอน และจอคอม)
+// มือถือ (w < 640): ใช้พื้นที่เต็มจอมากขึ้น ช่องแคบลง ของซ้อนกันเล็กน้อย เพื่อให้ช่องและตัวในช่องใหญ่ขึ้น
 function layout(n: number, w: number, h: number, topPad: number, bottomPad: number) {
-  const gap = w < 480 ? 8 : 12;
-  const availW = Math.min(w - 24, 1100);
+  const mobile = w < 640;
+  const gap = w < 480 ? 6 : 12;
+  const availW = Math.min(w - (mobile ? 12 : 24), 1100);
   const availH = h - topPad - bottomPad;
+  const wf = mobile ? 1.12 : 1.24; // ความกว้างช่อง เทียบกับขนาดของ 1 ชิ้น
+  const step = mobile ? 0.9 : 1; // ระยะซ้อนของในช่อง (1 = ไม่ซ้อน)
+  const hf = 0.18 + (CAP - 1) * step + 1 + 0.12; // ความสูงช่อง เทียบกับขนาดของ 1 ชิ้น (คอม = CAP + 0.3)
+  const rg = mobile ? 0.35 : 0.6; // ช่องว่างระหว่างแถว
+  const lf = mobile ? 0.45 : 0.55; // พื้นที่ด้านบนไว้ยกของ
   let best = { rows: 1, cols: n, s: 0 };
   for (let rows = 1; rows <= 3; rows++) {
     const cols = Math.ceil(n / rows);
-    const sw = (availW - gap * (cols - 1)) / (cols * 1.24);
-    const sh = availH / (rows * (CAP + 0.3) + 0.6 * (rows - 1) + 0.55);
+    const sw = (availW - gap * (cols - 1)) / (cols * wf);
+    const sh = availH / (rows * hf + rg * (rows - 1) + lf);
     const s = Math.min(sw, sh);
     if (s > best.s) best = { rows, cols, s };
   }
   const s = clamp(Math.floor(best.s), 24, w >= 900 ? 100 : 76);
-  return { rows: best.rows, cols: best.cols, s, gap, slotW: s * 1.24, slotH: s * (CAP + 0.3), rowGap: s * 0.6, lift: s * 0.55 };
+  return { rows: best.rows, cols: best.cols, s, gap, step, slotW: s * wf, slotH: s * hf, rowGap: s * rg, lift: s * lf };
 }
 
 /* =========================================================
-   ส่วนช่วยของหน้า UI
-   ========================================================= */
+  ส่วนช่วยของหน้า UI
+  ========================================================= */
 function useCountUp(target: number, run: boolean, ms = 1000) {
   const [v, setV] = useState(0);
   useEffect(() => {
@@ -346,8 +355,8 @@ const BUBBLES = [
 ];
 
 /* =========================================================
-   หน้าเกม
-   ========================================================= */
+  หน้าเกม
+  ========================================================= */
 export default function ItemJamPage() {
   const gRef = useRef<G>(null as unknown as G);
   if (!gRef.current) gRef.current = newG(0);
@@ -806,8 +815,16 @@ export default function ItemJamPage() {
       const top = slot[slot.length - 1];
       if (!top || isDone(slot)) return; // ลากไม่ได้ (ปล่อยแล้วจะนับเป็นการแตะ)
       cur.sel = null;
-      // บนมือถือให้ของลอยอยู่เหนือนิ้วเพื่อไม่ให้นิ้วบัง
-      cur.drag = { id: top.id, from: pr.k, x: 0, y: 0, dy: pr.touch ? -L.s * 0.75 : -L.s * 0.15, tilt: 0, hover: -1 };
+      // ของอยู่ตรงจุดที่นิ้ว/เมาส์จิ้มพอดี (dy = 0) ช่วงแรกให้เลื่อนมาที่นิ้วอย่างนุ่มนวล (snap) แล้วค่อยตามนิ้วจริง
+      cur.drag = { id: top.id, from: pr.k, x: 0, y: 0, dy: 0, tilt: 0, hover: -1, snap: true };
+      const dragId = top.id;
+      later(() => {
+        const c = gRef.current;
+        if (c === cur && c.drag && c.drag.id === dragId) {
+          c.drag.snap = false;
+          force();
+        }
+      }, 170);
       sfx.pick();
     }
     const d = cur.drag;
@@ -918,8 +935,8 @@ export default function ItemJamPage() {
   // ===== ค่าที่ใช้แสดงผล =====
   const compact = dims.h < 500; // มือถือแนวนอน
   const wide = dims.w >= 640;
-  const topPad = compact ? 84 : wide ? 140 : 124; // เว้นที่ด้านบนให้ตัวเลขเวลาที่ใหญ่ขึ้น
-  const bottomPad = compact ? 66 : wide ? 104 : 88;
+  const topPad = compact ? 84 : wide ? 140 : 112; // เว้นที่ด้านบนให้ตัวเลขเวลา (มือถือลดลงเพื่อให้กระดานใหญ่ขึ้น)
+  const bottomPad = compact ? 66 : wide ? 104 : 76;
   const n = g.slots.length || 7;
   const lay = layout(n, dims.w, dims.h, topPad, bottomPad);
   layoutRef.current = lay;
@@ -1092,7 +1109,7 @@ export default function ItemJamPage() {
             const p = slotPos(lay, g.slots.length, k);
             const dragging = !!drag && drag.id === it.id;
             const x = dragging ? drag.x - s / 2 : p.x + (lay.slotW - s) / 2;
-            const y = dragging ? drag.y + drag.dy - s / 2 : p.y + s * 0.18 + (CAP - 1 - i) * s;
+            const y = dragging ? drag.y + drag.dy - s / 2 : p.y + s * 0.18 + (CAP - 1 - i) * s * lay.step;
             const lifted = g.sel === k && top && !dragging;
             const d0 = 0.2 + i * 0.09;
             return (
@@ -1104,7 +1121,12 @@ export default function ItemJamPage() {
                   height: s,
                   padding: s * 0.06,
                   transform: `translate3d(${x}px, ${y}px, 0)`,
-                  transition: dragging ? "none" : "transform .45s cubic-bezier(.3,1.35,.5,1)",
+                  // ตอนเพิ่งหยิบ (snap) ให้เลื่อนจากช่องมาที่นิ้วอย่างนุ่มนวล หลังจากนั้นตามนิ้วทันที
+                  transition: dragging
+                    ? drag.snap
+                      ? "transform .16s cubic-bezier(.2,.9,.3,1)"
+                      : "none"
+                    : "transform .45s cubic-bezier(.3,1.35,.5,1)",
                   zIndex: dragging ? 50 : lifted ? 40 : g.lastMoved === it.id ? 30 : 2 + i,
                 }}
               >
@@ -1112,11 +1134,11 @@ export default function ItemJamPage() {
                   className="h-full w-full"
                   style={{
                     transform: dragging
-                      ? `scale(1.18) rotate(${drag.tilt}deg)`
+                      ? `scale(${DRAG_SCALE}) rotate(${drag.tilt}deg)`
                       : lifted
                       ? `translateY(${-lay.lift * 0.9}px) scale(1.1)`
                       : "none",
-                    transition: dragging ? "transform .12s ease-out" : "transform .24s cubic-bezier(.3,1.5,.5,1)",
+                    transition: dragging ? "transform .18s cubic-bezier(.3,1.4,.5,1)" : "transform .24s cubic-bezier(.3,1.5,.5,1)",
                     filter: dragging || lifted ? "drop-shadow(0 10px 8px rgba(80,60,120,.3))" : undefined,
                   }}
                 >
