@@ -18,7 +18,7 @@ const MAX_TYPES = 12; // ชนิดของสูงสุดต่อ Level 
 const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "ฟินเลย!", "ปุ๊กปิ๊ก!", "สุดยอด!", "เรียบร้อย!"];
 const CONFETTI = ["💖", "✨", "⭐", "🫧", "🎀", "💫", "🌸"];
 const STREAK_MS = 7000; // ครบชุดต่อกันภายในเวลานี้ = สตรีค (เอฟเฟกต์และเสียงสูงขึ้น ไม่มีผลกับแต้ม)
-const DRAG_SCALE = 1.80; // ขนาดของที่กำลังลาก (ขยายเล็กน้อย)
+const DRAG_SCALE = 1.50; // ขนาดของที่กำลังลาก (ขยายเล็กน้อย)
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const bonusTime = (types: number) => 6 + types * 3; // ผ่าน Level ได้เวลาเพิ่ม (Level ยากได้เยอะกว่า)
 
@@ -1139,7 +1139,7 @@ export default function ItemJamPage() {
                       ? `translateY(${-lay.lift * 0.9}px) scale(1.1)`
                       : "none",
                     transition: dragging ? "transform .18s cubic-bezier(.3,1.4,.5,1)" : "transform .24s cubic-bezier(.3,1.5,.5,1)",
-                    filter: dragging || lifted ? "drop-shadow(0 10px 8px rgba(80,60,120,.3))" : undefined,
+                      filter: dragging || lifted ? "drop-shadow(0 10px 8px rgba(80,60,120,.3))" : undefined,
                   }}
                 >
                   <div
