@@ -37,23 +37,66 @@ const MAX_PARTS = 140; // จำกัดจำนวนอนุภาคกั
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "ฟินเลย!", "ปุ๊กปิ๊ก!", "สุดยอด!"];
-const CONFETTI = ["💖", "✨", "⭐", "🫧", "🎀", "💫", "🌸"];
-const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+const CONFETTI = ["heart", "sparkle", "star", "bubble", "bow", "flower", "twinkle"]; // key ของไอคอนใน ART
 
 // ผลไม้ 11 ระดับ: r = รัศมี (หน่วยในเกม) — ปล่อยได้เฉพาะ 5 ระดับแรก
 const FRUITS = [
-  { e: "🍒", n: "เชอร์รี่", c: "#FF8E8E", r: 16 },
-  { e: "🍓", n: "สตรอว์เบอร์รี่", c: "#FF9EC0", r: 22 },
-  { e: "🍇", n: "องุ่น", c: "#D9BDF5", r: 28 },
-  { e: "🍊", n: "ส้ม", c: "#FFB874", r: 35 },
-  { e: "🍋", n: "มะนาว", c: "#FFE27A", r: 43 },
-  { e: "🍎", n: "แอปเปิ้ล", c: "#FF9F86", r: 52 },
-  { e: "🍐", n: "ลูกแพร์", c: "#B9E39A", r: 63 },
-  { e: "🍑", n: "พีช", c: "#FFC2B0", r: 75 },
-  { e: "🍍", n: "สับปะรด", c: "#F5D27A", r: 88 },
-  { e: "🍈", n: "เมลอน", c: "#97D58C", r: 102 },
-  { e: "🍉", n: "แตงโม", c: "#7FD6C0", r: 118 },
+  { n: "เชอร์รี่", c: "#FF8E8E", r: 16 },
+  { n: "สตรอว์เบอร์รี่", c: "#FF9EC0", r: 22 },
+  { n: "องุ่น", c: "#D9BDF5", r: 28 },
+  { n: "ส้ม", c: "#FFB874", r: 35 },
+  { n: "มะนาว", c: "#FFE27A", r: 43 },
+  { n: "แอปเปิ้ล", c: "#FF9F86", r: 52 },
+  { n: "ลูกแพร์", c: "#B9E39A", r: 63 },
+  { n: "พีช", c: "#FFC2B0", r: 75 },
+  { n: "สับปะรด", c: "#F5D27A", r: 88 },
+  { n: "เมลอน", c: "#97D58C", r: 102 },
+  { n: "แตงโม", c: "#7FD6C0", r: 118 },
 ];
+
+// ===== ภาพผลไม้/ไอคอนแบบวาดเอง (SVG) =====
+// ไม่พึ่งฟอนต์อีโมจิของเครื่อง (Android/iOS/Windows หน้าตาอีโมจิไม่เหมือนกัน) จึงเห็นเหมือนกันทุกอุปกรณ์
+const ART: Record<string, string> = {
+  f0: `<path d="M34 64C38 42 50 26 68 14" fill="none" stroke="#3F9B3A" stroke-width="4" stroke-linecap="round"/><path d="M70 66C68 46 68 30 68 14" fill="none" stroke="#3F9B3A" stroke-width="4" stroke-linecap="round"/><path d="M68 15C76 4 92 8 96 18C86 26 74 24 68 15Z" fill="#5FD04B"/><circle cx="32" cy="70" r="21" fill="#E4152F"/><circle cx="71" cy="72" r="20" fill="#C70F27"/><ellipse cx="25" cy="62" rx="6" ry="4" fill="#fff" opacity=".75" transform="rotate(-35 25 62)"/><ellipse cx="64" cy="64" rx="5.5" ry="3.5" fill="#fff" opacity=".7" transform="rotate(-35 64 64)"/>`,
+  f1: `<path d="M50 94C22 78 8 54 16 38C22 26 40 26 50 34C60 26 78 26 84 38C92 54 78 78 50 94Z" fill="#FF2F55"/><path d="M50 30L34 20L44 28L38 12L50 22L62 12L56 28L66 20Z" fill="#3FCB4F" stroke="#2FA83E" stroke-width="2" stroke-linejoin="round"/><g fill="#FFE066"><ellipse cx="32" cy="50" rx="2.6" ry="3.6"/><ellipse cx="50" cy="48" rx="2.6" ry="3.6"/><ellipse cx="68" cy="50" rx="2.6" ry="3.6"/><ellipse cx="40" cy="64" rx="2.6" ry="3.6"/><ellipse cx="60" cy="64" rx="2.6" ry="3.6"/><ellipse cx="50" cy="78" rx="2.6" ry="3.6"/><ellipse cx="29" cy="64" rx="2.4" ry="3.2"/><ellipse cx="71" cy="64" rx="2.4" ry="3.2"/></g><ellipse cx="30" cy="42" rx="6" ry="4" fill="#fff" opacity=".6" transform="rotate(-30 30 42)"/>`,
+  f2: `<path d="M52 30C52 20 56 14 62 12" fill="none" stroke="#6B4A1F" stroke-width="4" stroke-linecap="round"/><path d="M56 18C62 8 78 8 84 16C76 24 62 24 56 18Z" fill="#4FD04A"/><g fill="#8E3FD8"><circle cx="30" cy="44" r="13"/><circle cx="72" cy="44" r="13"/><circle cx="62" cy="64" r="13"/></g><g fill="#A957F2"><circle cx="51" cy="40" r="13"/><circle cx="40" cy="62" r="13"/><circle cx="51" cy="82" r="13"/></g><g fill="#fff" opacity=".7"><ellipse cx="26" cy="40" rx="3.6" ry="2.4"/><ellipse cx="47" cy="36" rx="3.6" ry="2.4"/><ellipse cx="68" cy="40" rx="3.6" ry="2.4"/><ellipse cx="36" cy="58" rx="3.6" ry="2.4"/><ellipse cx="58" cy="60" rx="3.6" ry="2.4"/><ellipse cx="47" cy="78" rx="3.6" ry="2.4"/></g>`,
+  f3: `<circle cx="50" cy="56" r="38" fill="#FF8C00"/><g fill="#E67600" opacity=".4"><circle cx="30" cy="66" r="1.8"/><circle cx="48" cy="80" r="1.8"/><circle cx="68" cy="70" r="1.8"/><circle cx="72" cy="48" r="1.8"/><circle cx="58" cy="60" r="1.8"/><circle cx="38" cy="52" r="1.8"/></g><path d="M50 20C46 10 38 8 30 10C34 18 42 22 50 20Z" fill="#4FD04A"/><circle cx="50" cy="21" r="3.5" fill="#7A4B1C"/><ellipse cx="33" cy="42" rx="8" ry="5" fill="#fff" opacity=".55" transform="rotate(-35 33 42)"/>`,
+  f4: `<g transform="rotate(-25 50 55)"><path d="M6 55C6 54 10 52 14 50C24 34 76 34 86 50C90 52 94 54 94 55C94 56 90 58 86 60C76 76 24 76 14 60C10 58 6 56 6 55Z" fill="#FFE11A"/><path d="M16 62C30 74 70 74 84 62C76 78 24 78 16 62Z" fill="#F2C400" opacity=".6"/><ellipse cx="36" cy="46" rx="9" ry="3.6" fill="#fff" opacity=".6"/></g><path d="M56 28C60 14 74 10 84 14C80 26 68 32 56 28Z" fill="#4FD04A"/>`,
+  f5: `<path d="M50 32C40 22 14 26 14 56C14 80 30 94 44 90C48 89 52 89 56 90C70 94 86 80 86 56C86 26 60 22 50 32Z" fill="#FF2B3A"/><path d="M50 32C50 24 52 16 58 10" fill="none" stroke="#6B3E1A" stroke-width="5" stroke-linecap="round"/><path d="M56 22C60 10 76 8 84 14C78 26 64 28 56 22Z" fill="#4FD04A"/><ellipse cx="29" cy="48" rx="6" ry="11" fill="#fff" opacity=".6" transform="rotate(18 29 48)"/>`,
+  f6: `<path d="M50 14C60 14 62 28 62 36C62 44 78 52 78 70C78 88 64 94 50 94C36 94 22 88 22 70C22 52 38 44 38 36C38 28 40 14 50 14Z" fill="#9BDB2B"/><path d="M62 40C74 50 82 64 76 80C70 92 58 94 50 94C66 82 68 56 62 40Z" fill="#7CC21A" opacity=".5"/><path d="M50 16C50 10 52 6 58 4" fill="none" stroke="#6B3E1A" stroke-width="4" stroke-linecap="round"/><path d="M54 12C60 2 76 2 84 8C76 18 62 18 54 12Z" fill="#4FD04A"/><ellipse cx="38" cy="66" rx="5" ry="10" fill="#fff" opacity=".55" transform="rotate(12 38 66)"/>`,
+  f7: `<path d="M50 24C28 12 8 34 12 58C16 80 34 94 50 90C66 94 84 80 88 58C92 34 72 12 50 24Z" fill="#FF8A6B"/><path d="M50 24C72 12 92 34 88 58C84 80 66 94 50 90C58 70 60 44 50 24Z" fill="#FF6F7D" opacity=".55"/><path d="M50 26C58 46 58 70 50 90" fill="none" stroke="#E5505E" stroke-width="2.5" opacity=".6" stroke-linecap="round"/><path d="M52 24C56 10 72 6 84 12C78 24 64 28 52 24Z" fill="#4FD04A"/><ellipse cx="30" cy="48" rx="6" ry="10" fill="#fff" opacity=".5" transform="rotate(20 30 48)"/>`,
+  f8: `<defs><clipPath id="pc"><ellipse cx="50" cy="64" rx="28" ry="32"/></clipPath></defs><path d="M50 32L38 6L46 22L50 2L54 22L62 6Z" fill="#3FCB4F"/><path d="M44 32L26 12L40 26Z" fill="#2FB43F"/><path d="M56 32L74 12L60 26Z" fill="#2FB43F"/><ellipse cx="50" cy="64" rx="28" ry="32" fill="#FFC21A"/><g clip-path="url(#pc)" stroke="#E08600" stroke-width="2.5" opacity=".8"><path d="M10 30L80 100M10 46L64 100M10 62L48 100M30 30L90 90M46 30L90 74M62 30L90 58M10 78L32 100"/><path d="M90 30L20 100M90 46L36 100M90 62L52 100M70 30L10 90M54 30L10 74M38 30L10 58M90 78L68 100"/></g><ellipse cx="36" cy="52" rx="5" ry="10" fill="#fff" opacity=".45" transform="rotate(12 36 52)"/>`,
+  f9: `<defs><clipPath id="mc"><circle cx="50" cy="56" r="38"/></clipPath></defs><circle cx="50" cy="56" r="38" fill="#A8E05F"/><g clip-path="url(#mc)" fill="none" stroke="#E4FBB5" stroke-width="2.5" opacity=".9"><path d="M26 22C46 38 46 74 26 90"/><path d="M50 18C62 40 62 72 50 94"/><path d="M74 22C54 38 54 74 74 90"/><path d="M16 50C40 44 60 44 84 50"/><path d="M18 68C40 62 60 62 82 68"/><path d="M24 34C42 30 58 30 76 34"/></g><path d="M50 18C50 12 54 8 60 6" fill="none" stroke="#6B8E23" stroke-width="4" stroke-linecap="round"/><path d="M52 14C56 4 70 2 78 8C72 18 60 20 52 14Z" fill="#4FD04A"/><ellipse cx="33" cy="42" rx="8" ry="5" fill="#fff" opacity=".5" transform="rotate(-35 33 42)"/>`,
+  f10: `<g transform="translate(0,-4)"><path d="M6 34A44 44 0 0 0 94 34Z" fill="#1FA94B"/><path d="M11 34A39 39 0 0 0 89 34Z" fill="#D8F5B0"/><path d="M16 34A34 34 0 0 0 84 34Z" fill="#FF3358"/><g fill="#2B1B1B"><ellipse cx="36" cy="48" rx="2.8" ry="4.2" transform="rotate(-20 36 48)"/><ellipse cx="50" cy="54" rx="2.8" ry="4.2"/><ellipse cx="64" cy="48" rx="2.8" ry="4.2" transform="rotate(20 64 48)"/><ellipse cx="43" cy="64" rx="2.8" ry="4.2" transform="rotate(-12 43 64)"/><ellipse cx="57" cy="64" rx="2.8" ry="4.2" transform="rotate(12 57 64)"/></g><rect x="6" y="31" width="88" height="3.5" rx="1.7" fill="#fff" opacity=".35"/></g>`,
+  heart: `<path d="M50 88C8 58 6 28 28 20C40 16 50 26 50 34C50 26 60 16 72 20C94 28 92 58 50 88Z" fill="#FF4F8B"/><ellipse cx="32" cy="36" rx="7" ry="4" fill="#fff" opacity=".6" transform="rotate(-30 32 36)"/>`,
+  sparkle: `<path d="M50 2C54 34 66 46 98 50C66 54 54 66 50 98C46 66 34 54 2 50C34 46 46 34 50 2Z" fill="#FFD21F"/>`,
+  star: `<path d="M50 6L61 37L94 38L68 58L77 90L50 71L23 90L32 58L6 38L39 37Z" fill="#FFC400" stroke="#FFA800" stroke-width="3" stroke-linejoin="round"/>`,
+  bubble: `<circle cx="50" cy="50" r="40" fill="#BDEBFF" opacity=".6"/><circle cx="50" cy="50" r="40" fill="none" stroke="#7FD0FF" stroke-width="4"/><ellipse cx="36" cy="34" rx="9" ry="5" fill="#fff" opacity=".85" transform="rotate(-35 36 34)"/>`,
+  bow: `<path d="M50 50C30 20 6 28 8 50C6 72 30 80 50 50Z" fill="#FF5FA2"/><path d="M50 50C70 20 94 28 92 50C94 72 70 80 50 50Z" fill="#FF5FA2"/><path d="M44 58L34 92L50 78Z" fill="#FF8CBF"/><path d="M56 58L66 92L50 78Z" fill="#FF8CBF"/><circle cx="50" cy="50" r="10" fill="#E83E8C"/>`,
+  flower: `<g fill="#FF8FC0"><circle cx="50" cy="24" r="17"/><circle cx="75" cy="42" r="17"/><circle cx="66" cy="72" r="17"/><circle cx="34" cy="72" r="17"/><circle cx="25" cy="42" r="17"/></g><circle cx="50" cy="52" r="12" fill="#FFD84D"/>`,
+  twinkle: `<path d="M50 2C54 34 66 46 98 50C66 54 54 66 50 98C46 66 34 54 2 50C34 46 46 34 50 2Z" fill="#FF9AD5"/>`,
+};
+const ART_URI: Record<string, string> = {};
+for (const k of Object.keys(ART)) {
+  ART_URI[k] = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 100 100">${ART[k]}</svg>`);
+}
+const artImgs: Record<string, HTMLImageElement> = {};
+let artReady = false;
+let artLoading = false;
+function loadArt() {
+  if (artLoading || typeof window === "undefined") return;
+  artLoading = true;
+  const keys = Object.keys(ART_URI);
+  let n = 0;
+  const done = () => { if (++n === keys.length) artReady = true; };
+  for (const k of keys) {
+    const im = new Image();
+    im.onload = done;
+    im.onerror = done;
+    im.src = ART_URI[k];
+    artImgs[k] = im;
+  }
+}
 const MAX_LV = FRUITS.length - 1;
 const POINTS = (lv: number) => ((lv + 1) * (lv + 2)) / 2; // คะแนนตอนรวมร่างเป็นระดับ lv
 const WATERMELON_BONUS = 150; // แตงโม 2 ลูกชนกัน = หายไปพร้อมโบนัส
@@ -264,7 +307,7 @@ function doMerge(cur: G, a: F, b: F) {
     for (let i = 0; i < cnt; i++) {
       const ang = (i / 30) * Math.PI * 2;
       const sp = 180 + Math.random() * 280;
-      cur.parts.push({ x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 160, life: 1.6, max: 1.6, e: i % 3 === 0 ? "🍉" : CONFETTI[i % CONFETTI.length], size: 24 + (i % 3) * 8, rot: 0, vr: (Math.random() - 0.5) * 8 });
+      cur.parts.push({ x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 160, life: 1.6, max: 1.6, e: i % 3 === 0 ? "f10" : CONFETTI[i % CONFETTI.length], size: 24 + (i % 3) * 8, rot: 0, vr: (Math.random() - 0.5) * 8 });
     }
     cur.rings.push({ x: mx, y: my, r: FRUITS[lv].r, life: 0.9, max: 0.9, color: col });
     cur.rings.push({ x: mx, y: my, r: FRUITS[lv].r * 1.3, life: 1.1, max: 1.1, color: "#FFFFFF" });
@@ -304,7 +347,7 @@ function doMerge(cur: G, a: F, b: F) {
   for (let i = 0; i < cnt; i++) {
     const ang = (i / cnt) * Math.PI * 2 + Math.random();
     const sp = 90 + Math.random() * 170;
-    cur.parts.push({ x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 100, life: 0.9 + Math.random() * 0.4, max: 1.2, e: i % 4 === 0 ? FRUITS[nl].e : CONFETTI[i % CONFETTI.length], size: 15 + (i % 3) * 5, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 8 });
+    cur.parts.push({ x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 100, life: 0.9 + Math.random() * 0.4, max: 1.2, e: i % 4 === 0 ? `f${nl}` : CONFETTI[i % CONFETTI.length], size: 15 + (i % 3) * 5, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 8 });
   }
   cur.rings.push({ x: mx, y: my, r: nr * 0.8, life: 0.55, max: 0.55, color: col });
   cur.texts.push({ x: mx, y: my - nr * 0.4, text: `+${pts}`, life: 0.9, max: 0.9, color: "#C2457B", size: 20 + Math.min(nl, 8) });
@@ -490,10 +533,10 @@ let sprites: Sprite[] = [];
 let spriteK = 0;
 const emojiCache = new Map<string, HTMLCanvasElement>();
 
-// สร้างภาพผลไม้ล่วงหน้า (ตัวฟองสบู่พาสเทล + เงา + ประกาย / อีโมจิ) ใช้ซ้ำทุกเฟรม
+// สร้างภาพผลไม้ล่วงหน้า (ตัวฟองสบู่พาสเทล + เงา + ประกาย / รูปผลไม้ SVG) ใช้ซ้ำทุกเฟรม
 function buildSprites(k: number) {
   spriteK = k;
-  sprites = FRUITS.map((T) => {
+  sprites = FRUITS.map((T, lv) => {
     const r = T.r;
     const half = r * 1.4;
     const px = Math.ceil(half * 2 * k);
@@ -531,38 +574,33 @@ function buildSprites(k: number) {
     c.fillStyle = "rgba(255,255,255,.75)";
     c.fill();
 
-    const es = r * 1.6;
+    const es = r * 1.4;
     const epx = Math.ceil(es * k);
-    const ek = epx / es;
-    const emoji = document.createElement("canvas");
+    const emoji = document.createElement("canvas"); // รูปผลไม้ (ชื่อเดิม emoji)
     emoji.width = epx;
     emoji.height = epx;
     const ec = emoji.getContext("2d") as CanvasRenderingContext2D;
-    ec.font = `${r * 1.2 * ek}px ${EMOJI_FONT}`;
-    ec.textAlign = "center";
-    ec.textBaseline = "middle";
-    ec.fillText(T.e, epx / 2, epx / 2 + r * 0.05 * ek);
+    ec.drawImage(artImgs[`f${lv}`], 0, 0, epx, epx);
     return { body, emoji, half, es };
   });
 }
 
-function emojiImg(e: string) {
-  let c = emojiCache.get(e);
+// ไอคอนเล็กสำหรับอนุภาค (rasterize ครั้งเดียวแล้วแคช)
+function artSmall(key: string) {
+  let c = emojiCache.get(key);
   if (!c) {
+    const im = artImgs[key];
+    if (!artReady || !im) return null;
     c = document.createElement("canvas");
     c.width = 72;
     c.height = 72;
-    const x = c.getContext("2d") as CanvasRenderingContext2D;
-    x.font = `54px ${EMOJI_FONT}`;
-    x.textAlign = "center";
-    x.textBaseline = "middle";
-    x.fillText(e, 36, 38);
-    emojiCache.set(e, c);
+    (c.getContext("2d") as CanvasRenderingContext2D).drawImage(im, 0, 0, 72, 72);
+    emojiCache.set(key, c);
   }
   return c;
 }
 
-// s = ยุบตัว, sa = ทิศแรงกระแทก, sc = ขนาด, ang = มุมหมุนของอีโมจิ
+// s = ยุบตัว, sa = ทิศแรงกระแทก, sc = ขนาด, ang = มุมหมุนของรูปผลไม้
 function drawFruit(ctx: CanvasRenderingContext2D, lv: number, x: number, y: number, ang: number, sc: number, s: number, sa: number, alpha = 1) {
   const sp = sprites[lv];
   if (!sp || sc <= 0.02) return;
@@ -596,6 +634,7 @@ function jarPath(ctx: CanvasRenderingContext2D, close: boolean) {
 const easeBack = (t: number) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
 function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
+  if (!artReady) { ctx.clearRect(0, 0, v.cw, v.ch); return; } // รอรูป SVG โหลด (เสี้ยววินาที)
   if (spriteK !== v.k || sprites.length === 0) buildSprites(v.k);
   ctx.clearRect(0, 0, v.cw, v.ch);
   ctx.save();
@@ -605,8 +644,8 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
   // พื้นหลังโหล (กระจกใส)
   jarPath(ctx, true);
   const bg = ctx.createLinearGradient(0, JAR_TOP, 0, H);
-  bg.addColorStop(0, "rgba(255,255,255,.38)");
-  bg.addColorStop(1, "rgba(222,230,250,.6)");
+  bg.addColorStop(0, "rgba(255,255,255,.45)");
+  bg.addColorStop(1, "rgba(190,220,255,.72)");
   ctx.fillStyle = bg;
   ctx.fill();
 
@@ -658,7 +697,7 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
   ctx.translate(0, 5);
   jarPath(ctx, false);
   ctx.lineWidth = 9;
-  ctx.strokeStyle = "#B9C1EA";
+  ctx.strokeStyle = "#8FA6F5";
   ctx.stroke();
   ctx.restore();
   ctx.save();
@@ -698,7 +737,8 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
     ctx.translate(p.x, p.y);
     ctx.rotate(p.rot);
     const sz = p.size * 1.3;
-    ctx.drawImage(emojiImg(p.e), -sz / 2, -sz / 2, sz, sz);
+    const im = artSmall(p.e);
+    if (im) ctx.drawImage(im, -sz / 2, -sz / 2, sz, sz);
     ctx.restore();
   }
   for (let i = 0; i < g.texts.length; i++) {
@@ -761,6 +801,13 @@ function PopText({ text, size }: { text: string; size: string }) {
         {text}
       </span>
     </div>
+  );
+}
+
+function FruitImg({ lv, size }: { lv: number; size: number }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={ART_URI[`f${lv}`]} alt={FRUITS[lv].n} draggable={false} width={size} height={size} style={{ width: size, height: size, display: "block" }} />
   );
 }
 
@@ -1113,6 +1160,9 @@ export default function FruitieBubblyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // โหลดรูปผลไม้ SVG
+  useEffect(() => { loadArt(); }, []);
+
   // เข้าหน้าแล้วเริ่ม READY → GO!!! อัตโนมัติ
   useEffect(() => {
     beginRound();
@@ -1149,7 +1199,7 @@ export default function FruitieBubblyPage() {
   };
 
   return (
-    <div className="fb-anim fixed inset-0 z-50 select-none overflow-hidden overscroll-none bg-gradient-to-b from-[#CDEFE4] via-[#FFF1E2] to-[#FFE3EE] font-sans text-zinc-900" style={{ touchAction: "manipulation" }}>
+    <div className="fb-anim fixed inset-0 z-50 select-none overflow-hidden overscroll-none bg-gradient-to-b from-[#9CF0DA] via-[#FFF2B0] to-[#FFADD2] font-sans text-zinc-900" style={{ touchAction: "manipulation" }}>
       <style>{`
         .fb-anim { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
         @keyframes fb-star { 0% { transform: scale(0) rotate(-25deg); opacity: 0 } 70% { transform: scale(1.2) rotate(6deg); opacity: 1 } 100% { transform: scale(1) rotate(0); opacity: 1 } }
@@ -1169,7 +1219,7 @@ export default function FruitieBubblyPage() {
         {BUBBLES.map(([x, y, d], i) => (
           <span
             key={i}
-            className="absolute rounded-full bg-white/45 ring-1 ring-white/70"
+            className="absolute rounded-full bg-white/55 ring-1 ring-white/80"
             style={{ left: `${x}%`, top: `${y}%`, width: d, height: d, willChange: "transform", animation: `fb-bob ${6 + i}s ease-in-out ${i * 0.7}s infinite alternate` }}
           />
         ))}
@@ -1236,7 +1286,7 @@ export default function FruitieBubblyPage() {
                   animation: "fb-bump .35s ease-out",
                 }}
               >
-                <span style={{ lineHeight: 1 }}>{FRUITS[g.next].e}</span>
+                <FruitImg lv={g.next} size={compact ? 28 : wide ? 44 : 36} />
               </div>
             </div>
 
@@ -1247,7 +1297,7 @@ export default function FruitieBubblyPage() {
                   className="max-w-[44vw] text-center text-[11px] font-bold leading-tight text-[#C2457B] sm:max-w-[60vw] sm:text-sm"
                   style={{ textShadow: POP_SHADOW, animation: showHint ? "fb-hint 1.4s ease-in-out infinite" : undefined }}
                 >
-                  {showHint ? "แตะ/ลากเพื่อเล็ง ปล่อยนิ้วเพื่อทิ้ง ชนิดเดียวกันชนกันจะรวมร่าง!" : g.maxLv > 0 ? `ใหญ่สุด ${FRUITS[g.maxLv].e} ${FRUITS[g.maxLv].n}` : ""}
+                  {showHint ? "แตะ/ลากเพื่อเล็ง ปล่อยนิ้วเพื่อทิ้ง ชนิดเดียวกันชนกันจะรวมร่าง!" : g.maxLv > 0 ? (<span className="inline-flex items-center gap-1">ใหญ่สุด <FruitImg lv={g.maxLv} size={18} /> {FRUITS[g.maxLv].n}</span>) : ""}
                 </span>
               </div>
             )}
@@ -1275,7 +1325,7 @@ export default function FruitieBubblyPage() {
                       transition: "opacity .3s, transform .3s",
                     }}
                   >
-                    <span style={{ lineHeight: 1 }}>{f.e}</span>
+                    <FruitImg lv={i} size={Math.round(ladderSize * 0.72)} />
                   </span>
                 ))}
               </div>
@@ -1296,7 +1346,7 @@ export default function FruitieBubblyPage() {
 
       {/* ===== หน้าสรุปคะแนน ===== */}
       {over && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#FFE0EC] via-white to-white">
+        <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#FFC9E0] via-[#FFF6D6] to-white">
           <div style={{ width: 340, height: natH, transform: `scale(${Math.min((dims.h * 0.9) / natH, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
             <div ref={sumRef} className="text-center" style={{ animation: "fb-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
               <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${newRecord ? "bg-[#FFD66B]" : "bg-zinc-100 text-zinc-600"}`}>
@@ -1323,7 +1373,7 @@ export default function FruitieBubblyPage() {
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-[#97D58C]/55 py-3">
-                  <p className="text-xl font-semibold">{FRUITS[g.maxLv].e}</p>
+                  <div className="flex justify-center"><FruitImg lv={g.maxLv} size={34} /></div>
                   <p className="text-xs text-zinc-600">ผลไม้ใหญ่สุด ({FRUITS[g.maxLv].n})</p>
                 </div>
                 <div className="rounded-2xl bg-[#9DB4F2]/50 py-3">
