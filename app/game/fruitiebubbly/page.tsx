@@ -44,7 +44,9 @@ const STEP = 1 / 180; // ก้าวฟิสิกส์คงที่ (ว�
 const MAX_STEPS = 24; // กันเฟรมค้างแล้วฟิสิกส์ไล่ไม่ทัน
 const ITER = 4; // รอบแก้การชนต่อ 1 ก้าว
 const DROP_CD = 0.5; // เวลารอก่อนปล่อยลูกถัดไป (วินาที)
-const DANGER_LIMIT = 2.4; // ค้างเหนือเส้นสะสมเกินนี้ = จบเกม (วินาที)
+const DANGER_START = 0.3; // ค้างเหนือเส้นเกินนี้ถึงเริ่มกะพริบแดง + นับถอยหลัง (กันผลไม้เด้งแตะเส้นแว้บเดียว)
+const DANGER_CLEAR = 0.4; // อยู่ต่ำกว่าเส้นต่อเนื่องเกินนี้ = หายแล้ว รีเซ็ตนับ 10 ใหม่ทั้งหมด
+const DANGER_LIMIT = 10; // ค้างเหนือเส้นสะสมครบเวลานี้ = จบเกม (วินาที) — ระหว่างนั้นแสดงตัวเลขนับถอยหลัง
 const COMBO_WIN = 1.3; // รวมร่างต่อกันภายในเวลานี้ = คอมโบ (วินาที)
 const MAX_PARTS = 140; // จำกัดจำนวนอนุภาคกันกระตุก
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -258,7 +260,7 @@ type G = {
   score: number; drops: number; merges: number; combo: number; bestCombo: number;
   lastMergeT: number; simT: number; maxLv: number;
   cur: number; next: number; cool: number; aimX: number; aimT: number;
-  danger: number; dangerOn: boolean; shake: number; warnT: number; clock: number; alpha: number;
+  danger: number; dangerOn: boolean; dsec: number; clearT: number; shake: number; warnT: number; clock: number; alpha: number;
   parts: P[]; texts: Tx[]; rings: Rg[];
 };
 
@@ -269,7 +271,7 @@ function newG(round: number): G {
     score: 0, drops: 0, merges: 0, combo: 0, bestCombo: 0,
     lastMergeT: -1e9, simT: 0, maxLv: 0,
     cur: 0, next: 0, cool: 0, aimX: W / 2, aimT: W / 2,
-    danger: 0, dangerOn: false, shake: 0, warnT: 0, clock: 0, alpha: 1,
+    danger: 0, dangerOn: false, dsec: 0, clearT: 0, shake: 0, warnT: 0, clock: 0, alpha: 1,
     parts: [], texts: [], rings: [],
   };
 }
@@ -1127,14 +1129,23 @@ export default function FruitieBubblyPage() {
           const f = cur.fruits[i];
           if (!f.merging && f.age > 1.2 && f.y - FRUITS[f.lv].r < LINE_Y) { over = true; break; }
         }
-        cur.danger = over ? cur.danger + dt : Math.max(0, cur.danger - dt * 2);
+        if (over) {
+          cur.danger += dt;
+          cur.clearT = 0;
+        } else {
+          cur.clearT += dt;
+          if (cur.clearT >= DANGER_CLEAR) cur.danger = 0; // แก้ได้แล้ว → รีเซ็ตเวลา
+        }
         if (over) {
           cur.warnT -= dt;
-          if (cur.warnT <= 0) { cur.warnT = 0.5; sfx.warn(); }
+          if (cur.warnT <= 0) { cur.warnT = 1; sfx.warn(); }
         }
-        const on = cur.danger > 0.3;
+        const on = cur.danger > DANGER_START;
         if (on !== cur.dangerOn) { cur.dangerOn = on; needRender = true; }
-        if (cur.danger >= DANGER_LIMIT) endGame();
+        // นับถอยหลังก่อนจบเกม (10 → 1) แสดงเมื่อผลไม้ค้างเหนือเส้น
+        const sec = on ? clamp(Math.ceil(DANGER_LIMIT + DANGER_START - cur.danger), 1, DANGER_LIMIT) : 0;
+        if (sec !== cur.dsec) { cur.dsec = sec; needRender = true; }
+        if (cur.danger >= DANGER_LIMIT + DANGER_START) endGame();
       } else {
         cur.alpha = 1;
         acc = 0;
@@ -1228,6 +1239,7 @@ export default function FruitieBubblyPage() {
   const sc = clamp(Math.min((dims.w - (wide ? 24 : 8)) / cw, (dims.h - topPad - bottomPad) / ch), 0.3, 2.4);
   viewRef.current = { sc, cw, ch, k: sc };
   const boardH = ch * sc;
+  const boardTop = topPad + (dims.h - topPad - bottomPad - boardH) / 2;
   const ladderTop = topPad + (dims.h - topPad - bottomPad - boardH) / 2 + boardH + 6; // ใต้ก้นโหล เว้นช่องไฟนิดนึง
   const over = g.phase === "over";
   const playing = g.phase === "playing";
@@ -1259,6 +1271,7 @@ export default function FruitieBubblyPage() {
         @keyframes fb-vignette { from { opacity: .25 } to { opacity: 1 } }
         @keyframes fb-fly { 0% { transform: translateY(-135px) scale(1.7); opacity: 0 } 15% { opacity: 1 } 80% { opacity: 1 } 100% { transform: translateY(0) scale(.85); opacity: 0 } }
         @keyframes fb-burst { 0% { transform: translate(0,0) scale(0) rotate(0); opacity: 1 } 100% { transform: translate(var(--dx),var(--dy)) scale(1) rotate(160deg); opacity: 0 } }
+        @keyframes fb-tick { 0% { transform: scale(1.6); opacity: 0 } 25% { opacity: 1 } 100% { transform: scale(1); opacity: .95 } }
         @keyframes fb-hint { 0%, 100% { opacity: .65 } 50% { opacity: 1 } }
         @media (prefers-reduced-motion: reduce) { .fb-anim, .fb-anim * { animation: none !important } }
       `}</style>
@@ -1408,6 +1421,16 @@ export default function FruitieBubblyPage() {
               <FruitImg lv={i} size={Math.round(ladderSize * 0.72)} />
             </span>
           ))}
+        </div>
+      )}
+
+      {/* นับถอยหลังก่อนจบเกม: ผลไม้ค้างเหนือเส้น (สไตล์เดียวกับ READY/GO) */}
+      {playing && !over && g.dsec > 0 && (
+        <div className="pointer-events-none absolute left-1/2 z-[5] text-center" style={{ top: boardTop + (LINE_Y + 56) * sc, transform: "translate(-50%,-50%)" }}>
+          <div key={g.dsec} style={{ animation: "fb-tick .45s cubic-bezier(.2,1.3,.4,1) both", opacity: 0.95 }}>
+            <PopText text={String(g.dsec)} size="text-7xl sm:text-8xl" />
+            <p className="-mt-2 text-sm font-bold text-[#C2457B]" style={{ textShadow: POP_SHADOW }}>ผลไม้ล้นเส้น! รีบรวมร่างให้ต่ำลง</p>
+          </div>
         </div>
       )}
 
