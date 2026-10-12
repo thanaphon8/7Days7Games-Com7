@@ -1209,12 +1209,16 @@ export default function FruitieBubblyPage() {
   // ===== ค่าที่ใช้แสดงผล =====
   const compact = dims.h < 500; // มือถือแนวนอน
   const wide = dims.w >= 640;
+  const stack = !wide && !compact; // มือถือแนวตั้ง: แถวผลไม้แยกออกมาอยู่ใต้ก้นโหล ไม่ชนปุ่มด้านล่าง
   const topPad = compact ? 66 : wide ? 112 : 86;
-  const bottomPad = compact ? 62 : wide ? 100 : 68;
+  const ladderSize = wide ? 30 : stack ? clamp(Math.floor((dims.w - 24) / FRUITS.length) - 3, 12, 28) : clamp(Math.floor((dims.w - 24 - 164 - 12) / FRUITS.length) - 3, 12, 28);
+  const bottomPad = compact ? 62 : wide ? 100 : 66 + ladderSize + 10;
   const cw = W + PAD * 2;
   const ch = H + PAD;
   const sc = clamp(Math.min((dims.w - (wide ? 24 : 8)) / cw, (dims.h - topPad - bottomPad) / ch), 0.3, 2.4);
   viewRef.current = { sc, cw, ch, k: sc };
+  const boardH = ch * sc;
+  const ladderTop = topPad + (dims.h - topPad - bottomPad - boardH) / 2 + boardH + 6; // ใต้ก้นโหล เว้นช่องไฟนิดนึง
   const over = g.phase === "over";
   const playing = g.phase === "playing";
   const stars = starsFor(g.score);
@@ -1222,7 +1226,6 @@ export default function FruitieBubblyPage() {
   const shownScore = useCountUp(g.score, over);
   const showHint = g.drops < 3 && playing;
   // ลำดับผลไม้อยู่แถวล่างฝั่งขวา (มือถือ) / กึ่งกลาง (จอใหญ่)
-  const ladderSize = wide ? 30 : clamp(Math.floor((dims.w - 24 - 108 - 12) / FRUITS.length) - 3, 12, 28);
   const saveText: Record<SaveState, string> = {
     idle: "",
     saving: "กำลังบันทึกแต้ม...",
@@ -1346,27 +1349,52 @@ export default function FruitieBubblyPage() {
                   <StarIcon size={24} />
                 </button>
               </div>
-              <div className="flex min-w-0 flex-1 items-center justify-end sm:justify-center" style={{ gap: 3 }}>
-                {FRUITS.map((f, i) => (
-                  <span
-                    key={i}
-                    className="flex shrink-0 items-center justify-center rounded-full ring-1 ring-white"
-                    style={{
-                      width: ladderSize,
-                      height: ladderSize,
-                      background: f.c,
-                      fontSize: ladderSize * 0.6,
-                      opacity: i <= g.maxLv || i <= 4 ? 1 : 0.4,
-                      transform: i === g.maxLv && g.maxLv > 0 ? "scale(1.18)" : undefined,
-                      transition: "opacity .3s, transform .3s",
-                    }}
-                  >
-                    <FruitImg lv={i} size={Math.round(ladderSize * 0.72)} />
-                  </span>
-                ))}
-              </div>
+              {!stack && (
+                <div className="flex min-w-0 flex-1 items-center justify-end sm:justify-center" style={{ gap: 3 }}>
+                  {FRUITS.map((f, i) => (
+                    <span
+                      key={i}
+                      className="flex shrink-0 items-center justify-center rounded-full ring-1 ring-white"
+                      style={{
+                        width: ladderSize,
+                        height: ladderSize,
+                        background: f.c,
+                        fontSize: ladderSize * 0.6,
+                        opacity: i <= g.maxLv || i <= 4 ? 1 : 0.4,
+                        transform: i === g.maxLv && g.maxLv > 0 ? "scale(1.18)" : undefined,
+                        transition: "opacity .3s, transform .3s",
+                      }}
+                    >
+                      <FruitImg lv={i} size={Math.round(ladderSize * 0.72)} />
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* แถวผลไม้ (มือถือแนวตั้ง): อยู่ใต้ก้นโหล ไม่บังปุ่มด้านล่าง */}
+      {stack && !over && (
+        <div className="pointer-events-none absolute inset-x-3 flex items-center justify-center" style={{ top: ladderTop, gap: 3 }}>
+          {FRUITS.map((f, i) => (
+            <span
+              key={i}
+              className="flex shrink-0 items-center justify-center rounded-full ring-1 ring-white"
+              style={{
+                width: ladderSize,
+                height: ladderSize,
+                background: f.c,
+                fontSize: ladderSize * 0.6,
+                opacity: i <= g.maxLv || i <= 4 ? 1 : 0.4,
+                transform: i === g.maxLv && g.maxLv > 0 ? "scale(1.18)" : undefined,
+                transition: "opacity .3s, transform .3s",
+              }}
+            >
+              <FruitImg lv={i} size={Math.round(ladderSize * 0.72)} />
+            </span>
+          ))}
         </div>
       )}
 
@@ -1511,7 +1539,7 @@ export default function FruitieBubblyPage() {
             </ul>
 
             <button onClick={() => setRules(false)} className={`${BTN_MAIN} mt-3 !h-12`}>
-              {over ? "ปิด" : "เล่นต่อ"}
+              {over ? "ปิด" : "ปิดและเล่นต่อ"}
             </button>
           </div>
         </div>
