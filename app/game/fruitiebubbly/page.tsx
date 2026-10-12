@@ -18,7 +18,20 @@ import { useEffect, useReducer, useRef, useState } from "react";
 
 // ===== ตั้งค่าเกม (ปรับสมดุลได้ที่นี่) =====
 const GAME_ID = "fruitiebubbly"; // key ที่ใช้บวกแต้มเข้า gameScores
-const SAVE_RATIO = 0.1; // คะแนนในเกม × ค่านี้ = แต้มที่บวกเข้าคะแนนสะสม (ขั้นต่ำ 1 ถ้าเล่นได้คะแนน)
+const MAX_SAVE = 15; // แต้มสะสมสูงสุดต่อรอบ
+// เกณฑ์แปลงคะแนนในเกม → แต้มสะสม: [คะแนนขั้นต่ำ, แต้มที่ได้]
+// ผู้เล่นทั่วไป (~150-450 คะแนน) ได้ราว 3-6 แต้ม / คนเก่ง (1,000+) ได้ 10+ / คนเทพ (4,000+) ได้เต็ม 15
+const SCORE_TIERS: [number, number][] = [
+  [1, 1], [60, 2], [120, 3], [200, 4], [300, 5],
+  [420, 6], [560, 7], [720, 8], [900, 9], [1150, 10],
+  [1450, 11], [1800, 12], [2300, 13], [3000, 14], [4000, 15],
+];
+const pointsFor = (score: number) => {
+  let p = 0;
+  for (const [min, pt] of SCORE_TIERS) if (score >= min) p = pt;
+  return Math.min(p, MAX_SAVE);
+};
+const nextTier = (score: number) => SCORE_TIERS.find(([min]) => score < min) ?? null;
 const W = 360; // ความกว้างภายในโหล (หน่วยในเกม)
 const H = 480; // ความสูงโหล (รวมพื้นที่ด้านบนไว้เล็ง)
 const PAD = 12; // ขอบรอบโหลที่ canvas เผื่อไว้วาดผนัง
@@ -791,6 +804,14 @@ function Star({ on, delay }: { on: boolean; delay: number }) {
   );
 }
 
+function StarIcon({ size = 24, color = "#4A3B1F" }: { size?: number; color?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden style={{ display: "block" }}>
+      <path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.5 6 20.9l1.3-6.7-5-4.7 6.8-.8z" fill={color} stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function PopText({ text, size }: { text: string; size: string }) {
   return (
     <div className="relative inline-block px-6 py-2">
@@ -844,6 +865,8 @@ export default function FruitieBubblyPage() {
   const [record, setRecord] = useState(0);
   const [newRecord, setNewRecord] = useState(false);
   const [praise, setPraise] = useState("");
+  const [showRules, setShowRules] = useState(false);
+  const pausedRef = useRef(false); // เปิดหน้าเกณฑ์ระหว่างเล่น = หยุดเกมชั่วคราว
   const sumRef = useRef<HTMLDivElement>(null);
   const [natH, setNatH] = useState(620);
 
@@ -869,13 +892,18 @@ export default function FruitieBubblyPage() {
     } catch {}
   }, []);
 
+  function setRules(v: boolean) {
+    pausedRef.current = v;
+    setShowRules(v);
+  }
+
   function toggleMute() {
     muted = !muted;
     setIsMuted(muted);
     try { localStorage.setItem("fruitiebubblyMuted", muted ? "1" : "0"); } catch {}
   }
 
-  // ===== บันทึกคะแนนรอบนี้ (API ใช้ $inc จึงส่งเฉพาะแต้มของรอบนี้) =====
+  // ===== บันทึกแต้มรอบนี้ (API ใช้ $inc จึงส่งเฉพาะแต้มของรอบนี้ ซึ่งแปลงจากเกณฑ์แล้ว 0-15) =====
   async function saveScore(score: number) {
     if (score <= 0) return;
     let userId: string | null = null;
@@ -906,6 +934,8 @@ export default function FruitieBubblyPage() {
     clearTimers();
     audio();
     pressRef.current = null;
+    pausedRef.current = false;
+    setShowRules(false);
     roundRef.current += 1;
     const ng = newG(roundRef.current);
     ng.cur = randLevel();
@@ -944,7 +974,7 @@ export default function FruitieBubblyPage() {
     setRecord(recordRef.current);
     setNewRecord(isNew);
     setPraise(PRAISES[Math.floor(Math.random() * PRAISES.length)]);
-    const pts = cur.score > 0 ? Math.max(1, Math.floor(cur.score * SAVE_RATIO)) : 0;
+    const pts = pointsFor(cur.score); // คะแนนเกม → เกณฑ์ → แต้มสะสม 0-15
     setSavedPts(pts);
     saveScore(pts);
     force();
@@ -1030,11 +1060,13 @@ export default function FruitieBubblyPage() {
   // คีย์ลัดบนคอม: ← → เล็ง, Space/Enter ปล่อยผลไม้ (หน้าสรุป = เล่นอีกครั้ง), M = เสียง
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Escape" && pausedRef.current) { pausedRef.current = false; setShowRules(false); return; }
       if (e.code === "KeyM") toggleMute();
       if (e.code === "ArrowLeft" || e.code === "KeyA") keysRef.current.l = true;
       if (e.code === "ArrowRight" || e.code === "KeyD") keysRef.current.r = true;
       if (e.code === "Space" || e.code === "Enter") {
         if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
+        if (pausedRef.current) return;
         const ph = gRef.current.phase;
         if (ph === "over") { e.preventDefault(); beginRound(); }
         else if (ph === "playing") { e.preventDefault(); if (!e.repeat) drop(); }
@@ -1065,7 +1097,7 @@ export default function FruitieBubblyPage() {
       let needRender = false;
       cur.clock += dt;
 
-      if (cur.phase === "playing") {
+      if (cur.phase === "playing" && !pausedRef.current) {
         cur.cool = Math.max(0, cur.cool - dt);
         // เล็ง: คีย์บอร์ดเลื่อนเป้า แล้วผลไม้ตามเป้าอย่างนุ่มนวล
         const r = FRUITS[cur.cur].r;
@@ -1186,6 +1218,7 @@ export default function FruitieBubblyPage() {
   const over = g.phase === "over";
   const playing = g.phase === "playing";
   const stars = starsFor(g.score);
+  const nt = nextTier(g.score); // เกณฑ์ถัดไป (null = ถึงสูงสุดแล้ว)
   const shownScore = useCountUp(g.score, over);
   const showHint = g.drops < 3 && playing;
   // ลำดับผลไม้อยู่แถวล่างฝั่งขวา (มือถือ) / กึ่งกลาง (จอใหญ่)
@@ -1309,6 +1342,9 @@ export default function FruitieBubblyPage() {
                 <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={BTN_ROUND}>
                   {isMuted ? "🔇" : "🔊"}
                 </button>
+                <button onClick={() => setRules(true)} aria-label="ดูเกณฑ์แต้มสะสม" title="เกณฑ์แต้มสะสม" className={`${BTN_ROUND} !bg-[#FFD66B]`}>
+                  <StarIcon size={24} />
+                </button>
               </div>
               <div className="flex min-w-0 flex-1 items-center justify-end sm:justify-center" style={{ gap: 3 }}>
                 {FRUITS.map((f, i) => (
@@ -1371,6 +1407,17 @@ export default function FruitieBubblyPage() {
                 <p className="text-7xl font-semibold leading-none tabular-nums tracking-tight">{shownScore}</p>
               </div>
 
+              {/* แต้มสะสมที่ได้จากเกณฑ์ (0-15) */}
+              <div className="mt-2 rounded-2xl bg-white/70 px-4 py-2 text-sm">
+                <p className="font-medium">
+                  แต้มสะสมที่ได้{" "}
+                  <b className="text-xl tabular-nums text-[#C2457B]">{savedPts}</b> / {MAX_SAVE}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {nt ? `อีก ${nt[0] - g.score} คะแนน จะได้ ${nt[1]} แต้ม` : "ถึงเกณฑ์สูงสุดแล้ว! 🏆"}
+                </p>
+              </div>
+
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-[#97D58C]/55 py-3">
                   <div className="flex justify-center"><FruitImg lv={g.maxLv} size={34} /></div>
@@ -1393,12 +1440,79 @@ export default function FruitieBubblyPage() {
               <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
               <p className="h-4 text-xs text-zinc-500" role="status">{saveText[saveState]}</p>
 
-              <button onClick={beginRound} className={`${BTN_MAIN} mt-4`}>เล่นอีกครั้ง</button>
+              <button onClick={() => setRules(true)} className="mt-1 text-xs font-medium text-[#C2457B] underline underline-offset-2">
+                ดูเกณฑ์แต้มสะสม
+              </button>
+
+              <button onClick={beginRound} className={`${BTN_MAIN} mt-3`}>เล่นอีกครั้ง</button>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <Link href="/rank" className={BTN_SUB}>ดูอันดับ</Link>
                 <Link href="/" className={BTN_SUB}>หน้าหลัก</Link>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== หน้าเกณฑ์แต้มสะสม (กดปุ่มดาว หรือ "ดูเกณฑ์แต้มสะสม") ===== */}
+      {showRules && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#3B1D3F]/45 p-4 pt-10" onClick={() => setRules(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="เกณฑ์แต้มสะสม"
+            className="relative flex max-h-[88%] w-full max-w-sm flex-col rounded-[2rem] bg-gradient-to-b from-[#FFF0F6] via-[#FFFBE6] to-white px-4 pb-4 pt-12 shadow-2xl ring-4 ring-white"
+            style={{ animation: "fb-rise .3s cubic-bezier(.2,.8,.2,1) both" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* ดาวใหญ่ลอยเด่นด้านบน */}
+            <div className="absolute -top-9 left-1/2 flex h-[72px] w-[72px] -translate-x-1/2 items-center justify-center rounded-full bg-[#FFD66B] shadow-lg ring-4 ring-white">
+              <StarIcon size={40} />
+            </div>
+            <span aria-hidden className="absolute -top-3 left-6 text-lg" style={{ animation: "fb-hint 1.6s ease-in-out infinite" }}>✨</span>
+            <span aria-hidden className="absolute -top-2 right-7 text-base" style={{ animation: "fb-hint 1.9s ease-in-out infinite" }}>💖</span>
+
+            <h2 className="text-center text-xl font-black tracking-tight text-[#C2457B]">เกณฑ์แต้มสะสม</h2>
+            <p className="mx-auto mt-1 max-w-[17rem] text-center text-xs leading-relaxed text-zinc-500">
+              เล่นได้คะแนนเท่าไร ก็ได้แต้มสะสมตามขั้นนี้เลย (สูงสุด {MAX_SAVE} แต้มต่อรอบ)
+            </p>
+
+            <div className="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+              {SCORE_TIERS.map(([min, pt], i) => {
+                const nx = SCORE_TIERS[i + 1];
+                const range = nx ? `${min.toLocaleString("en-US")} – ${(nx[0] - 1).toLocaleString("en-US")}` : `${min.toLocaleString("en-US")} ขึ้นไป`;
+                const mine = over && g.score > 0 && pointsFor(g.score) === pt;
+                const full = pt === MAX_SAVE;
+                return (
+                  <div
+                    key={min}
+                    className={`flex items-center justify-between rounded-full px-4 py-1.5 text-sm tabular-nums ring-1 ${
+                      mine ? "bg-[#FFD66B] font-bold ring-[#F5B93A]" : full ? "bg-[#FFE3EF] ring-[#FFB8D3]" : "bg-white/80 ring-black/[.05]"
+                    }`}
+                  >
+                    <span className="text-zinc-700">
+                      {range}
+                      {mine && <span className="ml-1 text-xs text-[#C2457B]">← คุณอยู่ตรงนี้</span>}
+                    </span>
+                    <span className="flex items-center gap-1 font-bold text-[#C2457B]">
+                      <StarIcon size={16} color="#FFB800" />
+                      {pt}
+                      {full && <span className="text-[10px] font-semibold">เต็ม!</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <ul className="mt-3 space-y-1 rounded-2xl bg-[#FFF3C4]/70 px-3 py-2 text-[11px] leading-snug text-[#8A5A00]">
+              <li>🍒 ได้คะแนน 0 = ไม่ได้แต้ม</li>
+              <li>🍊 ผู้เล่นทั่วไปมักได้ 150–450 คะแนน (3–6 แต้ม)</li>
+              <li>🍉 ต้องเข้าสู่ระบบจึงจะบันทึกแต้มเข้าบัญชี</li>
+            </ul>
+
+            <button onClick={() => setRules(false)} className={`${BTN_MAIN} mt-3 !h-12`}>
+              {over ? "ปิด" : "เล่นต่อ"}
+            </button>
           </div>
         </div>
       )}
