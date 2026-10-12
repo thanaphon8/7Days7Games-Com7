@@ -54,6 +54,11 @@ const COMBO_WIN = 1.3; // รวมร่างต่อกันภายใน
 const MAX_PARTS = 140; // จำกัดจำนวนอนุภาคกันกระตุก
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+// ขนาดแก้มชมพู: รัศมีเป็นสัดส่วนของ u (u = สเกลหน้า) — วงกลมจริง ไม่ใช่วงรี
+const CHEEK_R = 0.43; // รัศมีแก้ม (เดิมเป็นวงรี rx 0.36 / ry 0.24)
+const CHEEK_X = 0.9; // ระยะแก้มจากกึ่งกลางหน้า
+const CHEEK_DY = -0.02; // ขยับแก้มขึ้น/ลงจากแนวปาก
+
 const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "ฟินเลย!", "ปุ๊กปิ๊ก!", "สุดยอด!"];
 const CONFETTI = ["heart", "sparkle", "star", "bubble", "bow", "flower", "twinkle"]; // key ของไอคอนใน ART
 
@@ -167,20 +172,25 @@ const BASE_MOODS = ["smile", "cat", "grin"]; // อารมณ์ปกติ (
 function faceSvg(lv: number) {
   const { x, y, k } = FACE[lv];
   const u = 35.7 * k; // 35.7 = 0.5 * r / (1.4 * r / 100) เท่ากับสเกลหน้าในเกม
-  const ex = u * 0.5;
+  const ex = u * 0.56;
   const ey = y - u * 0.05;
-  const er = u * 0.2;
-  const my = y + u * 0.34;
+  const er = u * 0.24;
+  const my = y + u * 0.38;
+  const cr = u * CHEEK_R; // แก้มเป็นวงกลม
+  const cy = my + u * CHEEK_DY;
   const f = (n: number) => n.toFixed(2);
   const INK = INKS[lv];
   return (
     `<g>` +
-    `<ellipse cx="${f(x - u * 0.8)}" cy="${f(my - u * 0.02)}" rx="${f(u * 0.17)}" ry="${f(u * 0.11)}" fill="#FF7FAE" opacity=".55"/>` +
-    `<ellipse cx="${f(x + u * 0.8)}" cy="${f(my - u * 0.02)}" rx="${f(u * 0.17)}" ry="${f(u * 0.11)}" fill="#FF7FAE" opacity=".55"/>` +
-    `<ellipse cx="${f(x - ex)}" cy="${f(ey)}" rx="${f(er)}" ry="${f(er * 1.25)}" fill="${INK}"/>` +
-    `<ellipse cx="${f(x + ex)}" cy="${f(ey)}" rx="${f(er)}" ry="${f(er * 1.25)}" fill="${INK}"/>` +
-    `<circle cx="${f(x - ex - er * 0.3)}" cy="${f(ey - er * 0.45)}" r="${f(er * 0.38)}" fill="#fff"/>` +
-    `<circle cx="${f(x + ex - er * 0.3)}" cy="${f(ey - er * 0.45)}" r="${f(er * 0.38)}" fill="#fff"/>` +
+    `<defs><radialGradient id="ck${lv}"><stop offset="0" stop-color="#FF5492" stop-opacity=".85"/><stop offset=".5" stop-color="#FF76AA" stop-opacity=".5"/><stop offset="1" stop-color="#FF96BE" stop-opacity="0"/></radialGradient></defs>` +
+    `<circle cx="${f(x - u * CHEEK_X)}" cy="${f(cy)}" r="${f(cr)}" fill="url(#ck${lv})"/>` +
+    `<circle cx="${f(x + u * CHEEK_X)}" cy="${f(cy)}" r="${f(cr)}" fill="url(#ck${lv})"/>` +
+    `<ellipse cx="${f(x - ex)}" cy="${f(ey)}" rx="${f(er)}" ry="${f(er * 1.3)}" fill="${INK}"/>` +
+    `<ellipse cx="${f(x + ex)}" cy="${f(ey)}" rx="${f(er)}" ry="${f(er * 1.3)}" fill="${INK}"/>` +
+    `<circle cx="${f(x - ex - er * 0.28)}" cy="${f(ey - er * 0.5)}" r="${f(er * 0.4)}" fill="#fff"/>` +
+    `<circle cx="${f(x + ex - er * 0.28)}" cy="${f(ey - er * 0.5)}" r="${f(er * 0.4)}" fill="#fff"/>` +
+    `<circle cx="${f(x - ex + er * 0.32)}" cy="${f(ey + er * 0.45)}" r="${f(er * 0.2)}" fill="#fff"/>` +
+    `<circle cx="${f(x + ex + er * 0.32)}" cy="${f(ey + er * 0.45)}" r="${f(er * 0.2)}" fill="#fff"/>` +
     `<path d="M${f(x - u * 0.2)} ${f(my - u * 0.04)}Q${f(x)} ${f(my + u * 0.2)} ${f(x + u * 0.2)} ${f(my - u * 0.04)}" fill="none" stroke="${INK}" stroke-width="${f(Math.max(1.6, u * 0.1))}" stroke-linecap="round"/>` +
     `</g>`
   );
@@ -706,12 +716,15 @@ function ell(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry
 function eyeDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number, lx: number, ly: number) {
   const ox = cx + lx * er * 0.45;
   const oy = cy + ly * er * 0.45;
-  ell(ctx, ox, oy, er, er * 1.25);
+  ell(ctx, ox, oy, er, er * 1.3);
   ctx.fillStyle = INK;
   ctx.fill();
+  ctx.fillStyle = "#fff"; // ประกายใหญ่ (บนซ้าย) + ประกายเล็ก (ล่างขวา) ให้ตาวิบวับ
   ctx.beginPath();
-  ctx.arc(ox - er * 0.3, oy - er * 0.45, er * 0.38, 0, Math.PI * 2);
-  ctx.fillStyle = "#fff";
+  ctx.arc(ox - er * 0.28, oy - er * 0.5, er * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(ox + er * 0.32, oy + er * 0.45, er * 0.2, 0, Math.PI * 2);
   ctx.fill();
 }
 // ตาปิดโค้งลง ‿ (กะพริบ / หลับ)
@@ -787,10 +800,10 @@ function mouthOpen(ctx: CanvasRenderingContext2D, u: number, my: number, w: numb
 
 // em: smile | cat | grin | wink | joy | love | wow | ouch | scared | sleepy | dizzy
 function drawFace(ctx: CanvasRenderingContext2D, u: number, em: string, t: number, seed: number, lx: number, ly: number) {
-  const ex = u * 0.5;
+  const ex = u * 0.56;
   const ey = -u * 0.05;
-  const er = u * 0.2;
-  const my = u * 0.34;
+  const er = u * 0.24;
+  const my = u * 0.38;
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -798,13 +811,13 @@ function drawFace(ctx: CanvasRenderingContext2D, u: number, em: string, t: numbe
   ctx.strokeStyle = INK;
   ctx.fillStyle = INK;
 
-  // แก้มชมพู
-  ctx.globalAlpha = em === "scared" ? 0.25 : 0.55;
-  ell(ctx, -u * 0.8, my - u * 0.02, u * 0.17, u * 0.11);
-  ctx.fillStyle = "#FF7FAE";
-  ctx.fill();
-  ell(ctx, u * 0.8, my - u * 0.02, u * 0.17, u * 0.11);
-  ctx.fill();
+  // แก้มชมพูไล่ระดับสี (กลางเข้ม ขอบจางหาย) เป็นวงกลม อยู่นิ่งๆ ไม่ขยับ
+  const ck = cheekSprite();
+  const cd = u * CHEEK_R * 2; // เส้นผ่านศูนย์กลางแก้ม (กว้าง = สูง → วงกลม)
+  const cyy = my + u * CHEEK_DY;
+  ctx.globalAlpha = em === "scared" ? 0.5 : 1;
+  ctx.drawImage(ck, -u * CHEEK_X - cd / 2, cyy - cd / 2, cd, cd);
+  ctx.drawImage(ck, u * CHEEK_X - cd / 2, cyy - cd / 2, cd, cd);
   ctx.globalAlpha = 1;
   ctx.fillStyle = INK;
 
@@ -903,11 +916,32 @@ function drawFace(ctx: CanvasRenderingContext2D, u: number, em: string, t: numbe
       mouthOpen(ctx, u, my, 0.2, 0.34);
     } else {
       ctx.beginPath();
-      ctx.arc(0, my - u * 0.1, u * 0.22, 0.2 * Math.PI, 0.8 * Math.PI);
+      ctx.arc(0, my - u * 0.08, u * 0.17, 0.2 * Math.PI, 0.8 * Math.PI);
       ctx.stroke();
     }
   }
   ctx.restore();
+}
+
+// สไปรต์แก้มชมพูไล่ระดับสี เป็นวงกลม 96x96 (สร้างครั้งเดียวแล้วใช้ซ้ำ)
+let cheekImg: HTMLCanvasElement | null = null;
+function cheekSprite() {
+  if (cheekImg) return cheekImg;
+  const c = document.createElement("canvas");
+  c.width = 96;
+  c.height = 96;
+  const x = c.getContext("2d") as CanvasRenderingContext2D;
+  x.translate(48, 48);
+  const gr = x.createRadialGradient(0, 0, 0, 0, 0, 48);
+  gr.addColorStop(0, "rgba(255,84,146,.85)");
+  gr.addColorStop(0.5, "rgba(255,118,170,.5)");
+  gr.addColorStop(1, "rgba(255,150,190,0)");
+  x.fillStyle = gr;
+  x.beginPath();
+  x.arc(0, 0, 48, 0, Math.PI * 2);
+  x.fill();
+  cheekImg = c;
+  return c;
 }
 
 // เลือกอารมณ์จากสถานการณ์ของผลไม้แต่ละลูก
