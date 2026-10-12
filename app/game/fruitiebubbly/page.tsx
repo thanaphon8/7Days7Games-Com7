@@ -14,6 +14,9 @@ import { useEffect, useReducer, useRef, useState } from "react";
   - ผลไม้นุ่มเด้ง: สปริง squash & stretch ตอนกระทบ + สปริงเด้งตอนเกิดใหม่
   - หมุนเฉพาะตอนกลิ้ง พอนิ่งแล้วหยุดสนิท (ระบบ rest)
   - วาดผลไม้จาก sprite ที่แคชไว้ (ไม่ใช้ shadowBlur ทุกเฟรม) และไม่สร้าง object ใหม่ในลูป
+  - ผลไม้มีหน้าตาน่ารัก (ตา ปาก แก้มชมพู) เปลี่ยนอารมณ์ตามสถานการณ์:
+    ยิ้ม / ยิ้มแมว / ยิ้มกว้าง / ขยิบตา / ตื่นเต้น (wow) / เจ็บ (ouch) /
+    ตกใจกลัว (ผลไม้ล้นเส้น) / ง่วงนอน (นิ่งนานๆ) / เวียนหัว (กลิ้งเร็ว) / ดีใจ / ตาหัวใจ (คอมโบ)
   ========================================================= */
 
 // ===== ตั้งค่าเกม (ปรับสมดุลได้ที่นี่) =====
@@ -115,6 +118,76 @@ function loadArt() {
 const MAX_LV = FRUITS.length - 1;
 const POINTS = (lv: number) => ((lv + 1) * (lv + 2)) / 2; // คะแนนตอนรวมร่างเป็นระดับ lv
 const WATERMELON_BONUS = 150; // แตงโม 2 ลูกชนกัน = หายไปพร้อมโบนัส
+
+// ===== หน้าผลไม้ (ตำแหน่งหน้าบนรูป SVG 100x100 + ขนาด k) =====
+// x,y = จุดกึ่งกลางหน้าบนตัวผลไม้ (หน่วย SVG) / k = สเกลหน้า (ผลไม้ตัวเล็กหน้าเล็กลงนิดนึง)
+const FACE: { x: number; y: number; k: number }[] = [
+  { x: 32, y: 68, k: 0.8 },  // เชอร์รี่
+  { x: 50, y: 56, k: 0.9 },  // สตรอว์เบอร์รี่
+  { x: 51, y: 58, k: 0.85 }, // องุ่น
+  { x: 50, y: 58, k: 1 },    // ส้ม
+  { x: 50, y: 55, k: 0.9 },  // มะนาว
+  { x: 50, y: 60, k: 0.95 }, // แอปเปิ้ล
+  { x: 50, y: 68, k: 0.8 },  // ลูกแพร์
+  { x: 50, y: 58, k: 0.95 }, // พีช
+  { x: 50, y: 66, k: 0.8 },  // สับปะรด
+  { x: 50, y: 58, k: 1 },    // เมลอน
+  { x: 50, y: 50, k: 1 },    // แตงโม
+];
+// สีตา/ปาก = สีเบสของผลไม้ แต่ดึงให้เข้มขึ้น (คง hue เดิม เพิ่มความอิ่มสี ลดความสว่าง)
+function deepen(hex: string) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  let h = 0;
+  if (d > 0) {
+    if (mx === r) h = ((g - b) / d) % 6;
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = clamp(0.55 + d * 0.3, 0.55, 0.9);
+  const l = 0.27;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  const [rr, gg, bb] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  const hx = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${hx(rr)}${hx(gg)}${hx(bb)}`;
+}
+const INKS: string[] = FRUITS.map((fr) => deepen(fr.c));
+let INK = INKS[0]; // สีหมึกของหน้าที่กำลังวาด (ตั้งค่าใหม่ใน drawFruit ทุกลูก)
+const BASE_MOODS = ["smile", "cat", "grin"]; // อารมณ์ปกติ (แต่ละลูกได้ไม่เหมือนกัน)
+
+// หน้ายิ้มแบบนิ่งๆ ไว้โชว์ใน UI (ช่อง "ถัดไป", แถวลำดับผลไม้, หน้าสรุป)
+function faceSvg(lv: number) {
+  const { x, y, k } = FACE[lv];
+  const u = 35.7 * k; // 35.7 = 0.5 * r / (1.4 * r / 100) เท่ากับสเกลหน้าในเกม
+  const ex = u * 0.5;
+  const ey = y - u * 0.05;
+  const er = u * 0.2;
+  const my = y + u * 0.34;
+  const f = (n: number) => n.toFixed(2);
+  const INK = INKS[lv];
+  return (
+    `<g>` +
+    `<ellipse cx="${f(x - u * 0.8)}" cy="${f(my - u * 0.02)}" rx="${f(u * 0.17)}" ry="${f(u * 0.11)}" fill="#FF7FAE" opacity=".55"/>` +
+    `<ellipse cx="${f(x + u * 0.8)}" cy="${f(my - u * 0.02)}" rx="${f(u * 0.17)}" ry="${f(u * 0.11)}" fill="#FF7FAE" opacity=".55"/>` +
+    `<ellipse cx="${f(x - ex)}" cy="${f(ey)}" rx="${f(er)}" ry="${f(er * 1.25)}" fill="${INK}"/>` +
+    `<ellipse cx="${f(x + ex)}" cy="${f(ey)}" rx="${f(er)}" ry="${f(er * 1.25)}" fill="${INK}"/>` +
+    `<circle cx="${f(x - ex - er * 0.3)}" cy="${f(ey - er * 0.45)}" r="${f(er * 0.38)}" fill="#fff"/>` +
+    `<circle cx="${f(x + ex - er * 0.3)}" cy="${f(ey - er * 0.45)}" r="${f(er * 0.38)}" fill="#fff"/>` +
+    `<path d="M${f(x - u * 0.2)} ${f(my - u * 0.04)}Q${f(x)} ${f(my + u * 0.2)} ${f(x + u * 0.2)} ${f(my - u * 0.04)}" fill="none" stroke="${INK}" stroke-width="${f(Math.max(1.6, u * 0.1))}" stroke-linecap="round"/>` +
+    `</g>`
+  );
+}
+const ART_URI_FACE: string[] = FRUITS.map(
+  (_, lv) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 100 100">${ART[`f${lv}`]}${faceSvg(lv)}</svg>`),
+);
 
 function randLevel() {
   const r = Math.random();
@@ -251,6 +324,7 @@ type F = {
   p: number; pv: number; // สปริงขนาด (เด้งตอนเกิดใหม่)
   merging: boolean;
   bias: number; // ทิศที่จะไหลออกเมื่อวางทับกันตรงเป๊ะ (-1 ซ้าย / 1 ขวา)
+  em: string; emT: number; // อารมณ์ชั่วคราว (เช่น ouch/joy/wow/love) + เวลาที่เหลือ (วินาที)
 };
 type P = { x: number; y: number; vx: number; vy: number; life: number; max: number; e: string; size: number; rot: number; vr: number };
 type Tx = { x: number; y: number; text: string; life: number; max: number; color: string; size: number };
@@ -281,6 +355,7 @@ function mkFruit(cur: G, x: number, y: number, lv: number): F {
     id: ++cur.nextId, x, y, px: x, py: y, vx: 0, vy: 0, a: 0, w: 0, lv, age: 0,
     rest: 0, c: false, s: 0, sv: 0, sa: 0, p: 0, pv: 0, merging: false,
     bias: Math.random() < 0.5 ? -1 : 1,
+    em: "smile", emT: 0,
   };
 }
 
@@ -290,6 +365,7 @@ function mkFruit(cur: G, x: number, y: number, lv: number): F {
 // กระแทกแล้วผลไม้ยุบตัวตามทิศแรง แล้วเด้งกลับด้วยสปริง
 function squish(f: F, ang: number, v: number) {
   if (v < 70) return;
+  if (v > 320 && (f.emT <= 0 || f.em === "ouch")) { f.em = "ouch"; f.emT = 0.45; } // กระแทกแรง = เจ็บ >_<
   const k = clamp(v / 260, 0.15, 1) * 3.8;
   if (k > Math.abs(f.sv) + Math.abs(f.s) * 19) f.sa = ang;
   f.sv += k;
@@ -327,6 +403,8 @@ function doMerge(cur: G, a: F, b: F) {
     cur.rings.push({ x: mx, y: my, r: FRUITS[lv].r, life: 0.9, max: 0.9, color: col });
     cur.rings.push({ x: mx, y: my, r: FRUITS[lv].r * 1.3, life: 1.1, max: 1.1, color: "#FFFFFF" });
     cur.texts.push({ x: mx, y: my - 20, text: `แตงโมสุดยอด! +${pts}`, life: 1.6, max: 1.6, color: "#C2457B", size: 30 });
+    // ผลไม้ที่เหลือในโหลตื่นเต้นกันใหญ่
+    for (let i = 0; i < fs.length; i++) { fs[i].em = "love"; fs[i].emT = 1.6; }
     sfx.big();
     sfx.sparkle();
     return;
@@ -341,6 +419,8 @@ function doMerge(cur: G, a: F, b: F) {
   nf.vy = (a.vy + b.vy) / 2 - 20;
   nf.age = 0.6;
   nf.p = -0.45; // เกิดมาตัวเล็กแล้วเด้งใหญ่ (สปริง overshoot)
+  nf.em = cur.combo >= 3 ? "love" : "joy"; // รวมร่างสำเร็จ = ดีใจ / คอมโบ 3+ = ตาหัวใจ
+  nf.emT = 1.4;
   fs.push(nf);
   const nr = FRUITS[nl].r;
   // แรงกระแทกเล็กๆ ดันผลไม้รอบข้างให้ดูเด้งดึ๋ง
@@ -356,6 +436,7 @@ function doMerge(cur: G, a: F, b: F) {
       o.vy += (dy / d) * k;
       o.rest = 0;
       squish(o, Math.atan2(dy, dx), k * 1.4);
+      if (o.emT <= 0) { o.em = "wow"; o.emT = 0.7; } // เพื่อนข้างๆ ตกใจนิดหน่อย
     }
   }
   const cnt = Math.min(6 + nl, room);
@@ -387,6 +468,7 @@ function simulate(cur: G) {
     f.py = f.y;
     f.c = false;
     f.age += h;
+    if (f.emT > 0) f.emT -= h;
     f.vy += GRAVITY * h;
     const damp = 1 - 0.35 * h;
     f.vx *= damp;
@@ -615,8 +697,233 @@ function artSmall(key: string) {
   return c;
 }
 
+/* ---------- หน้าผลไม้ (วาดสดด้วย canvas path เล็กๆ ไม่สร้าง object ใหม่) ---------- */
+function ell(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number) {
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+}
+// ตากลมมีประกายขาว (มองตามทิศ lx,ly)
+function eyeDot(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number, lx: number, ly: number) {
+  const ox = cx + lx * er * 0.45;
+  const oy = cy + ly * er * 0.45;
+  ell(ctx, ox, oy, er, er * 1.25);
+  ctx.fillStyle = INK;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(ox - er * 0.3, oy - er * 0.45, er * 0.38, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+}
+// ตาปิดโค้งลง ‿ (กะพริบ / หลับ)
+function eyeSleep(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number) {
+  ctx.beginPath();
+  ctx.arc(cx, cy - er * 0.3, er * 1.05, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+}
+// ตายิ้มโค้งขึ้น ^ (ดีใจ / ขยิบตา)
+function eyeHappy(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number) {
+  ctx.beginPath();
+  ctx.arc(cx, cy + er * 0.6, er * 1.1, 1.12 * Math.PI, 1.88 * Math.PI);
+  ctx.stroke();
+}
+// ตาโต (ตกใจ / กลัว) pr = ขนาดตาดำ
+function eyeWide(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number, lx: number, ly: number, pr: number) {
+  ell(ctx, cx, cy, er * 1.45, er * 1.6);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx + lx * er * 0.4, cy + ly * er * 0.4, er * pr, 0, Math.PI * 2);
+  ctx.fillStyle = INK;
+  ctx.fill();
+}
+// ตาเจ็บ > < (d = 1 ตาซ้าย ">" / d = -1 ตาขวา "<")
+function eyeHurt(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number, d: number) {
+  ctx.beginPath();
+  ctx.moveTo(cx - d * er, cy - er);
+  ctx.lineTo(cx + d * er * 0.7, cy);
+  ctx.lineTo(cx - d * er, cy + er);
+  ctx.stroke();
+}
+// ตาก้นหอย (เวียนหัว)
+function eyeSpiral(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number, t: number, d: number) {
+  ctx.beginPath();
+  for (let i = 0; i <= 22; i++) {
+    const a = i * 0.55 * d + t * 9;
+    const rr = (er * 1.5 * i) / 22;
+    const px = cx + Math.cos(a) * rr;
+    const py = cy + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+// ตาหัวใจ (เต้นตึ้กๆ)
+function eyeHeart(ctx: CanvasRenderingContext2D, cx: number, cy: number, er: number, t: number) {
+  const s = er * 1.15 * (1 + Math.sin(t * 10) * 0.12);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + s * 0.95);
+  ctx.bezierCurveTo(cx - s * 1.5, cy - s * 0.05, cx - s * 0.75, cy - s * 1.1, cx, cy - s * 0.35);
+  ctx.bezierCurveTo(cx + s * 0.75, cy - s * 1.1, cx + s * 1.5, cy - s * 0.05, cx, cy + s * 0.95);
+  ctx.fillStyle = "#FF3F7F";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx - s * 0.42, cy - s * 0.32, s * 0.2, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+}
+// ปากอ้า (ยิ้มกว้าง) w = ความกว้าง, d = ความลึก
+function mouthOpen(ctx: CanvasRenderingContext2D, u: number, my: number, w: number, d: number) {
+  ctx.beginPath();
+  ctx.moveTo(-u * w, my - u * 0.06);
+  ctx.quadraticCurveTo(0, my + u * d, u * w, my - u * 0.06);
+  ctx.closePath();
+  ctx.fillStyle = INK;
+  ctx.fill();
+  ell(ctx, 0, my + u * d * 0.3, u * w * 0.5, u * d * 0.17);
+  ctx.fillStyle = "#FF7FA0";
+  ctx.fill();
+}
+
+// em: smile | cat | grin | wink | joy | love | wow | ouch | scared | sleepy | dizzy
+function drawFace(ctx: CanvasRenderingContext2D, u: number, em: string, t: number, seed: number, lx: number, ly: number) {
+  const ex = u * 0.5;
+  const ey = -u * 0.05;
+  const er = u * 0.2;
+  const my = u * 0.34;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1.2, u * 0.11);
+  ctx.strokeStyle = INK;
+  ctx.fillStyle = INK;
+
+  // แก้มชมพู
+  ctx.globalAlpha = em === "scared" ? 0.25 : 0.55;
+  ell(ctx, -u * 0.8, my - u * 0.02, u * 0.17, u * 0.11);
+  ctx.fillStyle = "#FF7FAE";
+  ctx.fill();
+  ell(ctx, u * 0.8, my - u * 0.02, u * 0.17, u * 0.11);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = INK;
+
+  if (em === "joy") {
+    eyeHappy(ctx, -ex, ey, er);
+    eyeHappy(ctx, ex, ey, er);
+    mouthOpen(ctx, u, my, 0.26, 0.5);
+  } else if (em === "love") {
+    eyeHeart(ctx, -ex, ey, er, t);
+    eyeHeart(ctx, ex, ey, er, t);
+    mouthOpen(ctx, u, my, 0.22, 0.42);
+  } else if (em === "wow") {
+    eyeWide(ctx, -ex, ey, er, lx, ly, 0.75);
+    eyeWide(ctx, ex, ey, er, lx, ly, 0.75);
+    ell(ctx, 0, my + u * 0.1, u * 0.11, u * 0.15);
+    ctx.fillStyle = INK;
+    ctx.fill();
+  } else if (em === "ouch") {
+    eyeHurt(ctx, -ex, ey, er, 1);
+    eyeHurt(ctx, ex, ey, er, -1);
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.2, my + u * 0.08);
+    ctx.lineTo(-u * 0.1, my - u * 0.02);
+    ctx.lineTo(0, my + u * 0.08);
+    ctx.lineTo(u * 0.1, my - u * 0.02);
+    ctx.lineTo(u * 0.2, my + u * 0.08);
+    ctx.stroke();
+  } else if (em === "scared") {
+    const wob = Math.sin(t * 34 + seed) * u * 0.03;
+    eyeWide(ctx, -ex + wob, ey, er, lx, ly, 0.45);
+    eyeWide(ctx, ex + wob, ey, er, lx, ly, 0.45);
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.2, my + u * 0.1);
+    ctx.quadraticCurveTo(-u * 0.1, my - u * 0.05 + wob * 3, 0, my + u * 0.1);
+    ctx.quadraticCurveTo(u * 0.1, my + u * 0.25 - wob * 3, u * 0.2, my + u * 0.1);
+    ctx.stroke();
+    // หยดเหงื่อ
+    const sx = u * 0.98;
+    const sy = -u * 0.5 + ((t * 1.2) % 1) * u * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - u * 0.2);
+    ctx.quadraticCurveTo(sx + u * 0.16, sy + u * 0.02, sx, sy + u * 0.1);
+    ctx.quadraticCurveTo(sx - u * 0.16, sy + u * 0.02, sx, sy - u * 0.2);
+    ctx.fillStyle = "#8FD8FF";
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, u * 0.05);
+    ctx.stroke();
+  } else if (em === "sleepy") {
+    eyeSleep(ctx, -ex, ey, er);
+    eyeSleep(ctx, ex, ey, er);
+    ell(ctx, 0, my + u * 0.08, u * 0.08, u * (0.07 + Math.sin(t * 2 + seed) * 0.025));
+    ctx.fillStyle = INK;
+    ctx.fill();
+    // z z z ลอยขึ้น
+    const zp = (t * 0.6 + seed * 0.37) % 1;
+    const zs = u * 0.17;
+    const zx = u * 0.95;
+    const zy = -u * 0.45 - zp * u * 0.35;
+    ctx.globalAlpha = 1 - zp;
+    ctx.lineWidth = Math.max(1.2, u * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(zx - zs, zy - zs);
+    ctx.lineTo(zx + zs, zy - zs);
+    ctx.lineTo(zx - zs, zy + zs);
+    ctx.lineTo(zx + zs, zy + zs);
+    ctx.stroke();
+  } else if (em === "dizzy") {
+    eyeSpiral(ctx, -ex, ey, er, t, 1);
+    eyeSpiral(ctx, ex, ey, er, t, -1);
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.22, my + u * 0.06);
+    ctx.quadraticCurveTo(-u * 0.11, my - u * 0.06, 0, my + u * 0.06);
+    ctx.quadraticCurveTo(u * 0.11, my + u * 0.18, u * 0.22, my + u * 0.06);
+    ctx.stroke();
+  } else {
+    // อารมณ์ปกติ: smile / cat / grin / wink (ตากะพริบเป็นระยะ)
+    const blink = (t * 0.8 + seed * 1.37) % 4 < 0.12;
+    if (em === "wink") {
+      eyeDot(ctx, -ex, ey, er, lx, ly);
+      eyeHappy(ctx, ex, ey, er);
+    } else if (blink) {
+      eyeSleep(ctx, -ex, ey, er);
+      eyeSleep(ctx, ex, ey, er);
+    } else {
+      eyeDot(ctx, -ex, ey, er, lx, ly);
+      eyeDot(ctx, ex, ey, er, lx, ly);
+    }
+    if (em === "cat") {
+      ctx.beginPath();
+      ctx.arc(-u * 0.11, my - u * 0.04, u * 0.11, 0.05 * Math.PI, 0.95 * Math.PI);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(u * 0.11, my - u * 0.04, u * 0.11, 0.05 * Math.PI, 0.95 * Math.PI);
+      ctx.stroke();
+    } else if (em === "grin") {
+      mouthOpen(ctx, u, my, 0.2, 0.34);
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, my - u * 0.1, u * 0.22, 0.2 * Math.PI, 0.8 * Math.PI);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// เลือกอารมณ์จากสถานการณ์ของผลไม้แต่ละลูก
+function emotionOf(g: G, f: F): string {
+  if (g.dangerOn && f.age > 1.2 && f.y - FRUITS[f.lv].r < LINE_Y + 40) return "scared"; // ล้นเส้น = กลัว
+  if (f.emT > 0) return f.em; // อารมณ์ชั่วคราว (ouch/joy/wow/love)
+  if (Math.abs(f.w) > 8) return "dizzy"; // กลิ้งเร็ว = เวียนหัว
+  if (f.vy > 380) return "wow"; // กำลังร่วงเร็ว = ตื่นเต้น
+  if (f.rest > 3) return "sleepy"; // นิ่งนานๆ = ง่วง
+  if ((g.clock + f.id * 2.3) % 9 < 0.5) return "wink"; // ขยิบตาเป็นระยะ
+  return BASE_MOODS[f.id % 3];
+}
+
 // s = ยุบตัว, sa = ทิศแรงกระแทก, sc = ขนาด, ang = มุมหมุนของรูปผลไม้
-function drawFruit(ctx: CanvasRenderingContext2D, lv: number, x: number, y: number, ang: number, sc: number, s: number, sa: number, alpha = 1) {
+// em !== null = วาดหน้าทับ (หน้าตั้งตรงเสมอ แม้ผลไม้หมุน ตำแหน่งหน้าหมุนตามตัวผลไม้)
+function drawFruit(ctx: CanvasRenderingContext2D, lv: number, x: number, y: number, ang: number, sc: number, s: number, sa: number, alpha = 1, em: string | null = null, seed = 0, lx = 0, ly = 0, t = 0) {
   const sp = sprites[lv];
   if (!sp || sc <= 0.02) return;
   ctx.save();
@@ -631,6 +938,14 @@ function drawFruit(ctx: CanvasRenderingContext2D, lv: number, x: number, y: numb
   ctx.drawImage(sp.body, -sp.half, -sp.half, sp.half * 2, sp.half * 2);
   if (ang !== 0) ctx.rotate(ang);
   ctx.drawImage(sp.emoji, -sp.es / 2, -sp.es / 2, sp.es, sp.es);
+  if (em !== null) {
+    const fc = FACE[lv];
+    const ox = ((fc.x - 50) / 100) * sp.es;
+    const oy = ((fc.y - 50) / 100) * sp.es;
+    INK = INKS[lv];
+    ctx.translate(ox, oy); // ctx หมุนตามผลไม้อยู่แล้ว → ตาปากหมุนไปด้วย
+    drawFace(ctx, FRUITS[lv].r * 0.5 * fc.k, em, t, seed, lx, ly);
+  }
   ctx.restore();
 }
 
@@ -680,6 +995,8 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
   if (g.phase === "playing") {
     const r = FRUITS[g.cur].r;
     const ax = clamp(g.aimX, r, W - r);
+    const aimSeed = g.drops + 1;
+    const aimLook = clamp((g.aimT - g.aimX) / 40, -1, 1); // ตามองไปทางที่กำลังเล็ง
     if (g.cool <= 0) {
       ctx.save();
       ctx.setLineDash([4, 8]);
@@ -690,11 +1007,12 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
       ctx.lineTo(ax, H);
       ctx.stroke();
       ctx.restore();
+      const aimEm = g.dangerOn ? "scared" : (g.clock * 0.7 + aimSeed * 2.3) % 9 < 0.5 ? "wink" : BASE_MOODS[aimSeed % 3];
       // หายใจเบาๆ ตอนรอปล่อย
-      drawFruit(ctx, g.cur, ax, DROP_Y, 0, 1 + Math.sin(g.clock * 5) * 0.025, 0, 0);
+      drawFruit(ctx, g.cur, ax, DROP_Y, 0, 1 + Math.sin(g.clock * 5) * 0.025, 0, 0, 1, aimEm, aimSeed, aimLook, 0.3, g.clock);
     } else {
       const t = clamp(1 - g.cool / DROP_CD, 0, 1);
-      drawFruit(ctx, g.cur, ax, DROP_Y, 0, easeBack(t), 0, 0, clamp(t * 2, 0, 1));
+      drawFruit(ctx, g.cur, ax, DROP_Y, 0, easeBack(t), 0, 0, clamp(t * 2, 0, 1), "joy", aimSeed, 0, 0, g.clock);
     }
   }
 
@@ -702,7 +1020,9 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
   const al = g.alpha;
   for (let i = 0; i < g.fruits.length; i++) {
     const f = g.fruits[i];
-    drawFruit(ctx, f.lv, f.px + (f.x - f.px) * al, f.py + (f.y - f.py) * al, f.a, 1 + f.p, f.s, f.sa);
+    const lx = clamp(f.vx / 200, -1, 1) + Math.sin(g.clock * 0.7 + f.id) * 0.35;
+    const ly = clamp(f.vy / 300, -1, 1) * 0.8;
+    drawFruit(ctx, f.lv, f.px + (f.x - f.px) * al, f.py + (f.y - f.py) * al, f.a, 1 + f.p, f.s, f.sa, 1, emotionOf(g, f), f.id, lx, ly, g.clock);
   }
 
   // ผนังโหลด (ทับผลไม้ให้ดูเป็นกระจก)
@@ -827,10 +1147,11 @@ function PopText({ text, size }: { text: string; size: string }) {
   );
 }
 
+// รูปผลไม้พร้อมหน้ายิ้มน่ารัก (ใช้ใน UI: ช่อง "ถัดไป", แถวลำดับผลไม้, หน้าสรุป)
 function FruitImg({ lv, size }: { lv: number; size: number }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={ART_URI[`f${lv}`]} alt={FRUITS[lv].n} draggable={false} width={size} height={size} style={{ width: size, height: size, display: "block" }} />
+    <img src={ART_URI_FACE[lv]} alt={FRUITS[lv].n} draggable={false} width={size} height={size} style={{ width: size, height: size, display: "block" }} />
   );
 }
 
@@ -994,6 +1315,8 @@ export default function FruitieBubblyPage() {
     f.s = -0.1; // ยืดตัวเล็กน้อยตอนหลุดมือ แล้วสปริงกลับ
     f.sa = Math.PI / 2;
     f.vx = (Math.random() - 0.5) * 24; // สะบัดข้างนิดๆ ตอนหลุดมือ
+    f.em = "wow"; // หลุดมือแล้วตกใจนิดๆ ว้าว~
+    f.emT = 0.5;
     cur.fruits.push(f);
     cur.drops += 1;
     cur.cur = cur.next;
@@ -1272,6 +1595,7 @@ export default function FruitieBubblyPage() {
         @keyframes fb-fly { 0% { transform: translateY(-135px) scale(1.7); opacity: 0 } 15% { opacity: 1 } 80% { opacity: 1 } 100% { transform: translateY(0) scale(.85); opacity: 0 } }
         @keyframes fb-burst { 0% { transform: translate(0,0) scale(0) rotate(0); opacity: 1 } 100% { transform: translate(var(--dx),var(--dy)) scale(1) rotate(160deg); opacity: 0 } }
         @keyframes fb-tick { 0% { transform: scale(1.6); opacity: 0 } 25% { opacity: 1 } 100% { transform: scale(1); opacity: .95 } }
+        @keyframes fb-new { 0% { transform: scale(0) rotate(-30deg); opacity: 0 } 100% { transform: scale(1) rotate(12deg); opacity: 1 } }
         @keyframes fb-hint { 0%, 100% { opacity: .65 } 50% { opacity: 1 } }
         @media (prefers-reduced-motion: reduce) { .fb-anim, .fb-anim * { animation: none !important } }
       `}</style>
@@ -1466,7 +1790,16 @@ export default function FruitieBubblyPage() {
                 <p className="mx-auto mt-2 max-w-[18rem] rounded-2xl bg-[#FFF3C4] px-3 py-2 text-sm font-semibold text-[#8A5A00]">{praise}</p>
               )}
 
-              <div className="mt-4 rounded-3xl bg-[#FFD66B] px-4 py-5">
+              <div className="relative mt-4 rounded-3xl bg-[#FFD66B] px-4 py-5">
+                {newRecord && (
+                  <span
+                    aria-label="สถิติใหม่"
+                    className="absolute -right-2 -top-3 z-10 flex items-center gap-1 rounded-full bg-gradient-to-br from-[#FF6FA3] to-[#FF9A6B] px-3 py-1 text-sm font-black italic tracking-wide text-white shadow-lg ring-2 ring-white"
+                    style={{ animation: "fb-new .6s .5s cubic-bezier(.2,1.5,.4,1) both" }}
+                  >
+                    <StarIcon size={14} color="#FFF3C4" />NEW
+                  </span>
+                )}
                 <p className="text-xs text-zinc-700">คะแนนรอบนี้</p>
                 <p className="text-7xl font-semibold leading-none tabular-nums tracking-tight">{shownScore}</p>
               </div>
