@@ -866,6 +866,8 @@ export default function FruitieBubblyPage() {
   const [newRecord, setNewRecord] = useState(false);
   const [praise, setPraise] = useState("");
   const [showRules, setShowRules] = useState(false);
+  const [ptsFly, setPtsFly] = useState(false); // ชิปแต้มบินลงกล่องแต้ม
+  const [ptsLand, setPtsLand] = useState(false); // ชิปลงถึงกล่องแล้ว → นับแต้ม + ประกาย
   const pausedRef = useRef(false); // เปิดหน้าเกณฑ์ระหว่างเล่น = หยุดเกมชั่วคราว
   const sumRef = useRef<HTMLDivElement>(null);
   const [natH, setNatH] = useState(620);
@@ -1206,6 +1208,14 @@ export default function FruitieBubblyPage() {
     if (g.phase === "over" && sumRef.current) setNatH(sumRef.current.offsetHeight);
   });
 
+  // หน้าสรุป: คะแนนนับขึ้น → ชิป "+แต้ม" บินลงมาที่กล่องแต้มสะสม → นับแต้ม + ประกายดาว
+  useEffect(() => {
+    if (g.phase !== "over") { setPtsFly(false); setPtsLand(false); return; }
+    const t1 = window.setTimeout(() => setPtsFly(true), 1300);
+    const t2 = window.setTimeout(() => { setPtsLand(true); sfx.sparkle(); }, 2050);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [g.phase, g.round]);
+
   // ===== ค่าที่ใช้แสดงผล =====
   const compact = dims.h < 500; // มือถือแนวนอน
   const wide = dims.w >= 640;
@@ -1224,6 +1234,7 @@ export default function FruitieBubblyPage() {
   const stars = starsFor(g.score);
   const nt = nextTier(g.score); // เกณฑ์ถัดไป (null = ถึงสูงสุดแล้ว)
   const shownScore = useCountUp(g.score, over);
+  const shownPts = useCountUp(savedPts, over && ptsLand, 700);
   const showHint = g.drops < 3 && playing;
   // ลำดับผลไม้อยู่แถวล่างฝั่งขวา (มือถือ) / กึ่งกลาง (จอใหญ่)
   const saveText: Record<SaveState, string> = {
@@ -1246,6 +1257,8 @@ export default function FruitieBubblyPage() {
         @keyframes fb-go { 0% { transform: scale(.4); opacity: 0 } 25% { transform: scale(1.18); opacity: 1 } 65% { transform: scale(1); opacity: 1 } 100% { transform: scale(1.6); opacity: 0 } }
         @keyframes fb-bob { from { transform: translateY(0) scale(1) } to { transform: translateY(-26px) scale(1.06) } }
         @keyframes fb-vignette { from { opacity: .25 } to { opacity: 1 } }
+        @keyframes fb-fly { 0% { transform: translateY(-135px) scale(1.7); opacity: 0 } 15% { opacity: 1 } 80% { opacity: 1 } 100% { transform: translateY(0) scale(.85); opacity: 0 } }
+        @keyframes fb-burst { 0% { transform: translate(0,0) scale(0) rotate(0); opacity: 1 } 100% { transform: translate(var(--dx),var(--dy)) scale(1) rotate(160deg); opacity: 0 } }
         @keyframes fb-hint { 0%, 100% { opacity: .65 } 50% { opacity: 1 } }
         @media (prefers-reduced-motion: reduce) { .fb-anim, .fb-anim * { animation: none !important } }
       `}</style>
@@ -1436,14 +1449,42 @@ export default function FruitieBubblyPage() {
               </div>
 
               {/* แต้มสะสมที่ได้จากเกณฑ์ (0-15) */}
-              <div className="mt-2 rounded-2xl bg-white/70 px-4 py-2 text-sm">
-                <p className="font-medium">
-                  แต้มสะสมที่ได้{" "}
-                  <b className="text-xl tabular-nums text-[#C2457B]">{savedPts}</b> / {MAX_SAVE}
-                </p>
-                <p className="text-xs text-zinc-500">
-                  {nt ? `อีก ${nt[0] - g.score} คะแนน จะได้ ${nt[1]} แต้ม` : "ถึงเกณฑ์สูงสุดแล้ว! 🏆"}
-                </p>
+              <div className="relative mt-2">
+                {/* ชิป "+แต้ม" บินจากกล่องคะแนนลงมาที่กล่องแต้มสะสม */}
+                {ptsFly && savedPts > 0 && (
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute left-1/2 top-1/2 z-10 -ml-10 -mt-4 flex h-8 w-20 items-center justify-center gap-1 rounded-full bg-[#FFD66B] text-sm font-black tabular-nums text-[#8A5A00] shadow-lg ring-2 ring-white"
+                    style={{ opacity: 0, animation: "fb-fly .75s cubic-bezier(.5,0,.8,.4) both" }}
+                  >
+                    <StarIcon size={14} color="#8A5A00" />+{savedPts}
+                  </span>
+                )}
+                {/* ดาวกระจายตอนชิปลงถึงกล่อง */}
+                {ptsLand && savedPts > 0 &&
+                  [[-86, -26], [-58, -44], [-24, -50], [24, -50], [58, -44], [86, -26], [-70, 20], [70, 20]].map(([dx, dy], i) => (
+                    <span
+                      key={i}
+                      aria-hidden
+                      className="pointer-events-none absolute left-1/2 top-1/2 z-10 -ml-2.5 -mt-2.5"
+                      style={{ opacity: 0, animation: `fb-burst .7s ${i * 0.02}s ease-out both`, "--dx": `${dx}px`, "--dy": `${dy}px` } as React.CSSProperties}
+                    >
+                      <StarIcon size={20} color={i % 2 ? "#FF8FC0" : "#FFC400"} />
+                    </span>
+                  ))}
+                <div
+                  key={ptsLand ? "land" : "wait"}
+                  className="rounded-2xl bg-white/70 px-4 py-2 text-sm"
+                  style={ptsLand ? { animation: "fb-bump .4s ease-out" } : undefined}
+                >
+                  <p className="font-medium">
+                    แต้มสะสมที่ได้{" "}
+                    <b className="inline-block min-w-[1.5ch] text-2xl tabular-nums text-[#C2457B]">{shownPts}</b> / {MAX_SAVE}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {nt ? `อีก ${nt[0] - g.score} คะแนน จะได้ ${nt[1]} แต้ม` : "ถึงเกณฑ์สูงสุดแล้ว! 🏆"}
+                  </p>
+                </div>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
