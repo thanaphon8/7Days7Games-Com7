@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { getAvatarSrc } from "../../components/navbar/page";
 
-// ===== Kick Battle · จุดโทษดวลเดือด =====
+// ===== Kick Battle · จุดโทษดวลเดือด (ธีมเดียวกับ Up and Up) =====
 type Dir = "L" | "C" | "R";
 type Player = { id: string; name: string; avatar: string };
 type Shot = { round: number; shooter: 0 | 1; shot: Dir; keep: Dir; goal: boolean };
@@ -36,13 +36,15 @@ const TOTAL = 6;
 const TB_TARGET = 2;
 const TB_SHOTS = 3;
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
-const COLORS = ["#F4D35E", "#A8B5E8"];
-const CONF = ["#F4D35E", "#A8B5E8", "#F4A58A", "#FFFFFF"];
+// สีผู้เล่น: ส้มทอง / ฟ้าอมม่วง (พาเลตเดียวกับหน้าสรุปของ Up and Up)
+const COLORS = ["#FFD66B", "#9DB4F2"];
+const CONF = ["#FFD66B", "#FF7A3D", "#6EC6FF", "#FFFFFF"];
 const KEEP_X: Record<Dir, number> = { L: 16.7, C: 50, R: 83.3 };
 const GOAL_TOP = 17;
 const GOAL_H = 45;
 const LINE_Y = GOAL_TOP + GOAL_H;
 const GRASS = "repeating-linear-gradient(90deg,#8DB885 0 12.5%,#9CC593 12.5% 25%)";
+const SKY_BG = "bg-gradient-to-b from-[#BFE6FF] via-[#FFF1D6] to-white";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -61,7 +63,8 @@ const CSS = `
 @keyframes kb-score{0%{transform:scale(1)}35%{transform:scale(1.4)}100%{transform:scale(1)}}
 @keyframes kb-glow{0%{opacity:.65;transform:scale(1)}100%{opacity:1;transform:scale(1.06)}}
 @keyframes kb-go{0%{transform:scale(.4);opacity:0}25%{transform:scale(1.18);opacity:1}65%{transform:scale(1);opacity:1}100%{transform:scale(1.6);opacity:0}}
-.kb-coin{position:absolute;left:50%;top:50%;display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:9999px;background:#F4D35E;border:3px solid #4A3B00;color:#4A3B00;font-size:15px;font-weight:700;animation:kb-coin 1100ms cubic-bezier(.2,.8,.3,1) forwards;pointer-events:none}
+@keyframes kb-title{0%{transform:translateY(-30px) scale(.8);opacity:0}100%{transform:none;opacity:1}}
+.kb-coin{position:absolute;left:50%;top:50%;display:flex;height:34px;width:34px;align-items:center;justify-content:center;border-radius:9999px;background:#FFD66B;border:3px solid #fff;color:#8A5A00;font-size:15px;font-weight:700;box-shadow:0 2px 6px rgba(30,42,74,.3);animation:kb-coin 1100ms cubic-bezier(.2,.8,.3,1) forwards;pointer-events:none}
 .kb-gain{animation:kb-float 1500ms ease-out forwards;pointer-events:none}
 .kb-score{animation:kb-score 450ms ease-out}
 .kb-pop{animation:kb-pop 520ms cubic-bezier(.2,.9,.3,1.2) both}
@@ -71,16 +74,30 @@ const CSS = `
 .kb-sway{animation:kb-sway 1.6s ease-in-out infinite}
 .kb-rise{animation:kb-rise 320ms ease-out both}
 .kb-bob{animation:kb-bob 1.4s ease-in-out infinite}
+.kb-title{animation:kb-title .7s cubic-bezier(.2,1.3,.4,1) both}
 .kb-conf{position:absolute;top:-10%;border-radius:2px;animation:kb-fall linear forwards;pointer-events:none}
 .kb-dot{animation:kb-dots 1.2s infinite}
-@media (prefers-reduced-motion:reduce){.kb-coin,.kb-score,.kb-gain{animation:none}.kb-sway,.kb-bob,.kb-dot{animation:none}.kb-shake,.kb-net,.kb-conf{animation:none}}
+@media (prefers-reduced-motion:reduce){.kb-coin,.kb-score,.kb-gain{animation:none}.kb-sway,.kb-bob,.kb-dot{animation:none}.kb-shake,.kb-net,.kb-conf,.kb-title{animation:none}}
 `;
 
-const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-40";
-const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white text-sm font-medium transition-colors hover:bg-black/[.04]";
+// ปุ่ม/ชิ้นส่วน UI สไตล์เดียวกับ Up and Up
+const BTN_MAIN = "h-14 w-full rounded-full bg-[#1E2A4A] text-base font-semibold text-white transition-opacity hover:opacity-85 disabled:opacity-40";
+const BTN_ORANGE =
+  "h-14 w-full rounded-full bg-gradient-to-b from-[#FF8A4C] to-[#FF5A2E] text-lg font-black text-white shadow-lg ring-2 ring-white transition-transform active:scale-95 disabled:opacity-40 disabled:active:scale-100";
+const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white/70 text-sm font-medium transition-colors hover:bg-white";
 const BTN_ROUND =
-  "pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
-const PILL = "rounded-full bg-white/90 px-4 py-2 text-sm text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur";
+  "pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 text-lg font-bold text-[#1E3A6B] shadow-sm ring-2 ring-white transition-transform active:scale-95";
+const PILL = "rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-[#1E3A6B] shadow-sm ring-2 ring-white";
+const POP_SHADOW = "0 2px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 0 14px rgba(255,255,255,.9)";
+const DIALOG = "rounded-[2rem] bg-gradient-to-b from-[#EAF6FF] via-[#FFF8E6] to-white shadow-2xl ring-4 ring-white";
+
+function StarIcon({ size = 24, color = "#3A2A10" }: { size?: number; color?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden style={{ display: "block" }}>
+      <path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.5 6 20.9l1.3-6.7-5-4.7 6.8-.8z" fill={color} stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function useMe() {
   const [me, setMe] = useState<Player | null>(null);
@@ -162,17 +179,21 @@ function Coins() {
   );
 }
 
-function FireText({ text, size }: { text: string; size: string }) {
+// ตัวอักษรส้มไล่สี ขอบขาว (เหมือน PopText ใน Up and Up)
+function PopText({ text, size }: { text: string; size: string }) {
   return (
     <div className="relative inline-block px-6 py-2">
       <span
         aria-hidden
-        className={`absolute inset-0 flex items-center justify-center font-black italic leading-[1.05] tracking-tighter text-[#FF7A1A] blur-xl ${size}`}
-        style={{ animation: "kb-glow .5s ease-in-out infinite alternate" }}
+        className={`absolute inset-0 flex items-center justify-center font-black italic leading-[1.05] tracking-tighter text-[#FF9A5E] blur-xl ${size}`}
+        style={{ animation: "kb-glow .6s ease-in-out infinite alternate" }}
       >
         {text}
       </span>
-      <span className={`relative block bg-gradient-to-t from-[#FF4D2E] via-[#FF9A1F] to-[#FFE066] bg-clip-text px-3 py-1 font-black italic leading-[1.05] tracking-tighter text-transparent ${size}`}>
+      <span
+        className={`relative block bg-gradient-to-t from-[#FF5A2E] via-[#FF9A3D] to-[#FFE08A] bg-clip-text px-3 py-1 font-black italic leading-[1.05] tracking-tighter text-transparent ${size}`}
+        style={{ filter: "drop-shadow(0 3px 0 rgba(255,255,255,.95))" }}
+      >
         {text}
       </span>
     </div>
@@ -207,17 +228,53 @@ function CountUp({ value }: { value: number }) {
 function Keeper() {
   return (
     <svg viewBox="0 0 64 72" className="block w-full">
-      <path d="M18 30 L5 17" stroke="#F4A58A" strokeWidth="9" strokeLinecap="round" />
-      <path d="M46 30 L59 17" stroke="#F4A58A" strokeWidth="9" strokeLinecap="round" />
-      <rect x="22" y="50" width="8" height="20" rx="4" fill="#3F3F46" />
-      <rect x="34" y="50" width="8" height="20" rx="4" fill="#3F3F46" />
-      <rect x="17" y="24" width="30" height="31" rx="11" fill="#F4A58A" />
-      <circle cx="32" cy="12" r="10" fill="#F2C9A0" />
-      <circle cx="28" cy="11" r="1.6" fill="#27272A" />
-      <circle cx="36" cy="11" r="1.6" fill="#27272A" />
-      <circle cx="5" cy="16" r="7.5" fill="#F4D35E" />
-      <circle cx="59" cy="16" r="7.5" fill="#F4D35E" />
+      <path d="M18 30 L5 17" stroke="#FBDCC8" strokeWidth="9" strokeLinecap="round" />
+      <path d="M46 30 L59 17" stroke="#FBDCC8" strokeWidth="9" strokeLinecap="round" />
+      <rect x="22" y="50" width="8" height="20" rx="4" fill="#2E3A6B" />
+      <rect x="34" y="50" width="8" height="20" rx="4" fill="#2E3A6B" />
+      <rect x="17" y="24" width="30" height="31" rx="11" fill="#FF6B3D" />
+      <circle cx="32" cy="12" r="10" fill="#FBDCC8" />
+      <path d="M22 11a10 10 0 0 1 20 0z" fill="#FFD23F" />
+      <rect x="22" y="10" width="20" height="2" fill="#FFD23F" />
+      <circle cx="28" cy="14" r="1.6" fill="#27272A" />
+      <circle cx="36" cy="14" r="1.6" fill="#27272A" />
+      <circle cx="5" cy="16" r="7.5" fill="#FFD23F" stroke="#fff" strokeWidth="1.5" />
+      <circle cx="59" cy="16" r="7.5" fill="#FFD23F" stroke="#fff" strokeWidth="1.5" />
     </svg>
+  );
+}
+
+// ท้องฟ้า + ภูเขา + เมฆ ด้านหลังประตู (ลายเดียวกับฉากหน้าผาของ Up and Up)
+function Backdrop() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute"
+      style={{
+        left: "-100vw",
+        right: "-100vw",
+        top: "-100vh",
+        bottom: `${100 - LINE_Y}%`,
+        background: "linear-gradient(to bottom,#6EC6FF 0%,#BFE6FF 55%,#FFF1D6 100%)",
+      }}
+    >
+      <span className="absolute rounded-full bg-[#FFF8D2] opacity-90 blur-[2px]" style={{ right: "18vw", bottom: "16vh", width: "9vh", height: "9vh", boxShadow: "0 0 60px 20px rgba(255,236,160,.7)" }} />
+      {[
+        { l: "12vw", b: "20vh", s: 1 },
+        { l: "46vw", b: "26vh", s: 0.8 },
+        { l: "72vw", b: "15vh", s: 1.15 },
+      ].map((c, i) => (
+        <span key={i} className="absolute flex" style={{ left: c.l, bottom: c.b, transform: `scale(${c.s})` }}>
+          <span className="-mr-3 mt-2 h-5 w-10 rounded-full bg-white/90" />
+          <span className="h-8 w-14 rounded-full bg-white/90" />
+          <span className="-ml-4 mt-3 h-5 w-12 rounded-full bg-white/90" />
+        </span>
+      ))}
+      <svg viewBox="0 0 1200 100" preserveAspectRatio="none" className="absolute inset-x-0 bottom-0 h-[14vh] w-full">
+        <path d="M0 100 L0 58 L90 18 L170 52 L260 8 L360 60 L450 28 L560 68 L660 16 L760 56 L860 24 L960 62 L1060 20 L1200 58 L1200 100Z" fill="#B9C9F0" />
+        <path d="M0 100 L0 78 L120 46 L210 74 L320 38 L430 76 L540 50 L650 80 L770 44 L880 78 L990 48 L1100 76 L1200 54 L1200 100Z" fill="#8FA2D8" />
+      </svg>
+    </div>
   );
 }
 
@@ -324,17 +381,18 @@ function Pitch({
       style={{ aspectRatio: aspect, touchAction: "none" }}
     >
       <div className={`absolute inset-0 ${reveal && (!e!.goal || !iShot) ? "kb-shake" : ""}`}>
-        <div className="absolute h-[3px] bg-white/70" style={{ top: `${LINE_Y}%`, left: "-100vw", right: "-100vw" }} />
-        <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-white/80" style={{ top: "86%" }} />
+        <Backdrop />
+        <div className="absolute h-[3px] bg-white/80" style={{ top: `${LINE_Y}%`, left: "-100vw", right: "-100vw" }} />
+        <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-white/90 ring-2 ring-[#FFD66B]" style={{ top: "86%" }} />
 
         <div
           className={`absolute ${reveal && e!.goal ? "kb-net" : ""}`}
           style={{ left: `${inset}%`, right: `${inset}%`, top: `${GOAL_TOP}%`, height: `${GOAL_H}%`, transformOrigin: "50% 0" }}
         >
           <div
-            className="absolute inset-0 rounded-t-md border-x-[6px] border-t-[6px] border-white"
+            className="absolute inset-0 rounded-t-md border-x-[6px] border-t-[6px] border-white shadow-[0_4px_14px_rgba(30,42,74,.35)]"
             style={{
-              backgroundColor: "rgba(255,255,255,.16)",
+              backgroundColor: "rgba(30,42,74,.14)",
               backgroundImage:
                 "repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 12px),repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 12px)",
             }}
@@ -351,13 +409,14 @@ function Pitch({
                   onClick={() => onSel(d)}
                   aria-label={`เลือก${SIDE[d]}`}
                   aria-pressed={sel === d}
-                  className={`m-1.5 flex items-end justify-center rounded-xl pb-2 text-sm font-semibold outline-none transition-all focus-visible:ring-4 focus-visible:ring-blue-400 ${
+                  className={`m-1.5 flex items-end justify-center rounded-xl pb-2 text-sm font-bold outline-none transition-all focus-visible:ring-4 focus-visible:ring-[#FF7A3D] ${
                     canPick
                       ? active
-                        ? "scale-[1.03] bg-white/60 text-zinc-900 ring-4 ring-white"
-                        : "border-2 border-dashed border-white/70 text-white hover:bg-white/25"
+                        ? "scale-[1.03] bg-[#FFD66B]/80 text-[#1E2A4A] ring-4 ring-white"
+                        : "border-2 border-dashed border-white/80 text-white hover:bg-white/25"
                       : "pointer-events-none border-0 text-transparent"
                   }`}
+                  style={canPick && !active ? { textShadow: "0 1px 4px rgba(30,42,74,.6)" } : undefined}
                 >
                   {SIDE[d]}
                 </button>
@@ -421,17 +480,19 @@ function Pitch({
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">
           <div className="kb-pop flex flex-col items-center text-center">
             {iScored ? (
-              <FireText text={e!.goal ? "GOAL!" : "SAVE!"} size="text-7xl sm:text-9xl" />
+              <PopText text={e!.goal ? "GOAL!" : "SAVE!"} size="text-7xl sm:text-9xl" />
             ) : (
-              <span className="rounded-[2rem] bg-zinc-900 px-8 py-4 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+              <span className="rounded-[2rem] bg-[#1E2A4A] px-8 py-4 text-4xl font-black tracking-tight text-white shadow-xl ring-4 ring-white sm:text-6xl">
                 {e!.goal ? "เสียประตู" : "โดนเซฟ"}
               </span>
             )}
-            <p className="mt-2 rounded-full bg-white/90 px-4 py-1 text-sm font-medium text-zinc-700 shadow-sm">{sub}</p>
+            <p className="mt-2 rounded-full bg-white/90 px-4 py-1 text-sm font-bold text-[#1E3A6B] shadow-sm ring-2 ring-white">{sub}</p>
             <p
-              className="mt-3 inline-block rounded-full px-5 py-1.5 text-2xl font-semibold tabular-nums sm:text-3xl"
-              style={{ background: iScored ? "#27272A" : "#F4D35E", color: iScored ? "#F4D35E" : "#27272A" }}
+              className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-5 py-1.5 text-2xl font-black tabular-nums shadow-lg ring-2 ring-white sm:text-3xl ${
+                iScored ? "bg-gradient-to-r from-[#FF5A2E] to-[#FFB020] text-white" : "bg-[#FFD66B] text-[#1E2A4A]"
+              }`}
             >
+              {iScored && <StarIcon size={22} color="#FFF3C4" />}
               {iScored ? "+1 แต้ม" : "คู่แข่ง +1"}
             </p>
           </div>
@@ -451,18 +512,18 @@ function ShotDot({ state, next, hint }: { state: "win" | "lose" | "pending"; nex
   const base = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white sm:h-6 sm:w-6 sm:text-xs";
   if (state === "win")
     return (
-      <span className={`${base} kb-pop`} style={{ background: "#5FA35A" }} aria-label="ได้แต้ม">
+      <span className={`${base} kb-pop ring-2 ring-white`} style={{ background: "#4ADE80" }} aria-label="ได้แต้ม">
         ✓
       </span>
     );
   if (state === "lose")
     return (
-      <span className={`${base} kb-pop`} style={{ background: "#E0483B" }} aria-label="ไม่ได้แต้ม">
+      <span className={`${base} kb-pop ring-2 ring-white`} style={{ background: "#FF4D6D" }} aria-label="ไม่ได้แต้ม">
         ✕
       </span>
     );
   return (
-    <span className={`${base} bg-white/60 !text-[10px] ${next ? "ring-2 ring-zinc-900" : ""}`} title={hint} aria-label={hint}>
+    <span className={`${base} bg-white/60 !text-[10px] ${next ? "ring-2 ring-[#FF7A3D]" : ""}`} title={hint} aria-label={hint}>
       <span className="opacity-70">{hint === "ยิง" ? "⚽" : "🧤"}</span>
     </span>
   );
@@ -471,7 +532,7 @@ function ShotDot({ state, next, hint }: { state: "win" | "lose" | "pending"; nex
 function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Player; score: number; idx: 0 | 1; role: "ยิง" | "รับ" | null; active: boolean; gain: string | null; isYou: boolean; dots: React.ReactNode }) {
   return (
     <div
-      className={`relative flex min-w-0 flex-1 flex-col gap-2 rounded-3xl p-2.5 pr-3.5 text-zinc-900 shadow-sm transition-transform ${active ? "scale-[1.03]" : ""}`}
+      className={`relative flex min-w-0 flex-1 flex-col gap-2 rounded-3xl p-2.5 pr-3.5 text-zinc-900 shadow-md ring-2 ring-white transition-transform ${active ? "scale-[1.03]" : ""}`}
       style={{ background: COLORS[idx] }}
     >
       <div className="flex items-center gap-2 sm:gap-3">
@@ -479,17 +540,17 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
         <img
           src={getAvatarSrc(p.avatar)}
           alt=""
-          className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-white/80 sm:h-11 sm:w-11"
+          className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-white sm:h-11 sm:w-11"
           onError={(ev) => ((ev.target as HTMLImageElement).src = "/img/p01.png")}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">
+          <p className="truncate text-sm font-bold">
             {p.name}
             {isYou && " (คุณ)"}
           </p>
-          <p className="text-xs opacity-60">{role ? `${role === "ยิง" ? "⚽" : "🧤"} ${role}` : "—"}</p>
+          <p className="text-xs font-medium opacity-60">{role ? `${role === "ยิง" ? "⚽" : "🧤"} ${role}` : "—"}</p>
         </div>
-        <span className="text-2xl font-semibold tabular-nums sm:text-3xl">
+        <span className="text-2xl font-black tabular-nums sm:text-3xl">
           <CountUp value={score} />
         </span>
       </div>
@@ -497,7 +558,7 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
         {dots}
       </div>
       {gain && (
-        <span key={gain} className="kb-gain absolute -top-2 right-4 z-20 rounded-full bg-zinc-900 px-3 py-1 text-sm font-semibold text-[#F4D35E] shadow-lg">
+        <span key={gain} className="kb-gain absolute -top-2 right-4 z-20 rounded-full bg-[#1E2A4A] px-3 py-1 text-sm font-black text-[#FFD66B] shadow-lg ring-2 ring-white">
           +1
         </span>
       )}
@@ -755,7 +816,7 @@ export default function KickBattle() {
   }
 
   const menu = (children: React.ReactNode, hero = false) => (
-    <div className={`fixed inset-0 z-50 overflow-y-auto font-sans text-zinc-900 ${hero ? "bg-[#8DB885]" : "bg-white"}`}>
+    <div className={`fixed inset-0 z-50 overflow-y-auto font-sans text-zinc-900 ${hero ? "bg-[#8FD3FF]" : SKY_BG}`}>
       <style>{CSS}</style>
 
       {hero && (
@@ -773,7 +834,7 @@ export default function KickBattle() {
             className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(to bottom, rgba(0,0,0,.38) 0%, rgba(0,0,0,.12) 30%, rgba(141,184,133,.55) 62%, rgba(141,184,133,.92) 85%, #8DB885 100%)",
+                "linear-gradient(to bottom, rgba(30,42,74,.5) 0%, rgba(110,198,255,.28) 32%, rgba(255,241,214,.72) 70%, #FFF1D6 100%)",
             }}
           />
         </div>
@@ -783,14 +844,12 @@ export default function KickBattle() {
         <div className="flex items-center justify-between">
           <Link
             href="/"
-            className={`inline-flex h-10 items-center rounded-full border border-black/[.08] px-4 text-sm font-medium transition-colors ${
-              hero ? "bg-white/90 shadow-sm backdrop-blur hover:bg-white" : "hover:bg-black/[.04]"
-            }`}
+            className="inline-flex h-10 items-center rounded-full bg-white/90 px-4 text-sm font-bold text-[#1E3A6B] shadow-sm ring-2 ring-white transition-colors hover:bg-white"
           >
-            กลับหน้าหลัก
+            ← กลับหน้าหลัก
           </Link>
           {code && view?.status !== "playing" && (
-            <button onClick={leave} className="h-10 rounded-full px-4 text-sm text-zinc-500 transition-colors hover:bg-black/[.04]">
+            <button onClick={leave} className="h-10 rounded-full bg-white/70 px-4 text-sm font-medium text-[#1E3A6B] ring-2 ring-white transition-colors hover:bg-white">
               ออกจากห้อง
             </button>
           )}
@@ -800,37 +859,38 @@ export default function KickBattle() {
     </div>
   );
 
-  if (!me) return menu(<p className="mt-20 text-center text-sm text-zinc-400">กำลังโหลด…</p>);
+  if (!me) return menu(<p className="mt-20 text-center text-sm font-bold text-[#1E3A6B]">กำลังโหลด…</p>);
 
   // ===== ล็อบบี้ =====
   if (!code) {
     return menu(
       <>
-        <h1 className="mt-10 text-5xl font-semibold leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,.45)] md:text-7xl">Kick Battle</h1>
-        <p className="mt-4 max-w-md text-lg leading-8 text-white/90 drop-shadow-[0_1px_8px_rgba(0,0,0,.45)]">
-          จุดโทษดวลเดือดสองคน ใครยิงใครรับสุ่มกันหน้าสนาม แล้วสลับบทบาทกันทุกลูก
-        </p>
+        <div className="kb-title mt-8 text-center md:text-left">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1E2A4A]/70 px-3 py-0.5 text-[11px] font-bold tracking-[.25em] text-[#FFE08A] ring-1 ring-white/40">⚽ เกมจุดโทษ ⚽</span>
+          <div className="-ml-4 mt-1">
+            <PopText text="KICK BATTLE" size="text-6xl md:text-8xl" />
+          </div>
+          <p className="mt-1 max-w-md text-base font-bold leading-7 text-[#1E3A6B] md:text-lg" style={{ textShadow: POP_SHADOW }}>
+            จุดโทษดวลเดือดสองคน ใครยิงใครรับสุ่มกันหน้าสนาม แล้วสลับบทบาทกันทุกลูก
+          </p>
+        </div>
 
-        {error && <p className="mt-6 rounded-2xl bg-[#F4A58A] px-5 py-3 text-sm">{error}</p>}
+        {error && <p className="mt-6 rounded-2xl bg-[#FFE3D3] px-5 py-3 text-sm font-medium text-[#B8431F] ring-2 ring-white">{error}</p>}
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#F4D35E] p-7">
+          <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#FFD66B] p-7 shadow-lg ring-4 ring-white">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">สร้างห้อง</h2>
-              <p className="mt-2 text-sm leading-6 opacity-70">รับรหัสห้อง 4 ตัว แล้วส่งให้เพื่อนเข้ามา</p>
+              <h2 className="text-2xl font-black tracking-tight text-[#1E2A4A]">สร้างห้อง</h2>
+              <p className="mt-2 text-sm leading-6 text-[#5B4300]">รับรหัสห้อง 4 ตัว แล้วส่งให้เพื่อนเข้ามา</p>
             </div>
-            <button
-              onClick={() => enter("create")}
-              disabled={busy}
-              className="h-12 rounded-full bg-zinc-900 text-sm font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-40"
-            >
+            <button onClick={() => enter("create")} disabled={busy} className={BTN_ORANGE}>
               สร้างห้องใหม่
             </button>
           </div>
 
-          <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#A8B5E8] p-7">
+          <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#9DB4F2] p-7 shadow-lg ring-4 ring-white">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">เข้าร่วมห้อง</h2>
+              <h2 className="text-2xl font-black tracking-tight text-[#1E2A4A]">เข้าร่วมห้อง</h2>
               <input
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))}
@@ -839,27 +899,23 @@ export default function KickBattle() {
                 aria-label="รหัสห้อง"
                 inputMode="text"
                 autoCapitalize="characters"
-                className="mt-3 h-12 w-full rounded-full bg-white/80 px-5 text-center text-2xl font-semibold uppercase tracking-[.4em] outline-none placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-zinc-400 focus:bg-white focus:ring-4 focus:ring-white/60"
+                className="mt-3 h-12 w-full rounded-full bg-white/85 px-5 text-center text-2xl font-black uppercase tracking-[.4em] text-[#1E2A4A] outline-none placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-zinc-400 focus:bg-white focus:ring-4 focus:ring-white/70"
               />
             </div>
-            <button
-              onClick={() => enter("join")}
-              disabled={busy || joinCode.length !== 4}
-              className="h-12 rounded-full bg-[#1F2A5C] text-sm font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-40"
-            >
+            <button onClick={() => enter("join")} disabled={busy || joinCode.length !== 4} className={BTN_MAIN}>
               เข้าห้อง
             </button>
           </div>
         </div>
 
-        <div className="mt-4 rounded-[2rem] bg-white/90 p-7 shadow-sm backdrop-blur">
-          <h3 className="text-lg font-semibold tracking-tight">กติกา</h3>
+        <div className="mt-4 rounded-[2rem] bg-white/85 p-7 shadow-lg ring-4 ring-white backdrop-blur">
+          <h3 className="text-lg font-black tracking-tight text-[#E5502A]">กติกา</h3>
           <ul className="mt-3 flex flex-col gap-2 text-sm leading-6 text-zinc-600">
-            <li>ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
-            <li>ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 1 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 1 แต้ม และแต้มบวกเข้าคะแนนรวมทันที ทั้งผู้ชนะและผู้แพ้ได้แต้มตามลูกที่ตัวเองทำได้</li>
-            <li>สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ไม่มีโบนัสผู้ชนะ</li>
-            <li>ถ้าผู้เล่นคนใดออกจากเกมระหว่างเล่น ห้องจะถูกยกเลิกและเกมจบ ผู้ที่ยังอยู่ชนะโดยปริยาย ได้เฉพาะแต้มที่ทำได้จริงก่อนจบเกม</li>
-            <li>วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
+            <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
+            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 1 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 1 แต้ม และแต้มบวกเข้าคะแนนรวมทันที ทั้งผู้ชนะและผู้แพ้ได้แต้มตามลูกที่ตัวเองทำได้</li>
+            <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ไม่มีโบนัสผู้ชนะ</li>
+            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">ถ้าผู้เล่นคนใดออกจากเกมระหว่างเล่น ห้องจะถูกยกเลิกและเกมจบ ผู้ที่ยังอยู่ชนะโดยปริยาย ได้เฉพาะแต้มที่ทำได้จริงก่อนจบเกม</li>
+            <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
       </>,
@@ -870,9 +926,9 @@ export default function KickBattle() {
   // ===== กำลังเชื่อมต่อห้อง (ยังไม่ได้ข้อมูลห้องจาก server) =====
   if (!view) {
     return menu(
-      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center">
-        <p className="text-2xl font-semibold">กำลังเชื่อมต่อห้อง {code}</p>
-        <p className="mt-4 text-sm opacity-70">
+      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#FFD66B] px-6 py-16 text-center shadow-lg ring-4 ring-white">
+        <p className="text-2xl font-black text-[#1E2A4A]">กำลังเชื่อมต่อห้อง {code}</p>
+        <p className="mt-4 text-sm font-medium text-[#5B4300]">
           รอสักครู่
           {[0, 1, 2].map((i) => (
             <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
@@ -887,13 +943,13 @@ export default function KickBattle() {
   // ===== รอเพื่อน (เฉพาะ Host คนสร้างห้อง) =====
   if (view.status === "waiting") {
     return menu(
-      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#F4D35E] px-6 py-16 text-center">
-        <p className="text-sm opacity-70">รหัสห้องของคุณ</p>
-        <p className="mt-2 text-7xl font-semibold tracking-[.2em] md:text-8xl">{code}</p>
-        <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition-opacity hover:opacity-85">
+      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#FFD66B] px-6 py-16 text-center shadow-lg ring-4 ring-white">
+        <p className="text-sm font-bold text-[#5B4300]">รหัสห้องของคุณ</p>
+        <p className="mt-2 text-7xl font-black tracking-[.2em] text-[#1E2A4A] md:text-8xl">{code}</p>
+        <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-[#1E2A4A] px-6 text-sm font-semibold text-white ring-2 ring-white transition-opacity hover:opacity-85">
           {copied ? "คัดลอกแล้ว" : "คัดลอกรหัส"}
         </button>
-        <p className="mt-8 text-sm opacity-70">
+        <p className="mt-8 text-sm font-medium text-[#5B4300]">
           รอเพื่อนเข้าห้อง
           {[0, 1, 2].map((i) => (
             <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
@@ -975,7 +1031,7 @@ export default function KickBattle() {
           <PlayerPill p={view.players[1]} score={sc[1]} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
         </div>
         <div className="mt-2 flex justify-center">
-          <span className={`${PILL} !py-1 text-xs font-medium`}>{statusText}</span>
+          <span className={`${PILL} !py-1 text-xs`}>{statusText}</span>
         </div>
       </div>
 
@@ -1003,28 +1059,28 @@ export default function KickBattle() {
               <>
                 <p className={PILL}>
                   {iShoot ? "คุณเป็นผู้ยิง · ลากลูกไปมุมที่จะยิงแล้วปล่อย" : "คุณเป็นผู้รับ · ลากถุงมือไปมุมที่จะรับแล้วปล่อย"}
-                  {view.oppPicked && <span className="ml-2 rounded-full bg-zinc-100 px-3 py-0.5 text-xs">คู่แข่งเลือกแล้ว</span>}
+                  {view.oppPicked && <span className="ml-2 rounded-full bg-[#FFD66B] px-3 py-0.5 text-xs">คู่แข่งเลือกแล้ว</span>}
                 </p>
                 <button
                   onClick={() => confirmPick()}
                   disabled={!sel || busy}
-                  className="pointer-events-auto h-12 w-full max-w-xs rounded-full bg-zinc-900 text-sm font-medium text-white transition-opacity hover:opacity-85 disabled:opacity-30"
+                  className="pointer-events-auto h-12 w-full max-w-xs rounded-full bg-gradient-to-b from-[#FF8A4C] to-[#FF5A2E] text-sm font-black text-white shadow-lg ring-2 ring-white transition-transform active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                 >
                   {sel ? (iShoot ? `ยิง${SIDE[sel]}` : `รับ${SIDE[sel]}`) : iShoot ? "เลือกทิศที่จะยิง" : "เลือกทิศที่จะรับ"}
                 </button>
               </>
             )}
-            {error && <p className="rounded-full bg-white/90 px-3 py-1 text-sm text-[#C2410C]">{error}</p>}
+            {error && <p className="rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-[#C2410C] ring-2 ring-white">{error}</p>}
           </div>
           <span className="w-11 shrink-0" aria-hidden />
         </div>
       )}
 
       {intro > 0 && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#190C28]/60 px-6 text-center text-white backdrop-blur-sm">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#1E2A4A]/55 px-6 text-center text-white backdrop-blur-sm">
           {intro === 1 ? (
             <>
-              <p className="text-sm opacity-70">กำลังสุ่มว่าใครได้ยิงก่อน</p>
+              <p className="text-sm font-bold opacity-80">กำลังสุ่มว่าใครได้ยิงก่อน</p>
               <p className="mt-4 text-7xl" style={{ transform: `rotate(${flip ? -12 : 12}deg) scale(${flip ? 1 : 1.15})`, transition: "transform 130ms" }}>
                 {flip ? "⚽" : "🧤"}
               </p>
@@ -1032,8 +1088,8 @@ export default function KickBattle() {
           ) : (
             <div className="kb-pop">
               <p className="text-7xl">{view.first === you ? "⚽" : "🧤"}</p>
-              <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">{view.first === you ? "คุณได้ยิงก่อน" : "คุณได้เฝ้าประตู"}</p>
-              <p className="mt-2 text-sm opacity-70">ลูกต่อไปสลับบทบาทกัน</p>
+              <p className="mt-4 text-4xl font-black tracking-tight md:text-5xl">{view.first === you ? "คุณได้ยิงก่อน" : "คุณได้เฝ้าประตู"}</p>
+              <p className="mt-2 text-sm opacity-80">ลูกต่อไปสลับบทบาทกัน</p>
             </div>
           )}
         </div>
@@ -1042,51 +1098,53 @@ export default function KickBattle() {
       {go && (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
           <div style={{ animation: "kb-go .9s ease-out both" }}>
-            <FireText text="GO!!!" size="text-7xl sm:text-9xl" />
+            <PopText text="GO!!!" size="text-7xl sm:text-9xl" />
           </div>
         </div>
       )}
 
       {tbIntro && (
-        <div className="kb-rise absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#190C28]/70 px-6 text-center text-white backdrop-blur-sm">
+        <div className="kb-rise absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#1E2A4A]/65 px-6 text-center text-white backdrop-blur-sm">
           <div className="kb-pop">
             <p className="text-7xl">🔥</p>
-            <p className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">แต้มเสมอ ต่อเวลา!</p>
-            <p className="mt-3 text-sm leading-6 opacity-80">ยิงกันต่ออีกสูงสุด {TB_SHOTS} ลูก ใครได้ {TB_TARGET} แต้มก่อนชนะ</p>
+            <p className="mt-4 text-4xl font-black tracking-tight md:text-5xl">แต้มเสมอ ต่อเวลา!</p>
+            <p className="mt-3 text-sm leading-6 opacity-90">ยิงกันต่ออีกสูงสุด {TB_SHOTS} ลูก ใครได้ {TB_TARGET} แต้มก่อนชนะ</p>
           </div>
         </div>
       )}
 
       {done && (
-        <div className="kb-rise absolute inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-gradient-to-b from-[#F7E9A8] via-white to-white p-4">
+        <div className={`kb-rise absolute inset-0 z-[60] flex items-center justify-center overflow-y-auto p-4 ${SKY_BG}`}>
           {iWon && <Confetti n={44} />}
           {iWon && <Coins />}
           <div className="my-auto w-full max-w-sm text-center">
-            <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${iWon ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
+            <span className={`inline-block rounded-full px-4 py-1 text-sm font-bold ${iWon ? "bg-[#FFD66B]" : "bg-zinc-100 text-zinc-600"}`}>
               {iWon ? "🏆 ชนะ!" : "จบเกม"}
             </span>
             <p className="kb-pop mt-3 text-7xl">{iWon ? "🏆" : "🥲"}</p>
-            <h2 className="mt-2 text-5xl font-semibold tracking-tight">{iWon ? "คุณชนะ!" : "แพ้ไปนิดเดียว"}</h2>
+            <h2 className="mt-2 text-5xl font-black tracking-tight text-[#E5502A]">{iWon ? "คุณชนะ!" : "แพ้ไปนิดเดียว"}</h2>
             {view.history.length > view.total && <p className="mt-1 text-sm text-zinc-500">ตัดสินด้วยการต่อเวลา</p>}
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               {[you, opp].map((i, k) => (
-                <div key={i} className="rounded-3xl py-5 text-zinc-900" style={{ background: COLORS[i] }}>
+                <div key={i} className="rounded-3xl py-5 text-zinc-900 shadow-md ring-2 ring-white" style={{ background: COLORS[i] }}>
                   <p className="truncate px-2 text-xs opacity-70">{k === 0 ? "คุณ" : view.players[i]?.name || "คู่แข่ง"}</p>
-                  <p className="text-5xl font-semibold tabular-nums tracking-tight">{sc[i]}</p>
+                  <p className="text-5xl font-black tabular-nums tracking-tight">{sc[i]}</p>
                 </div>
               ))}
             </div>
 
             {view.earned[you] > 0 &&
               (view.awardSaved[you] ? (
-                <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
+                <p className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-bold text-[#2F5D2A] ring-2 ring-white">
+                  <StarIcon size={16} color="#FFB800" />+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
+                </p>
               ) : (
-                <p className="mt-3 rounded-2xl bg-[#FBE3DA] px-4 py-2.5 text-sm text-[#8A3B1F]">แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว</p>
+                <p className="mt-3 rounded-2xl bg-[#FFE3D3] px-4 py-2.5 text-sm text-[#8A3B1F] ring-2 ring-white">แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว</p>
               ))}
 
-            <p className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-600">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: view.oppLeft ? "#E0483B" : "#5FA35A" }} aria-hidden="true" />
+            <p className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-zinc-600">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: view.oppLeft ? "#FF4D6D" : "#4ADE80" }} aria-hidden="true" />
               {view.oppLeft ? "คู่แข่งออกจากห้องแล้ว" : "คู่แข่งยังอยู่ในห้อง"}
             </p>
 
@@ -1097,7 +1155,7 @@ export default function KickBattle() {
                 </button>
               ) : (
                 <>
-                  <button onClick={rematch} disabled={view.youRematch} className={BTN_MAIN}>
+                  <button onClick={rematch} disabled={view.youRematch} className={BTN_ORANGE}>
                     {view.youRematch ? "รอเพื่อนกดเล่นอีกรอบ…" : view.oppRematch ? "เพื่อนขอเล่นอีกรอบ กดเลย" : "เล่นอีกรอบ"}
                   </button>
                   <button onClick={leave} className={BTN_SUB}>
@@ -1106,7 +1164,7 @@ export default function KickBattle() {
                 </>
               )}
               <Link href="/rank" className={BTN_SUB}>
-                ดูอันดับ
+                🏆 ดูอันดับ
               </Link>
             </div>
           </div>
@@ -1114,25 +1172,27 @@ export default function KickBattle() {
       )}
 
       {cancelled && (
-        <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-gradient-to-b from-[#F7E9A8] via-white to-white p-4">
+        <div className={`kb-rise absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto p-4 ${SKY_BG}`}>
           <Confetti n={40} />
           <Coins />
           <div className="my-auto w-full max-w-sm text-center">
-            <span className="inline-block rounded-full bg-[#F4D35E] px-4 py-1 text-sm font-medium">คู่แข่งออกจากเกมแล้ว</span>
+            <span className="inline-block rounded-full bg-[#FFD66B] px-4 py-1 text-sm font-bold">คู่แข่งออกจากเกมแล้ว</span>
             <p className="kb-pop mt-3 text-7xl">🏆</p>
-            <h2 className="mt-2 text-4xl font-semibold tracking-tight">คุณชนะโดยปริยาย!</h2>
+            <h2 className="mt-2 text-4xl font-black tracking-tight text-[#E5502A]">คุณชนะโดยปริยาย!</h2>
             <p className="mt-2 text-sm text-zinc-500">ห้องนี้ถูกยกเลิกและเกมจบลงแล้ว</p>
 
-            <div className="mt-5 rounded-3xl bg-[#F4D35E] py-5 text-zinc-900">
-              <p className="text-xs opacity-70">แต้มที่คุณทำได้ในเกมนี้</p>
-              <p className="text-6xl font-semibold tabular-nums tracking-tight">+{view.earned[you]}</p>
+            <div className="mt-5 rounded-3xl bg-[#FFB36B] py-5 text-zinc-900 shadow-md ring-2 ring-white">
+              <p className="text-xs text-zinc-800">แต้มที่คุณทำได้ในเกมนี้</p>
+              <p className="text-6xl font-black tabular-nums tracking-tight">+{view.earned[you]}</p>
             </div>
             {view.earned[you] > 0 && view.awardSaved[you] && (
-              <p className="mt-3 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-medium text-[#2F5D2A]">+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว</p>
+              <p className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-bold text-[#2F5D2A] ring-2 ring-white">
+                <StarIcon size={16} color="#FFB800" />+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
+              </p>
             )}
 
             <div className="mt-5 flex flex-col gap-2">
-              <button onClick={leave} className={BTN_MAIN}>
+              <button onClick={leave} className={BTN_ORANGE}>
                 สร้าง/เข้าห้องใหม่
               </button>
               <button onClick={exitGame} className={BTN_SUB}>
@@ -1144,18 +1204,18 @@ export default function KickBattle() {
       )}
 
       {confirmExit && !cancelled && (
-        <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center bg-[#190C28]/60 p-6 backdrop-blur-sm">
-          <div className="kb-pop w-full max-w-sm rounded-[2rem] bg-white p-7 text-center text-zinc-900">
+        <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center bg-[#1E2A4A]/55 p-6 backdrop-blur-sm">
+          <div className={`kb-pop w-full max-w-sm p-7 text-center text-zinc-900 ${DIALOG}`}>
             <p className="text-5xl">🚪</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">ออกจากเกมนี้?</h2>
+            <h2 className="mt-3 text-2xl font-black tracking-tight text-[#E5502A]">ออกจากเกมนี้?</h2>
             <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ ห้องจะถูกยกเลิกและเกมจะจบ แต้มที่คุณทำได้แล้วจะยังถูกเก็บไว้ ส่วนคู่แข่งจะชนะโดยปริยาย</p>
             <div className="mt-6 flex flex-col gap-2">
-              <button onClick={() => setConfirmExit(false)} className={BTN_MAIN}>
+              <button onClick={() => setConfirmExit(false)} className={BTN_ORANGE}>
                 เล่นต่อ
               </button>
               <button
                 onClick={exitGame}
-                className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#E0483B] text-sm font-medium text-white transition-opacity hover:opacity-85"
+                className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#FF4D6D] text-sm font-bold text-white ring-2 ring-white transition-opacity hover:opacity-85"
               >
                 ออกและยกเลิกห้อง
               </button>

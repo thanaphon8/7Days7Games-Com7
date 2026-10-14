@@ -401,7 +401,7 @@ export default function ProfilePage() {
         <div className="mt-8 grid gap-5 sm:mt-10 lg:grid-cols-[360px_1fr] lg:items-start">
           {/* ===== การ์ดตัวอย่างโปรไฟล์ (แสดงผลสดตามที่แก้) ===== */}
           <section
-            className="fx-rise relative overflow-hidden border border-[#17FFA2]/40 p-6 shadow-[10px_10px_0_0_#ff2a55] sm:p-8 lg:sticky lg:top-6"
+            className="fx-rise relative overflow-hidden border border-[#17FFA2]/40 p-6 sm:p-8 lg:sticky lg:top-6"
             style={{
               animationDelay: "80ms",
               background: isTop

@@ -372,7 +372,7 @@ export default function FavoritesSheet({
       <div className="relative z-10 mx-auto flex min-h-full max-w-5xl flex-col gap-6 px-4 pb-[max(4rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:gap-8 sm:px-6 sm:pt-6">
         {/* ===== ส่วนหัว ===== */}
         <header
-          className="fav-rise relative overflow-hidden border border-[#17FFA2]/40 bg-[#0a1014]/90 p-6 shadow-[10px_10px_0_0_#ff2a55] backdrop-blur-sm sm:p-10"
+          className="fav-rise relative overflow-hidden border border-[#17FFA2]/40 bg-[#0a1014]/90 p-6 backdrop-blur-sm sm:p-10"
           style={{ backgroundImage: "radial-gradient(circle at 90% 0%, rgba(23,255,162,0.18), transparent 55%)" }}
         >
           {/* หัวใจใหญ่จางๆ เป็นลายพื้นหลัง */}

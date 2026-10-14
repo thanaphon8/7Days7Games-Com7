@@ -61,6 +61,9 @@ const STEPS = [
 
 const CATEGORIES = ["ทั้งหมด", "ความรู้", "ตรรกะ", "อาร์เคด"];
 
+// เกมที่เล่น 2 คน (เกมอื่นเป็นเล่นคนเดียวทั้งหมด)
+const TWO_PLAYER = new Set(["kickbattle"]);
+
 const RED = "#ff2a55";
 const MUTED = "text-[#8fa6a1]";
 
@@ -271,6 +274,22 @@ function SectionHead({ title, intro, action }: { title: string; intro?: string; 
         {action}
       </div>
     </Reveal>
+  );
+}
+
+// แท็กบอกว่าเกมเล่นคนเดียวหรือสองคน
+function PlayersTag({ two }: { two: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-bold backdrop-blur-sm ${
+        two
+          ? "border-[#ff2a55] bg-[#ff2a55]/25 text-white"
+          : "border-[#17FFA2]/60 bg-black/55 text-[#17FFA2]"
+      }`}
+    >
+      <span aria-hidden>{two ? "👥" : "👤"}</span>
+      {two ? "เล่น 2 คน" : "เล่นคนเดียว"}
+    </span>
   );
 }
 
@@ -885,8 +904,9 @@ export default function Home() {
                         {g.glyph}
                       </span>
                     )}
-                    <div className="relative m-4">
+                    <div className="relative m-4 flex flex-wrap items-center gap-2">
                       <Badge status={g.status} dark={soon} />
+                      <PlayersTag two={TWO_PLAYER.has(g.id)} />
                     </div>
                   </div>
                   <div className="flex flex-1 flex-col justify-between p-6">

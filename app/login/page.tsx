@@ -403,7 +403,7 @@ export default function Login() {
         <div className="mx-auto max-w-3xl">
           {/* การ์ดหัว แสดงรูปที่เลือกอยู่ */}
           <header
-            className="fx-rise relative flex items-center gap-5 overflow-hidden border border-[#17FFA2]/40 p-6 shadow-[10px_10px_0_0_#ff2a55] sm:gap-8 sm:p-10"
+            className="fx-rise relative flex items-center gap-5 overflow-hidden border border-[#17FFA2]/40 p-6 sm:gap-8 sm:p-10"
             style={{ background: "radial-gradient(circle at 90% 0%, rgba(23,255,162,0.22), transparent 55%), linear-gradient(160deg, #0f1c1a, #0a1014 75%)" }}
           >
             <span aria-hidden className="pointer-events-none absolute -right-3 -top-4 select-none text-[9rem] font-bold leading-none text-black/30">▦</span>
@@ -486,7 +486,7 @@ export default function Login() {
       <style>{STYLES}</style>
       <BackdropText />
       <ConfettiLayer bursts={bursts} />
-      <div className="fx-rise grid w-full max-w-5xl overflow-hidden border border-[#17FFA2]/40 shadow-[10px_10px_0_0_#ff2a55] md:min-h-[640px] md:grid-cols-2">
+      <div className="fx-rise grid w-full max-w-5xl overflow-hidden border border-[#17FFA2]/40 md:min-h-[640px] md:grid-cols-2">
         {/* ===== ฝั่งซ้าย: แบรนด์ (บนมือถือเป็นหัวแบบกะทัดรัด) ===== */}
         <aside
           className="relative flex flex-col justify-between gap-6 overflow-hidden p-6 sm:p-8 md:gap-12 md:p-10"
