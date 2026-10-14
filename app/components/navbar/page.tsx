@@ -75,6 +75,9 @@ export default function Navbar({
   const userId = profile?.userId;
   const pathname = usePathname();
 
+  // อยู่หน้าหลัก → เลื่อนไป section ในหน้า / อยู่หน้าอื่น (เช่น /rank) → กลับหน้าหลักแล้วเลื่อนไป section
+  const hashHref = (id: string) => (pathname === "/" ? `#${id}` : `/#${id}`);
+
   // กดหน้าหลัก: ถ้าอยู่หน้าหลักอยู่แล้วให้เลื่อนขึ้นบนสุด ถ้าอยู่หน้าอื่นให้ไปหน้าหลัก
   function goHome(e: MouseEvent) {
     if (pathname === "/") {
@@ -180,12 +183,12 @@ export default function Navbar({
           <Link href="/" onClick={goHome} className="transition-opacity hover:opacity-60">
             หน้าหลัก
           </Link>
-          <a href="#events" className="transition-opacity hover:opacity-60">
+          <Link href={hashHref("events")} className="transition-opacity hover:opacity-60">
             Events
-          </a>
-          <a href="#games" className="transition-opacity hover:opacity-60">
+          </Link>
+          <Link href={hashHref("games")} className="transition-opacity hover:opacity-60">
             เกมทั้งหมด
-          </a>
+          </Link>
           <Link href="/rank" className="transition-opacity hover:opacity-60">
             อันดับ
           </Link>
@@ -200,9 +203,9 @@ export default function Navbar({
               </span>
             )}
           </button>
-          <a href="#how" className="transition-opacity hover:opacity-60">
+          <Link href={hashHref("how")} className="transition-opacity hover:opacity-60">
             วิธีเล่น
-          </a>
+          </Link>
         </nav>
 
         {/* Right Section (Mobile Fav Icon + Score + Profile) */}
