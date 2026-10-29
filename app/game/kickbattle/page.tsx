@@ -25,7 +25,10 @@ const TB_TARGET = 2;
 const TB_SHOTS = 3;
 const POINTS_PER_HIT = 1; // ยิงเข้าหรือเซฟได้ +1 แต้ม (ไม่มีโบนัสผู้ชนะ)
 const MAX_AWARD = (TOTAL + TB_SHOTS) * POINTS_PER_HIT; // เพดานเดียวกับ API
-const HARD_CHANCE = 0.5; // โอกาสที่บอทจะ "อ่านทาง" ในแต่ละลูก (ที่เหลือสุ่มล้วน)
+const HARD_CHANCE = 0.3; // โอกาสที่บอทจะ "อ่านทาง" ในแต่ละลูก (ที่เหลือสุ่มล้วน)
+// โอกาสที่บอทจะ "พลาด" ในลูกที่ตัวเองควรได้แต้ม (ปรับความได้เปรียบของผู้เล่น)
+// 0 = ยุติธรรมเป๊ะ (ผู้เล่นชนะราว 50%) / 0.15 ≈ ผู้เล่นชนะราว 60-65% / 0.3 ≈ 75%+
+const MERCY = 0.15;
 const DIRS: Dir[] = ["L", "C", "R"];
 const BOT: Player = { id: "bot", name: "Ronaldo SHUUU!", avatar: "", img: "/img/r7.png" };
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
@@ -776,7 +779,12 @@ export default function KickBattle() {
     setSel(d);
 
     const shooter = ((g.first + g.history.length) % 2) as 0 | 1;
-    const botDir = botPick(g.history, shooter === 1);
+    let botDir = botPick(g.history, shooter === 1);
+    // บอทยิง: ได้แต้มเมื่อทิศต่างจากที่ผู้เล่นรับ / บอทรับ: ได้แต้มเมื่อทิศตรงกับที่ผู้เล่นยิง
+    const botScores = shooter === 1 ? botDir !== d : botDir === d;
+    if (botScores && Math.random() < MERCY) {
+      botDir = shooter === 1 ? d : rndOf(DIRS.filter((x) => x !== d));
+    }
     const shot = shooter === 0 ? d : botDir;
     const keep = shooter === 0 ? botDir : d;
     const goal = shot !== keep;
