@@ -1,151 +1,175 @@
+// app/api/user/route.ts
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
-import { getLockedGames } from "@/lib/game-locks";
+import { getDb } from "../../../lib/mongodb";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// userId ในหน้าเว็บ = username (ตัวพิมพ์เล็ก) ที่เก็บในคอลเลกชัน users
+const MAX_AVATAR = 5 * 1024 * 1024;
 
-export async function GET(request: Request) {
+type UserDoc = {
+  username: string;
+  nickname: string;
+  avatarUrl?: string;
+  points?: number;
+  gameScores?: Record<string, number>;
+  savedEvents?: unknown[];
+  savedGames?: unknown[];
+  companyId?: number | null;
+  departmentId?: number | null;
+  branchId?: number | null;
+};
+
+const toPublic = (u: UserDoc) => ({
+  userId: u.username,
+  name: u.nickname,
+  avatarUrl: u.avatarUrl ?? "",
+  avatarId: u.avatarUrl ?? "", // เผื่อโค้ดเก่าที่ยังอ่าน avatarId
+  points: u.points ?? 0,
+  gameScores: u.gameScores ?? {},
+  savedEvents: u.savedEvents ?? [],
+  savedGames: u.savedGames ?? [],
+  companyId: u.companyId ?? null,
+  departmentId: u.departmentId ?? null,
+  branchId: u.branchId ?? null,
+});
+
+// อัปโหลดรูปผ่าน Google Apps Script (เหมือน register)
+async function uploadAvatar(file: File, username: string) {
+  const GAS_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
+  if (!GAS_URL) return null;
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-
-    const client = await clientPromise;
-    const db = client.db("7days7games");
-
-    if (userId) {
-      // ซ่อน password เพื่อความปลอดภัย
-      const user = await db
-        .collection("users")
-        .findOne({ userId }, { projection: { password: 0 } });
-
-      if (!user) {
-        return NextResponse.json(
-          { success: false, message: "ไม่พบผู้ใช้งาน" },
-          { status: 404 }
-        );
-      }
-
-      // แนบฟิลด์ avatar เพื่อให้ตรงกับโครงสร้างฝั่ง Client
-      const formattedUser = {
-        ...user,
-        avatar: user.avatarId || user.avatar || "01",
-      };
-
-      return NextResponse.json({ success: true, data: formattedUser });
-    }
-
-    const users = await db
-      .collection("users")
-      .find({}, { projection: { password: 0 } })
-      .toArray();
-
-    const formattedUsers = users.map((u) => ({
-      ...u,
-      avatar: u.avatarId || u.avatar || "01",
-    }));
-
-    return NextResponse.json(
-      { success: true, data: formattedUsers },
-      {
-        headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-          Pragma: "no-cache",
-          Expires: "0",
-        },
-      }
-    );
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    const fileBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const ext = file.name.split(".").pop() || "jpg";
+    const res = await fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      redirect: "follow",
+      body: JSON.stringify({
+        fileBase64,
+        fileName: `avatar_${username}_${Date.now()}.${ext}`,
+        fileType: file.type,
+      }),
+    });
+    const out = await res.json();
+    return out.success ? { url: out.imageUrl as string, fileId: out.fileId as string } : null;
+  } catch (e) {
+    console.error("avatar upload failed", e);
+    return null;
   }
 }
 
-export async function PATCH(request: Request) {
+/* ------------------------------------------------------------------ */
+/*  GET /api/user?userId=xxx  → ผู้ใช้คนเดียว                           */
+/*  GET /api/user             → รายชื่อทั้งหมด (ไว้คำนวณอันดับ)          */
+/* ------------------------------------------------------------------ */
+export async function GET(req: Request) {
   try {
-    const body = await request.json();
-    const { userId, name, avatarId, avatar, savedEvents, gameScores, gameKey, score } = body;
+    const db = await getDb();
+    const users = db.collection<UserDoc>("users");
+    const userId = new URL(req.url).searchParams.get("userId")?.trim().toLowerCase();
 
-    if (!userId) {
-      return NextResponse.json({ success: false, message: "กรุณาระบุ userId" }, { status: 400 });
+    if (userId) {
+      const u = await users.findOne({ username: userId }, { projection: { passwordHash: 0 } });
+      if (!u) return NextResponse.json({ success: false, message: "ไม่พบผู้ใช้" }, { status: 404 });
+      return NextResponse.json({ success: true, data: toPublic(u) });
     }
 
-    const client = await clientPromise;
-    const db = client.db("7days7games");
-
-    const updateFields: Record<string, any> = { updatedAt: new Date() };
-    const incFields: Record<string, any> = {};
-
-    if (name !== undefined) updateFields.name = name;
-
-    // บันทึกทั้ง avatarId และ avatar
-    const selectedAvatar = avatarId || avatar;
-    if (selectedAvatar !== undefined) {
-      updateFields.avatarId = selectedAvatar;
-      updateFields.avatar = selectedAvatar;
-    }
-
-    if (savedEvents !== undefined) updateFields.savedEvents = savedEvents;
-
-    // เกมที่ admin ล็อกไว้ จะไม่รับคะแนน (ถ้าเช็กรายการล็อกไม่ได้ ให้ผ่านไปก่อน เพื่อไม่ให้คะแนนผู้เล่นหาย)
-    const lockedGames = await getLockedGames().catch((err) => {
-      console.error("Failed to read game locks:", err);
-      return [] as string[];
-    });
-    const blockedGames: string[] = [];
-
-    if (gameScores && typeof gameScores === "object") {
-      for (const [key, val] of Object.entries(gameScores)) {
-        if (typeof val === "number") {
-          if (lockedGames.includes(key)) {
-            blockedGames.push(key);
-            continue;
-          }
-          incFields[`gameScores.${key}`] = val;
-        }
-      }
-    }
-
-    if (gameKey && typeof score === "number") {
-      if (lockedGames.includes(gameKey)) {
-        blockedGames.push(gameKey);
-      } else {
-        incFields[`gameScores.${gameKey}`] = score;
-      }
-    }
-
-    // ถ้าคำขอนี้พยายามบันทึกคะแนนเกมที่ล็อกอย่างเดียว ไม่มีอะไรอื่นให้อัปเดต ให้ปฏิเสธ
-    const hasOtherUpdates = Object.keys(updateFields).length > 1 || Object.keys(incFields).length > 0;
-    if (blockedGames.length > 0 && !hasOtherUpdates) {
-      return NextResponse.json(
-        { success: false, error: "game locked", message: "เกมนี้ยังไม่เปิดให้เล่น", blockedGames },
-        { status: 403 }
-      );
-    }
-
-    const updateQuery: Record<string, any> = { $set: updateFields };
-    if (Object.keys(incFields).length > 0) {
-      updateQuery.$inc = incFields;
-    }
-
-    const result = await db.collection("users").findOneAndUpdate(
-      { userId },
-      updateQuery,
-      { returnDocument: "after", upsert: true }
-    );
-
-    // ป้องกัน TypeScript Error (ts18047) โดยตรวจสอบค่านัยสำคัญก่อนดึง property
-    const updatedDoc = result ? ("value" in result && result.value ? result.value : result) : {};
-
+    const list = await users
+      .find(
+        {},
+        { projection: { username: 1, nickname: 1, avatarUrl: 1, points: 1, gameScores: 1 } }
+      )
+      .sort({ points: -1 })
+      .limit(1000)
+      .toArray();
     return NextResponse.json({
       success: true,
-      ...(blockedGames.length > 0 ? { blockedGames } : {}),
-      data: {
-        ...updatedDoc,
-        avatarId: updatedDoc?.avatarId || selectedAvatar,
-        avatar: updatedDoc?.avatar || selectedAvatar,
-      },
+      data: list.map((u) => ({
+        userId: u.username,
+        name: u.nickname,
+        avatarUrl: u.avatarUrl ?? "",
+        points: u.points ?? 0,
+        gameScores: u.gameScores ?? {},
+      })),
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (e) {
+    console.error("user GET failed", e);
+    return NextResponse.json({ success: false, message: "เซิร์ฟเวอร์ผิดพลาด" }, { status: 500 });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  PATCH /api/user  → แก้ชื่อเล่น / รูปโปรไฟล์                          */
+/*  รับ multipart (userId, name, avatar?) หรือ JSON (userId, name)        */
+/* ------------------------------------------------------------------ */
+export async function PATCH(req: Request) {
+  try {
+    let userIdRaw: unknown;
+    let nameRaw: unknown;
+    let avatar: File | null = null;
+
+    const ct = req.headers.get("content-type") ?? "";
+    if (ct.includes("multipart/form-data")) {
+      const fd = await req.formData();
+      userIdRaw = fd.get("userId");
+      nameRaw = fd.get("name");
+      const f = fd.get("avatar");
+      if (f instanceof File && f.size > 0) avatar = f;
+    } else {
+      const body = await req.json().catch(() => ({}));
+      userIdRaw = body.userId;
+      nameRaw = body.name;
+    }
+
+    const username = typeof userIdRaw === "string" ? userIdRaw.trim().toLowerCase() : "";
+    if (!username) {
+      return NextResponse.json({ success: false, message: "ไม่พบผู้ใช้" }, { status: 400 });
+    }
+
+    // TODO: ตรวจ session ว่าผู้เรียกเป็นเจ้าของบัญชีนี้ (ต้องใช้ฟังก์ชันอ่าน session จาก lib/auth)
+    // ตอนนี้ใครรู้ username ก็แก้ได้
+
+    const $set: Record<string, unknown> = {};
+
+    if (typeof nameRaw === "string") {
+      const name = nameRaw.trim();
+      if (name.length < 2 || name.length > 20) {
+        return NextResponse.json(
+          { success: false, message: "ชื่อต้องยาว 2-20 ตัวอักษร" },
+          { status: 400 }
+        );
+      }
+      $set.nickname = name;
+    }
+
+    if (avatar) {
+      if (!avatar.type.startsWith("image/")) {
+        return NextResponse.json({ success: false, message: "ไฟล์ต้องเป็นรูปภาพ" }, { status: 400 });
+      }
+      if (avatar.size > MAX_AVATAR) {
+        return NextResponse.json({ success: false, message: "ขนาดไฟล์รูปภาพต้องไม่เกิน 5MB" }, { status: 400 });
+      }
+      const up = await uploadAvatar(avatar, username);
+      if (!up) {
+        return NextResponse.json({ success: false, message: "อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง" }, { status: 502 });
+      }
+      $set.avatarUrl = up.url;
+      $set.driveFileId = up.fileId;
+    }
+
+    if (Object.keys($set).length === 0) {
+      return NextResponse.json({ success: false, message: "ไม่มีข้อมูลที่ต้องแก้" }, { status: 400 });
+    }
+
+    const db = await getDb();
+    const users = db.collection<UserDoc>("users");
+    const r = await users.updateOne({ username }, { $set });
+    if (r.matchedCount === 0) {
+      return NextResponse.json({ success: false, message: "ไม่พบผู้ใช้" }, { status: 404 });
+    }
+    const u = await users.findOne({ username }, { projection: { passwordHash: 0 } });
+    return NextResponse.json({ success: true, data: u ? toPublic(u) : null });
+  } catch (e) {
+    console.error("user PATCH failed", e);
+    return NextResponse.json({ success: false, message: "เซิร์ฟเวอร์ผิดพลาด" }, { status: 500 });
   }
 }
