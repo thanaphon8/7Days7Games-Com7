@@ -341,27 +341,46 @@ export default function EventsCarousel({
   setOpenId = () => {},
   overlayOpen = false,
   onPlayGame = () => {},
+  lockedGames,
 }: {
   saved?: string[];
   toggleSave?: (id: string) => void;
   setOpenId?: (id: string | null) => void;
   overlayOpen?: boolean;
   onPlayGame?: (gameId: string) => void;
+  // undefined = ไม่กรอง, null = ยังโหลดสถานะล็อกไม่เสร็จ (ซ่อน Event ที่โปรโมทเกมไว้ก่อน), array = id เกมที่ล็อก
+  lockedGames?: string[] | null;
 }) {
-  const n = EVENTS.length;
+  // ซ่อน Event ที่โปรโมทเกมที่ถูกล็อก
+  const events = EVENTS.filter((e) => {
+    if (!e.gameId) return true;
+    if (lockedGames === undefined) return true;
+    if (lockedGames === null) return false;
+    return !lockedGames.includes(e.gameId);
+  });
+  const n = events.length;
   const [active, setActive] = useState(0);
   const [prev, setPrev] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const [reduced, setReduced] = useState(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
+  // จำนวนสไลด์ลดลง (เช่น เกมถูกล็อก) ให้กลับมาอยู่ในช่วงที่มีจริง
+  const cur = Math.min(active, Math.max(0, n - 1));
+  useEffect(() => {
+    if (active !== cur) {
+      setActive(cur);
+      setPrev(null);
+    }
+  }, [active, cur]);
+
   useEffect(() => {
     setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }, []);
 
   const goTo = (i: number) => {
-    if (i === active) return;
-    setPrev(active);
+    if (i === cur) return;
+    setPrev(cur);
     setActive(i);
     setTick((t) => t + 1);
   };
@@ -379,28 +398,28 @@ export default function EventsCarousel({
     const dx = t.clientX - s.x;
     const dy = t.clientY - s.y;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      goTo(dx < 0 ? (active + 1) % n : (active - 1 + n) % n);
+      goTo(dx < 0 ? (cur + 1) % n : (cur - 1 + n) % n);
     }
   };
 
   // เลื่อนอัตโนมัติต่อเนื่อง แม้เมาส์ชี้อยู่ (หยุดเฉพาะตอนเปิดหน้ารายละเอียด)
-  const running = !reduced && !overlayOpen;
+  const running = !reduced && !overlayOpen && n > 1;
 
   useEffect(() => {
     if (!running) return;
     const t = setTimeout(() => {
-      setPrev(active);
-      setActive((active + 1) % n);
+      setPrev(cur);
+      setActive((cur + 1) % n);
       setTick((k) => k + 1);
     }, SLIDE_MS);
     return () => clearTimeout(t);
-  }, [active, running, n]);
+  }, [cur, running, n]);
 
   useEffect(() => {
     if (prev === null) return;
     const t = setTimeout(() => setPrev(null), TRANSITION_MS);
     return () => clearTimeout(t);
-  }, [prev, active]);
+  }, [prev, cur]);
 
   return (
     <section
@@ -453,7 +472,7 @@ export default function EventsCarousel({
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
-        {EVENTS.map((e, i) => (
+        {events.map((e, i) => (
           <EventCard
             key={e.id}
             e={e}
@@ -462,7 +481,7 @@ export default function EventsCarousel({
             toggleSave={toggleSave}
             onOpen={() => setOpenId(e.id)}
             onPlayGame={onPlayGame}
-            state={i === active ? "active" : i === prev ? "out" : "idle"}
+            state={i === cur ? "active" : i === prev ? "out" : "idle"}
             animKey={tick}
           />
         ))}
@@ -470,24 +489,24 @@ export default function EventsCarousel({
 
         {running && (
           <div className="absolute bottom-0 left-0 z-20 h-[3px] w-full bg-white/10" aria-hidden="true">
-            <div key={`p-${active}-${tick}`} className="ev-progress h-full bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" />
+            <div key={`p-${cur}-${tick}`} className="ev-progress h-full bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" />
           </div>
         )}
       </div>
 
       {/* จุดบอกตำแหน่ง: ปุ่มสูง 44px เพื่อให้แตะง่ายบนมือถือ ส่วนแท่งที่เห็นยังเล็กเหมือนเดิม */}
       <div className="flex justify-center bg-[#05080a]">
-        {EVENTS.map((e, i) => (
+        {events.map((e, i) => (
           <button
             key={e.id}
             aria-label={`ไปที่ Event ${i + 1}`}
-            aria-current={active === i}
+            aria-current={cur === i}
             onClick={() => goTo(i)}
             className="group flex h-11 items-center px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-[#17FFA2]"
           >
             <span
               className={`block h-1.5 -skew-x-12 transition-all duration-300 group-hover:bg-[#17FFA2] ${
-                active === i ? "w-8 bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" : "w-4 bg-white/30"
+                cur === i ? "w-8 bg-[#17FFA2] shadow-[0_0_10px_#17FFA2]" : "w-4 bg-white/30"
               }`}
             />
           </button>

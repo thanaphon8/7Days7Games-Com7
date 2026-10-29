@@ -344,6 +344,93 @@ function UserModal({
   );
 }
 
+/* ---------------- game locks ---------------- */
+
+function GameLocks({ onUnauthorized }: { onUnauthorized: () => void }) {
+  const ids = useMemo(() => Object.keys(GAME_NAMES).filter((k) => k !== "dailyMission"), []);
+  const [locked, setLocked] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/games", { cache: "no-store" });
+        if (res.status === 401) return onUnauthorized();
+        const r = await res.json();
+        if (r.success && Array.isArray(r.locked)) setLocked(r.locked);
+        else setError("โหลดสถานะล็อกไม่สำเร็จ");
+      } catch {
+        setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+      }
+      setLoading(false);
+    })();
+  }, [onUnauthorized]);
+
+  async function toggle(id: string) {
+    const next = !locked.includes(id);
+    if (next && !confirm(`ล็อก "${gameName(id)}"? ผู้เล่นจะเข้าเล่นไม่ได้ทันที`)) return;
+    setBusyId(id);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/games", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, locked: next }),
+      });
+      if (res.status === 401) return onUnauthorized();
+      const r = await res.json().catch(() => null);
+      if (res.ok && r?.success && Array.isArray(r.locked)) setLocked(r.locked);
+      else setError("บันทึกไม่สำเร็จ");
+    } catch {
+      setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+    }
+    setBusyId(null);
+  }
+
+  return (
+    <>
+      <div className="mt-12 flex flex-wrap items-end justify-between gap-2">
+        <h2 className="text-xl font-bold uppercase tracking-tight">ล็อกเกม</h2>
+        <span className={`text-sm ${MUTED}`}>
+          {loading ? "กำลังโหลด..." : `ล็อกอยู่ ${locked.length} / ${ids.length} เกม`}
+        </span>
+      </div>
+      <p className={`mt-1 text-sm ${MUTED}`}>เกมที่ล็อกจะแสดงเป็นรูปกุญแจ ไม่โชว์ปกและชื่อ และผู้เล่นเข้าเล่นไม่ได้</p>
+      {error && <p className="mt-3 border border-[#ff2a55]/60 bg-[#ff2a55]/10 p-3 text-sm">{error}</p>}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {ids.map((id) => {
+          const isLocked = locked.includes(id);
+          return (
+            <div
+              key={id}
+              className={`flex items-center justify-between gap-3 border p-4 ${
+                isLocked ? "border-[#ff2a55]/60 bg-[#ff2a55]/10" : "border-white/10 bg-[#0a1014]/90"
+              }`}
+            >
+              <div className="min-w-0">
+                <p className="truncate font-semibold">{gameName(id)}</p>
+                <p className={`mt-0.5 text-xs ${isLocked ? "text-[#ff2a55]" : "text-[#17FFA2]"}`}>
+                  {isLocked ? "🔒 ล็อกอยู่" : "เปิดให้เล่น"}
+                </p>
+              </div>
+              <button
+                disabled={loading || busyId === id}
+                aria-pressed={isLocked}
+                onClick={() => toggle(id)}
+                className={isLocked ? btnSolid : btnDanger}
+              >
+                {busyId === id ? "..." : isLocked ? "ปลดล็อก" : "ล็อก"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /* ---------------- dashboard ---------------- */
 
 function Dashboard({ onLogout }: { onLogout: () => void }) {
@@ -478,6 +565,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <Stat label="แต้มเฉลี่ย/ผู้เล่น" value={stats.players ? fmtNum(stats.total / stats.players) : "0"} />
           <Stat label="ถูกแบน" value={fmtNum(stats.banned)} tone="#ff2a55" />
         </div>
+
+        <GameLocks onUnauthorized={onLogout} />
 
         {/* per game */}
         <h2 className="mt-12 text-xl font-bold uppercase tracking-tight">สถิติรายเกม</h2>

@@ -314,6 +314,51 @@ function HeartButton({ saved, onToggle, label, size = 44 }: { saved: boolean; on
   );
 }
 
+// ไอคอนลูกกุญแจ (ใช้กับเกมที่ admin ล็อกไว้)
+function LockIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+      <circle cx="12" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// การ์ดเกมที่ถูกล็อก: โชว์ปกแบบเบลอ + ชื่อเกม มีลูกกุญแจตรงกลาง ไม่มีปุ่มเล่นและหัวใจ
+function LockedGameCard({ game, cover }: { game: Game; cover?: string }) {
+  return (
+    <article
+      aria-label={`${game.name} ยังไม่เปิดให้เล่น`}
+      className="relative flex h-full min-h-[26rem] flex-col justify-between overflow-hidden border border-white/10 bg-[#0a1014]"
+    >
+      {cover ? (
+        <Image
+          src={cover}
+          alt=""
+          fill
+          sizes="(min-width: 1024px) 400px, (min-width: 640px) 50vw, 100vw"
+          className="scale-110 object-cover blur-md brightness-[0.55]"
+        />
+      ) : (
+        <div aria-hidden="true" className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${toneHex(game)}66, #05080a 90%)` }} />
+      )}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05080a]/90 via-[#05080a]/20 to-transparent" />
+
+      <div className="relative flex flex-1 items-center justify-center pt-8">
+        <span className="flex h-24 w-24 items-center justify-center border border-white/25 bg-black/50 backdrop-blur-sm">
+          <LockIcon className="h-14 w-14 text-white/80" />
+        </span>
+      </div>
+
+      <div className="relative p-6">
+        <h3 className="text-2xl font-bold uppercase tracking-tight">{game.name}</h3>
+        <p className="mt-1 text-sm text-white/70">ยังไม่เปิดให้เล่น</p>
+      </div>
+    </article>
+  );
+}
+
 /* ---------- ส่วนประกอบของอันดับ (เหมือนหน้า /rank) ---------- */
 
 function RankAvatar({ id, size }: { id?: string; size: string }) {
@@ -565,6 +610,9 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [ready, setReady] = useState(false);
 
+  // เกมที่ admin ล็อกไว้ (null = ยังโหลดไม่เสร็จ)
+  const [locked, setLocked] = useState<string[] | null>(null);
+
   const [topUsers, setTopUsers] = useState<RankUser[]>([]);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
   const [score, setScore] = useState<number | null>(null);
@@ -600,6 +648,29 @@ export default function Home() {
   const champScore = useCountUp(champ?.score ?? 0, inView && !!champ, COUNT_MS, () => {
     if ((champ?.score ?? 0) > 0) setDone(true);
   });
+
+  // โหลดสถานะล็อกเกม และโหลดใหม่ทุกครั้งที่กลับมาเปิดแท็บนี้
+  useEffect(() => {
+    let alive = true;
+    async function loadLocks() {
+      try {
+        const res = await fetch("/api/games/locks", { cache: "no-store" });
+        const result = await res.json();
+        if (alive) setLocked(result.success && Array.isArray(result.locked) ? result.locked : []);
+      } catch {
+        if (alive) setLocked([]);
+      }
+    }
+    loadLocks();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadLocks();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     async function fetchRanking() {
@@ -752,10 +823,26 @@ export default function Home() {
     }
   }
 
+  const isLocked = (id: string) => (locked ?? []).includes(id);
+  const unlockedGames = GAMES.filter((g) => !isLocked(g.id));
+
   const list = GAMES.filter((g) => cat === "ทั้งหมด" || g.category === cat);
-  const upcoming = GAMES.filter((g) => g.status === "SOON");
-  const openCount = GAMES.filter((g) => g.status !== "SOON").length;
-  const detailGame = GAMES.find((g) => g.id === gameId) ?? null;
+  const upcoming = unlockedGames.filter((g) => g.status === "SOON");
+  const openCount = unlockedGames.filter((g) => g.status !== "SOON").length;
+  const detailGame = unlockedGames.find((g) => g.id === gameId) ?? null;
+
+  // รายการโปรด: ซ่อนเกมที่ล็อก และ Event ที่โปรโมทเกมที่ล็อก (ข้อมูลที่บันทึกไว้ยังอยู่ จะกลับมาเมื่อปลดล็อก)
+  const visibleSavedGames = savedGames.filter((id) => !isLocked(id));
+  const visibleSavedEvents = saved.filter((id) => {
+    const ev = EVENTS.find((x) => x.id === id);
+    return !(ev?.gameId && isLocked(ev.gameId));
+  });
+  const openEvent = EVENTS.find((e) => e.id === openId && !(e.gameId && isLocked(e.gameId))) ?? null;
+
+  const openGameDetail = (id: string) => {
+    if (isLocked(id)) return;
+    setGameId(id);
+  };
 
   const isFirst =
     !!profile?.userId &&
@@ -815,7 +902,7 @@ export default function Home() {
       <BackdropText />
 
       <Navbar
-        saved={[...saved, ...savedGames]}
+        saved={[...visibleSavedEvents, ...visibleSavedGames]}
         profile={profile}
         ready={ready}
         isFirst={isFirst}
@@ -825,7 +912,17 @@ export default function Home() {
 
       {/* Events เต็มความกว้างจอ พร้อมเอฟเฟกต์เปิดแบบ hero */}
       <div className="events-stage w-full">
-        <EventsCarousel saved={saved} toggleSave={toggleSave} setOpenId={setOpenId} overlayOpen={!!openId || favOpen || !!gameId} onPlayGame={(id) => { setOpenId(null); setGameId(id); }} />
+        <EventsCarousel
+          saved={saved}
+          toggleSave={toggleSave}
+          setOpenId={setOpenId}
+          overlayOpen={!!openId || favOpen || !!gameId}
+          lockedGames={locked}
+          onPlayGame={(id) => {
+            setOpenId(null);
+            openGameDetail(id);
+          }}
+        />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_100%,rgba(23,255,162,0.16),transparent_45%)]" aria-hidden="true" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#17FFA2] to-transparent shadow-[0_0_14px_#17FFA2]" aria-hidden="true" />
       </div>
@@ -865,67 +962,79 @@ export default function Home() {
         />
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((g, i) => {
-            const soon = g.status === "SOON";
-            const accent = soon ? "#52525B" : toneHex(g);
-            const cover = COVERS[g.id];
-            return (
-              <Reveal key={g.id} delay={(i % 3) * 110} className="h-full">
-                <article
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${g.name} กดเพื่อดูกติกา`}
-                  onClick={() => setGameId(g.id)}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter" || ev.key === " ") {
-                      ev.preventDefault();
-                      setGameId(g.id);
-                    }
-                  }}
-                  className="group flex h-full cursor-pointer flex-col border border-white/10 bg-[#05080a] outline-none transition-all duration-300 hover:-translate-y-1.5 hover:border-[#17FFA2] hover:shadow-[0_0_28px_rgba(23,255,162,0.25)] focus-visible:ring-4 focus-visible:ring-[#17FFA2]"
-                >
-                  <div
-                    className="relative flex h-56 items-end overflow-hidden"
-                    style={{ background: `linear-gradient(160deg, ${accent}, #05080a 90%)` }}
-                  >
-                    {cover ? (
-                      <>
-                        <Image
-                          src={cover}
-                          alt={g.name}
-                          fill
-                          sizes="(min-width: 1024px) 400px, (min-width: 640px) 50vw, 100vw"
-                          className="object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05080a]/70 via-transparent to-transparent" aria-hidden="true" />
-                      </>
-                    ) : (
-                      <span className="absolute -right-2 top-0 select-none text-[9rem] font-bold leading-none text-black/30 transition-transform duration-500 group-hover:-translate-x-3 group-hover:scale-110">
-                        {g.glyph}
-                      </span>
-                    )}
-                    <div className="relative m-4 flex flex-wrap items-center gap-2">
-                      <Badge status={g.status} dark={soon} />
-                      <PlayersTag two={TWO_PLAYER.has(g.id)} />
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-col justify-between p-6">
-                    <div>
-                      <p className={`text-sm ${MUTED}`}>{g.category} · {g.time}</p>
-                      <h3 className="mt-1 text-2xl font-bold uppercase tracking-tight">{g.name}</h3>
-                      <p className={`mt-2 text-sm leading-6 ${MUTED}`}>{g.desc}</p>
-                    </div>
-                    <div className="mt-6 flex items-center justify-between gap-3">
-                      <span className={btnClasses(soon ? "outline" : "solid", true)}>
-                        <BtnInner>{soon ? "เปิดเร็วๆ นี้" : "เล่นเกม"}</BtnInner>
-                      </span>
-                      <HeartButton saved={savedGames.includes(g.id)} onToggle={() => toggleSaveGame(g.id)} label={g.name} />
-                    </div>
-                  </div>
-                </article>
-              </Reveal>
-            );
-          })}
+          {/* ระหว่างรอสถานะล็อก ใช้โครงเปล่าแทน เพื่อไม่ให้ปก/ชื่อของเกมที่ล็อกวาบขึ้นมาก่อน */}
+          {locked === null
+            ? GAMES.map((g) => (
+                <div key={g.id} aria-hidden="true" className="min-h-[26rem] animate-pulse border border-white/10 bg-[#0a1014]/90" />
+              ))
+            : list.map((g, i) => {
+                if (isLocked(g.id)) {
+                  return (
+                    <Reveal key={g.id} delay={(i % 3) * 110} className="h-full">
+                      <LockedGameCard game={g} cover={COVERS[g.id]} />
+                    </Reveal>
+                  );
+                }
+                const soon = g.status === "SOON";
+                const accent = soon ? "#52525B" : toneHex(g);
+                const cover = COVERS[g.id];
+                return (
+                  <Reveal key={g.id} delay={(i % 3) * 110} className="h-full">
+                    <article
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${g.name} กดเพื่อดูกติกา`}
+                      onClick={() => openGameDetail(g.id)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          openGameDetail(g.id);
+                        }
+                      }}
+                      className="group flex h-full cursor-pointer flex-col border border-white/10 bg-[#05080a] outline-none transition-all duration-300 hover:-translate-y-1.5 hover:border-[#17FFA2] hover:shadow-[0_0_28px_rgba(23,255,162,0.25)] focus-visible:ring-4 focus-visible:ring-[#17FFA2]"
+                    >
+                      <div
+                        className="relative flex h-56 items-end overflow-hidden"
+                        style={{ background: `linear-gradient(160deg, ${accent}, #05080a 90%)` }}
+                      >
+                        {cover ? (
+                          <>
+                            <Image
+                              src={cover}
+                              alt={g.name}
+                              fill
+                              sizes="(min-width: 1024px) 400px, (min-width: 640px) 50vw, 100vw"
+                              className="object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05080a]/70 via-transparent to-transparent" aria-hidden="true" />
+                          </>
+                        ) : (
+                          <span className="absolute -right-2 top-0 select-none text-[9rem] font-bold leading-none text-black/30 transition-transform duration-500 group-hover:-translate-x-3 group-hover:scale-110">
+                            {g.glyph}
+                          </span>
+                        )}
+                        <div className="relative m-4 flex flex-wrap items-center gap-2">
+                          <Badge status={g.status} dark={soon} />
+                          <PlayersTag two={TWO_PLAYER.has(g.id)} />
+                        </div>
+                      </div>
+                      <div className="flex flex-1 flex-col justify-between p-6">
+                        <div>
+                          <p className={`text-sm ${MUTED}`}>{g.category} · {g.time}</p>
+                          <h3 className="mt-1 text-2xl font-bold uppercase tracking-tight">{g.name}</h3>
+                          <p className={`mt-2 text-sm leading-6 ${MUTED}`}>{g.desc}</p>
+                        </div>
+                        <div className="mt-6 flex items-center justify-between gap-3">
+                          <span className={btnClasses(soon ? "outline" : "solid", true)}>
+                            <BtnInner>{soon ? "เปิดเร็วๆ นี้" : "เล่นเกม"}</BtnInner>
+                          </span>
+                          <HeartButton saved={savedGames.includes(g.id)} onToggle={() => toggleSaveGame(g.id)} label={g.name} />
+                        </div>
+                      </div>
+                    </article>
+                  </Reveal>
+                );
+              })}
         </div>
       </section>
 
@@ -945,7 +1054,7 @@ export default function Home() {
                     {g.name} <span className="text-[#ff2a55]">/</span> <span className={`text-base font-normal ${MUTED}`}>{g.category}</span>
                   </div>
                   <div className={MUTED}>{g.desc}</div>
-                  <Button variant="outline" small onClick={() => setGameId(g.id)}>ดูกติกา</Button>
+                  <Button variant="outline" small onClick={() => openGameDetail(g.id)}>ดูกติกา</Button>
                 </div>
               </Reveal>
             ))}
@@ -1131,25 +1240,25 @@ export default function Home() {
       <FavoritesSheet
         open={favOpen}
         detailOpen={!!openId || !!gameId}
-        saved={saved}
-        savedGames={savedGames}
-        gamesList={GAMES}
+        saved={visibleSavedEvents}
+        savedGames={visibleSavedGames}
+        gamesList={unlockedGames}
         covers={COVERS}
         toggleSave={toggleSave}
         toggleSaveGame={toggleSaveGame}
         onOpenEvent={setOpenId}
-        onOpenGame={setGameId}
+        onOpenGame={openGameDetail}
         onClose={() => setFavOpen(false)}
       />
 
       <EventDetail
-        sel={EVENTS.find((e) => e.id === openId) ?? null}
+        sel={openEvent}
         saved={saved}
         toggleSave={toggleSave}
         onClose={() => setOpenId(null)}
         onPlayGame={(id) => {
           setOpenId(null);
-          setGameId(id);
+          openGameDetail(id);
         }}
         onPlay={() => {
           setOpenId(null);

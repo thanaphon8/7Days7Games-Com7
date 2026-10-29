@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
+import { getLockedGames } from "@/lib/game-locks";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -85,16 +86,40 @@ export async function PATCH(request: Request) {
 
     if (savedEvents !== undefined) updateFields.savedEvents = savedEvents;
 
+    // เกมที่ admin ล็อกไว้ จะไม่รับคะแนน (ถ้าเช็กรายการล็อกไม่ได้ ให้ผ่านไปก่อน เพื่อไม่ให้คะแนนผู้เล่นหาย)
+    const lockedGames = await getLockedGames().catch((err) => {
+      console.error("Failed to read game locks:", err);
+      return [] as string[];
+    });
+    const blockedGames: string[] = [];
+
     if (gameScores && typeof gameScores === "object") {
       for (const [key, val] of Object.entries(gameScores)) {
         if (typeof val === "number") {
+          if (lockedGames.includes(key)) {
+            blockedGames.push(key);
+            continue;
+          }
           incFields[`gameScores.${key}`] = val;
         }
       }
     }
 
     if (gameKey && typeof score === "number") {
-      incFields[`gameScores.${gameKey}`] = score;
+      if (lockedGames.includes(gameKey)) {
+        blockedGames.push(gameKey);
+      } else {
+        incFields[`gameScores.${gameKey}`] = score;
+      }
+    }
+
+    // ถ้าคำขอนี้พยายามบันทึกคะแนนเกมที่ล็อกอย่างเดียว ไม่มีอะไรอื่นให้อัปเดต ให้ปฏิเสธ
+    const hasOtherUpdates = Object.keys(updateFields).length > 1 || Object.keys(incFields).length > 0;
+    if (blockedGames.length > 0 && !hasOtherUpdates) {
+      return NextResponse.json(
+        { success: false, error: "game locked", message: "เกมนี้ยังไม่เปิดให้เล่น", blockedGames },
+        { status: 403 }
+      );
     }
 
     const updateQuery: Record<string, any> = { $set: updateFields };
@@ -113,6 +138,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({
       success: true,
+      ...(blockedGames.length > 0 ? { blockedGames } : {}),
       data: {
         ...updatedDoc,
         avatarId: updatedDoc?.avatarId || selectedAvatar,

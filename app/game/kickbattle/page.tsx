@@ -5,36 +5,29 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { getAvatarSrc } from "../../components/navbar/page";
 
-// ===== Kick Battle · จุดโทษดวลเดือด (ธีมเดียวกับ Up and Up) =====
+// ===== Kick Battle · จุดโทษดวลเดือด (เล่นกับบอท ธีมเดียวกับ Up and Up) =====
 type Dir = "L" | "C" | "R";
-type Player = { id: string; name: string; avatar: string };
+type Player = { id: string; name: string; avatar: string; img?: string };
 type Shot = { round: number; shooter: 0 | 1; shot: Dir; keep: Dir; goal: boolean };
-type View = {
-  code: string;
-  status: "waiting" | "playing" | "finished";
+// สถานะเกมทั้งหมดอยู่ฝั่ง client: ผู้เล่น = index 0, บอท = index 1
+type Game = {
   match: number;
-  players: Player[];
-  you: 0 | 1;
   first: 0 | 1;
-  round: number;
-  shooter: 0 | 1;
-  scores: [number, number];
   history: Shot[];
-  total: number;
-  youPicked: boolean;
-  oppPicked: boolean;
+  status: "playing" | "finished";
   winner: 0 | 1 | null;
   earned: [number, number];
-  awardSaved: [boolean, boolean];
-  youRematch: boolean;
-  oppRematch: boolean;
-  oppLeft: boolean;
 };
 type Anim = { entry: Shot; step: 0 | 1 | 2 };
 
 const TOTAL = 6;
 const TB_TARGET = 2;
 const TB_SHOTS = 3;
+const POINTS_PER_HIT = 1; // ยิงเข้าหรือเซฟได้ +1 แต้ม (ไม่มีโบนัสผู้ชนะ)
+const MAX_AWARD = (TOTAL + TB_SHOTS) * POINTS_PER_HIT; // เพดานเดียวกับ API
+const HARD_CHANCE = 0.5; // โอกาสที่บอทจะ "อ่านทาง" ในแต่ละลูก (ที่เหลือสุ่มล้วน)
+const DIRS: Dir[] = ["L", "C", "R"];
+const BOT: Player = { id: "bot", name: "Ronaldo SHUUU!", avatar: "", img: "/img/r7.png" };
 const SIDE: Record<Dir, string> = { L: "ซ้าย", C: "กลาง", R: "ขวา" };
 // สีผู้เล่น: ส้มทอง / ฟ้าอมม่วง (พาเลตเดียวกับหน้าสรุปของ Up and Up)
 const COLORS = ["#FFD66B", "#9DB4F2"];
@@ -47,6 +40,42 @@ const GRASS = "repeating-linear-gradient(90deg,#8DB885 0 12.5%,#9CC593 12.5% 25%
 const SKY_BG = "bg-gradient-to-b from-[#BFE6FF] via-[#FFF1D6] to-white";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const coin = (): 0 | 1 => (Math.random() < 0.5 ? 0 : 1);
+const rndDir = (): Dir => DIRS[Math.floor(Math.random() * 3)];
+const rndOf = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+
+// ใครได้แต้มจากแต่ละลูก: ยิงเข้า -> ผู้ยิง / เซฟได้ -> ผู้รับ
+function tally(history: Shot[]): [number, number] {
+  const s: [number, number] = [0, 0];
+  for (const h of history) s[h.goal ? h.shooter : 1 - h.shooter]++;
+  return s;
+}
+
+// ทิศที่ถูกเลือกบ่อยที่สุด (ถ้าเสมอคืนทุกทิศที่เสมอกัน)
+function topDirs(dirs: Dir[]): Dir[] {
+  if (!dirs.length) return [];
+  const n: Record<Dir, number> = { L: 0, C: 0, R: 0 };
+  dirs.forEach((d) => n[d]++);
+  const max = Math.max(n.L, n.C, n.R);
+  return DIRS.filter((d) => n[d] === max);
+}
+
+// บอทเลือกทิศ: ลูกง่าย = สุ่มล้วน / ลูกยาก = อ่านทางจากลูกก่อนหน้าของผู้เล่น (ไม่เห็นทิศที่ผู้เล่นเลือกในลูกนี้)
+function botPick(history: Shot[], botShoots: boolean): Dir {
+  if (Math.random() >= HARD_CHANCE) return rndDir();
+  if (botShoots) {
+    // บอทยิง: เลี่ยงทิศที่ผู้เล่นเคยรับบ่อยที่สุด
+    const keeps = history.filter((h) => h.shooter === 1).map((h) => h.keep);
+    const tops = topDirs(keeps);
+    if (!tops.length) return rndDir();
+    const avoid = rndOf(tops);
+    return rndOf(DIRS.filter((d) => d !== avoid));
+  }
+  // บอทรับ: ดักทิศที่ผู้เล่นเคยยิงบ่อยที่สุด
+  const shots = history.filter((h) => h.shooter === 0).map((h) => h.shot);
+  const tops = topDirs(shots);
+  return tops.length ? rndOf(tops) : rndDir();
+}
 
 const CSS = `
 @keyframes kb-pop{0%{transform:scale(.2) rotate(-6deg);opacity:0}60%{transform:scale(1.18) rotate(2deg);opacity:1}100%{transform:scale(1) rotate(0)}}
@@ -123,24 +152,24 @@ function useMe() {
   return me;
 }
 
-async function api(body: Record<string, unknown>) {
+// บันทึกแต้มเข้า users.gameScores.kickbattle
+async function postAward(playerId: string, points: number): Promise<boolean> {
   const r = await fetch("/api/kickbattle", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ action: "award", playerId, points: Math.min(points, MAX_AWARD) }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    throw new Error(j.error || `เชื่อมต่อ API ไม่ได้ (HTTP ${r.status})`);
-  }
-  return j;
+  if (!r.ok) throw new Error(j.error || `เชื่อมต่อ API ไม่ได้ (HTTP ${r.status})`);
+  return !!j.saved;
 }
 
-function sendLeave(code: string, playerId: string) {
+// ใช้ตอนออกกลางเกม/ปิดหน้า: keepalive ให้คำขอไปถึงแม้หน้าถูกปิด
+function sendAward(playerId: string, points: number) {
   fetch("/api/kickbattle", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "leave", code, playerId }),
+    body: JSON.stringify({ action: "award", playerId, points: Math.min(points, MAX_AWARD) }),
     keepalive: true,
   }).catch(() => {});
 }
@@ -538,7 +567,7 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
       <div className="flex items-center gap-2 sm:gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={getAvatarSrc(p.avatar)}
+          src={p.img ?? getAvatarSrc(p.avatar)}
           alt=""
           className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-white sm:h-11 sm:w-11"
           onError={(ev) => ((ev.target as HTMLImageElement).src = "/img/p01.png")}
@@ -569,12 +598,8 @@ function PlayerPill({ p, score, idx, role, active, gain, isYou, dots }: { p: Pla
 export default function KickBattle() {
   const router = useRouter();
   const me = useMe();
-  const [code, setCode] = useState<string | null>(null);
-  const [view, setView] = useState<View | null>(null);
-  const [error, setError] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [game, setGame] = useState<Game | null>(null);
+  const [awardSaved, setAwardSaved] = useState<boolean | null>(null); // null = กำลังบันทึก
   const [sel, setSel] = useState<Dir | null>(null);
   const [shown, setShown] = useState(0);
   const [anim, setAnim] = useState<Anim | null>(null);
@@ -584,12 +609,13 @@ export default function KickBattle() {
   const [tbIntro, setTbIntro] = useState(false);
   const [portrait, setPortrait] = useState(false);
   const [confirmExit, setConfirmExit] = useState(false);
-  const initRef = useRef(false);
-  const introKey = useRef("");
   const tbKey = useRef("");
+  const matchRef = useRef(0); // นับเกมที่เริ่มในหน้านี้ ใช้เป็น id ของเกม
+  const awardedRef = useRef(0); // match ล่าสุดที่ส่งแต้มไปแล้ว กันส่งซ้ำ
+  const lockRef = useRef(false); // กันกดเลือกซ้ำระหว่างรอแอนิเมชัน
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const liveRef = useRef<{ code: string | null; id: string | null }>({ code: null, id: null });
-  liveRef.current = { code, id: me?.id ?? null };
+  const liveRef = useRef<{ game: Game | null; id: string | null }>({ game: null, id: null });
+  liveRef.current = { game, id: me?.id ?? null };
   const pickRef = useRef<{ canPick: boolean; sel: Dir | null; confirm: (d?: Dir) => void }>({ canPick: false, sel: null, confirm: () => {} });
   pickRef.current.canPick = false;
 
@@ -598,18 +624,22 @@ export default function KickBattle() {
   };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  useEffect(
-    () => () => {
-      const { code: c, id } = liveRef.current;
-      if (c && id) {
-        sendLeave(c, id);
-        try {
-          localStorage.removeItem("kb_room");
-        } catch {}
-      }
-    },
-    []
-  );
+  // ออกกลางเกม/ปิดหน้า = แพ้ แต้มที่ทำได้แล้วยังเก็บไว้ (ใช้ได้แค่ ref จึงเรียกจาก cleanup ได้)
+  function forfeitAward() {
+    const { game: g, id } = liveRef.current;
+    if (!g || !id || awardedRef.current === g.match) return;
+    awardedRef.current = g.match;
+    if (g.earned[0] > 0) sendAward(id, g.earned[0]);
+  }
+
+  useEffect(() => {
+    const h = () => forfeitAward();
+    window.addEventListener("pagehide", h);
+    return () => {
+      window.removeEventListener("pagehide", h);
+      h();
+    };
+  }, []);
 
   useEffect(() => {
     const f = () => setPortrait(window.innerWidth < window.innerHeight);
@@ -623,19 +653,42 @@ export default function KickBattle() {
     };
   }, []);
 
-  function leave() {
-    if (code && me) sendLeave(code, me.id);
-    liveRef.current = { code: null, id: null };
-    localStorage.removeItem("kb_room");
+  useEffect(() => {
+    lockRef.current = false;
+  }, [shown, game?.match]);
+
+  function startGame() {
+    if (!me) return;
     timers.current.forEach(clearTimeout);
     timers.current = [];
-    initRef.current = false;
-    introKey.current = "";
+    tbKey.current = "";
+    lockRef.current = false;
+    matchRef.current += 1;
+    setGame({ match: matchRef.current, first: coin(), history: [], status: "playing", winner: null, earned: [0, 0] });
+    setAwardSaved(null);
+    setShown(0);
+    setAnim(null);
+    setSel(null);
+    setTbIntro(false);
+    setConfirmExit(false);
+    setGo(false);
+    setIntro(1);
+    later(() => setIntro(2), 1800);
+    later(() => {
+      setIntro(0);
+      setGo(true);
+    }, 3700);
+    later(() => setGo(false), 4600);
+  }
+
+  function leave() {
+    forfeitAward();
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
     tbKey.current = "";
     setTbIntro(false);
     setConfirmExit(false);
-    setCode(null);
-    setView(null);
+    setGame(null);
     setSel(null);
     setShown(0);
     setAnim(null);
@@ -648,89 +701,47 @@ export default function KickBattle() {
     router.push("/");
   }
 
+  // เล่นแอนิเมชันของแต่ละลูกตามลำดับใน history
   useEffect(() => {
-    if (me) {
-      const saved = localStorage.getItem("kb_room");
-      if (saved) setCode(saved);
-    }
-  }, [me]);
-
-  useEffect(() => {
-    if (!code || !me) return;
-    let stop = false;
-    const tick = async () => {
-      try {
-        const r = await fetch(`/api/kickbattle?code=${code}&playerId=${encodeURIComponent(me.id)}`, { cache: "no-store" });
-        if (r.status === 404 || r.status === 403) {
-          if (!stop) {
-            leave();
-            setError("ห้องนี้ปิดไปแล้ว สร้างห้องใหม่หรือใส่รหัสอื่นได้เลย");
-          }
-          return;
-        }
-        const v = await r.json();
-        if (!stop) setView(v);
-      } catch {}
-    };
-    tick();
-    const t = setInterval(tick, 500);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, [code, me]);
-
-  useEffect(() => {
-    if (!view) return;
-    if (!initRef.current) {
-      initRef.current = true;
-      setShown(view.history.length);
-      return;
-    }
-    if (view.history.length < shown) {
-      setShown(view.history.length);
-      return;
-    }
-    if (!anim && view.history.length > shown) {
-      const entry = view.history[shown];
-      const idx = shown;
-      setAnim({ entry, step: 0 });
-      later(() => setAnim({ entry, step: 1 }), 60);
-      later(() => {
-        setAnim({ entry, step: 2 });
-        if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(entry.goal ? [60, 40, 120] : 200);
-      }, 850);
-      later(() => {
-        setAnim(null);
-        setShown(idx + 1);
-        setSel(null);
-      }, 3200);
-    }
-  }, [view, shown, anim]);
-
-  useEffect(() => {
-    if (!view || view.status !== "playing" || view.history.length > 0) return;
-    const key = `${view.code}-${view.match}`;
-    if (introKey.current === key) return;
-    introKey.current = key;
-    setIntro(1);
-    later(() => setIntro(2), 1800);
+    if (!game || anim || game.history.length <= shown) return;
+    const entry = game.history[shown];
+    const idx = shown;
+    setAnim({ entry, step: 0 });
+    later(() => setAnim({ entry, step: 1 }), 60);
     later(() => {
-      setIntro(0);
-      setGo(true);
-    }, 3700);
-    later(() => setGo(false), 4600);
-  }, [view]);
+      setAnim({ entry, step: 2 });
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(entry.goal ? [60, 40, 120] : 200);
+    }, 850);
+    later(() => {
+      setAnim(null);
+      setShown(idx + 1);
+      setSel(null);
+    }, 3200);
+  }, [game, shown, anim]);
 
+  // เสมอหลังครบ 6 ลูก -> แสดงหน้าจอต่อเวลา
   useEffect(() => {
-    if (!view || anim || view.status !== "playing") return;
-    if (view.history.length !== view.total || shown !== view.total) return;
-    const key = `${view.code}-${view.match}`;
+    if (!game || anim || game.status !== "playing") return;
+    if (game.history.length !== TOTAL || shown !== TOTAL) return;
+    const key = String(game.match);
     if (tbKey.current === key) return;
     tbKey.current = key;
     setTbIntro(true);
     later(() => setTbIntro(false), 3000);
-  }, [view, shown, anim]);
+  }, [game, shown, anim]);
+
+  // เกมจบและแอนิเมชันครบแล้ว -> ส่งแต้มเข้าคะแนนรวม (ครั้งเดียวต่อเกม)
+  useEffect(() => {
+    if (!game || !me || anim || game.status !== "finished" || shown !== game.history.length) return;
+    if (awardedRef.current === game.match) return;
+    awardedRef.current = game.match;
+    const pts = game.earned[0];
+    if (pts <= 0) return;
+    setAwardSaved(null);
+    postAward(me.id, pts)
+      .then(setAwardSaved)
+      .catch(() => setAwardSaved(false));
+  }, [game, shown, anim, me]);
 
   useEffect(() => {
     if (intro !== 1) return;
@@ -756,63 +767,35 @@ export default function KickBattle() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function enter(action: "create" | "join") {
-    if (!me || busy) return;
-    setError("");
-    setBusy(true);
-    try {
-      const targetCode = action === "join" ? joinCode.trim().toUpperCase() : undefined;
-      const r = await api({ action, code: targetCode, playerId: me.id, name: me.name, avatar: me.avatar });
-      const activeCode = r.code || targetCode;
-      if (!activeCode) throw new Error("ไม่พบรหัสห้อง");
-
-      // ล้าง State เก่าเพื่อเตรียมพร้อมสำหรับการเข้าห้องใหม่
-      initRef.current = false;
-      setView(null);
-      setShown(0);
-      setAnim(null);
-      setSel(null);
-
-      localStorage.setItem("kb_room", activeCode);
-      setCode(activeCode);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmPick(dir?: Dir) {
+  // ผู้เล่นเลือกทิศ -> บอทเลือกทันที -> ตัดสินผลลูกนี้
+  function confirmPick(dir?: Dir) {
     const d = dir ?? sel;
-    if (!me || !code || !d || busy) return;
+    const g = game;
+    if (!g || !d || lockRef.current || !pickRef.current.canPick) return;
+    lockRef.current = true;
     setSel(d);
-    setBusy(true);
-    try {
-      const v: View = await api({ action: "pick", code, playerId: me.id, dir: d });
-      setView((cur) => (cur && v.history.length > cur.history.length ? { ...cur, youPicked: true } : v));
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
-  async function rematch() {
-    if (!me || !code) return;
-    try {
-      setView(await api({ action: "rematch", code, playerId: me.id }));
-    } catch (e: any) {
-      setError(e.message);
-    }
-  }
+    const shooter = ((g.first + g.history.length) % 2) as 0 | 1;
+    const botDir = botPick(g.history, shooter === 1);
+    const shot = shooter === 0 ? d : botDir;
+    const keep = shooter === 0 ? botDir : d;
+    const goal = shot !== keep;
+    const history = [...g.history, { round: g.history.length, shooter, shot, keep, goal }];
 
-  async function copyCode() {
-    if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    const earned: [number, number] = [g.earned[0], g.earned[1]];
+    earned[goal ? shooter : 1 - shooter] += POINTS_PER_HIT;
+
+    let winner: 0 | 1 | null = null;
+    const n = history.length;
+    if (n === TOTAL) {
+      const [s0, s1] = tally(history);
+      if (s0 !== s1) winner = s0 > s1 ? 0 : 1;
+    } else if (n > TOTAL) {
+      const [t0, t1] = tally(history.slice(TOTAL));
+      if (t0 >= TB_TARGET || t1 >= TB_TARGET) winner = t0 > t1 ? 0 : 1;
+    }
+
+    setGame({ ...g, history, earned, winner, status: winner !== null ? "finished" : "playing" });
   }
 
   const menu = (children: React.ReactNode, hero = false) => (
@@ -848,11 +831,6 @@ export default function KickBattle() {
           >
             ← กลับหน้าหลัก
           </Link>
-          {code && view?.status !== "playing" && (
-            <button onClick={leave} className="h-10 rounded-full bg-white/70 px-4 text-sm font-medium text-[#1E3A6B] ring-2 ring-white transition-colors hover:bg-white">
-              ออกจากห้อง
-            </button>
-          )}
         </div>
         {children}
       </div>
@@ -862,7 +840,7 @@ export default function KickBattle() {
   if (!me) return menu(<p className="mt-20 text-center text-sm font-bold text-[#1E3A6B]">กำลังโหลด…</p>);
 
   // ===== ล็อบบี้ =====
-  if (!code) {
+  if (!game) {
     return menu(
       <>
         <div className="kb-title mt-8 text-center md:text-left">
@@ -871,39 +849,26 @@ export default function KickBattle() {
             <PopText text="KICK BATTLE" size="text-6xl md:text-8xl" />
           </div>
           <p className="mt-1 max-w-md text-base font-bold leading-7 text-[#1E3A6B] md:text-lg" style={{ textShadow: POP_SHADOW }}>
-            จุดโทษดวลเดือดสองคน ใครยิงใครรับสุ่มกันหน้าสนาม แล้วสลับบทบาทกันทุกลูก
+            จุดโทษดวลเดือดกับ {BOT.name} ใครยิงใครรับสุ่มกันหน้าสนาม แล้วสลับบทบาทกันทุกลูก
           </p>
         </div>
 
-        {error && <p className="mt-6 rounded-2xl bg-[#FFE3D3] px-5 py-3 text-sm font-medium text-[#B8431F] ring-2 ring-white">{error}</p>}
-
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#FFD66B] p-7 shadow-lg ring-4 ring-white">
+        <div className="mt-8 flex flex-col items-center gap-6 rounded-[2rem] bg-[#FFD66B] p-7 text-center shadow-lg ring-4 ring-white sm:flex-row sm:text-left">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={BOT.img}
+            alt={BOT.name}
+            className="h-28 w-28 shrink-0 rounded-full object-cover shadow-lg ring-4 ring-white"
+            onError={(ev) => ((ev.target as HTMLImageElement).src = "/img/p01.png")}
+          />
+          <div className="flex w-full min-w-0 flex-1 flex-col gap-5">
             <div>
-              <h2 className="text-2xl font-black tracking-tight text-[#1E2A4A]">สร้างห้อง</h2>
-              <p className="mt-2 text-sm leading-6 text-[#5B4300]">รับรหัสห้อง 4 ตัว แล้วส่งให้เพื่อนเข้ามา</p>
+              <p className="text-xs font-bold tracking-[.2em] text-[#5B4300]">คู่แข่งของคุณ</p>
+              <h2 className="text-2xl font-black tracking-tight text-[#1E2A4A]">{BOT.name}</h2>
+              <p className="mt-1 text-sm leading-6 text-[#5B4300]">กดเริ่มแล้วเล่นได้เลย ไม่ต้องรอใครเข้าห้อง</p>
             </div>
-            <button onClick={() => enter("create")} disabled={busy} className={BTN_ORANGE}>
-              สร้างห้องใหม่
-            </button>
-          </div>
-
-          <div className="flex flex-col justify-between gap-8 rounded-[2rem] bg-[#9DB4F2] p-7 shadow-lg ring-4 ring-white">
-            <div>
-              <h2 className="text-2xl font-black tracking-tight text-[#1E2A4A]">เข้าร่วมห้อง</h2>
-              <input
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))}
-                onKeyDown={(e) => e.key === "Enter" && joinCode.length === 4 && enter("join")}
-                placeholder="รหัสห้อง"
-                aria-label="รหัสห้อง"
-                inputMode="text"
-                autoCapitalize="characters"
-                className="mt-3 h-12 w-full rounded-full bg-white/85 px-5 text-center text-2xl font-black uppercase tracking-[.4em] text-[#1E2A4A] outline-none placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-zinc-400 focus:bg-white focus:ring-4 focus:ring-white/70"
-              />
-            </div>
-            <button onClick={() => enter("join")} disabled={busy || joinCode.length !== 4} className={BTN_MAIN}>
-              เข้าห้อง
+            <button onClick={startGame} className={BTN_ORANGE}>
+              เริ่มเล่น
             </button>
           </div>
         </div>
@@ -912,9 +877,9 @@ export default function KickBattle() {
           <h3 className="text-lg font-black tracking-tight text-[#E5502A]">กติกา</h3>
           <ul className="mt-3 flex flex-col gap-2 text-sm leading-6 text-zinc-600">
             <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
-            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 1 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 1 แต้ม และแต้มบวกเข้าคะแนนรวมทันที ทั้งผู้ชนะและผู้แพ้ได้แต้มตามลูกที่ตัวเองทำได้</li>
+            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 1 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 1 แต้ม และแต้มที่คุณทำได้บวกเข้าคะแนนรวมเมื่อจบเกม ทั้งชนะและแพ้ได้แต้มตามลูกที่ตัวเองทำได้</li>
             <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ไม่มีโบนัสผู้ชนะ</li>
-            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">ถ้าผู้เล่นคนใดออกจากเกมระหว่างเล่น ห้องจะถูกยกเลิกและเกมจบ ผู้ที่ยังอยู่ชนะโดยปริยาย ได้เฉพาะแต้มที่ทำได้จริงก่อนจบเกม</li>
+            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">บอทบางลูกเดาสุ่ม บางลูกอ่านทางจากที่คุณเคยเลือก ถ้าคุณออกจากเกมระหว่างเล่น ถือว่าแพ้ แต้มที่ทำได้แล้วยังเก็บไว้</li>
             <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
@@ -923,79 +888,40 @@ export default function KickBattle() {
     );
   }
 
-  // ===== กำลังเชื่อมต่อห้อง (ยังไม่ได้ข้อมูลห้องจาก server) =====
-  if (!view) {
-    return menu(
-      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#FFD66B] px-6 py-16 text-center shadow-lg ring-4 ring-white">
-        <p className="text-2xl font-black text-[#1E2A4A]">กำลังเชื่อมต่อห้อง {code}</p>
-        <p className="mt-4 text-sm font-medium text-[#5B4300]">
-          รอสักครู่
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-              .
-            </span>
-          ))}
-        </p>
-      </div>
-    );
-  }
-
-  // ===== รอเพื่อน (เฉพาะ Host คนสร้างห้อง) =====
-  if (view.status === "waiting") {
-    return menu(
-      <div className="mt-16 flex flex-col items-center rounded-[2rem] bg-[#FFD66B] px-6 py-16 text-center shadow-lg ring-4 ring-white">
-        <p className="text-sm font-bold text-[#5B4300]">รหัสห้องของคุณ</p>
-        <p className="mt-2 text-7xl font-black tracking-[.2em] text-[#1E2A4A] md:text-8xl">{code}</p>
-        <button onClick={copyCode} className="mt-6 h-12 rounded-full bg-[#1E2A4A] px-6 text-sm font-semibold text-white ring-2 ring-white transition-opacity hover:opacity-85">
-          {copied ? "คัดลอกแล้ว" : "คัดลอกรหัส"}
-        </button>
-        <p className="mt-8 text-sm font-medium text-[#5B4300]">
-          รอเพื่อนเข้าห้อง
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-              .
-            </span>
-          ))}
-        </p>
-      </div>
-    );
-  }
-
-  // ===== ในเกม (เมื่อสถานะเปลี่ยนเป็น playing หรือ finished) =====
-  const you = view.you;
-  const opp = (1 - you) as 0 | 1;
+  // ===== ในเกม =====
+  const players: [Player, Player] = [me, BOT];
+  const you = 0 as const;
+  const opp = 1 as const;
   const revealed = shown + (anim && anim.step >= 2 ? 1 : 0);
-  const sc: [number, number] = [0, 0];
-  view.history.slice(0, revealed).forEach((h) => sc[h.goal ? h.shooter : 1 - h.shooter]++);
-  const curShooter = ((view.first + shown) % 2) as 0 | 1;
+  const sc = tally(game.history.slice(0, revealed));
+  const curShooter = ((game.first + shown) % 2) as 0 | 1;
   const iShoot = curShooter === you;
-  const cancelled = view.oppLeft && view.status === "playing";
-  const canPick = !cancelled && !confirmExit && intro === 0 && !tbIntro && !anim && shown === view.round && view.status === "playing" && !view.youPicked;
-  const done = view.status === "finished" && shown === view.history.length && !anim;
-  const iWon = view.winner === you;
-  const tiebreak = view.history.length > view.total || (shown >= view.total && view.history.length === view.total && view.status === "playing");
-  const sudden = tiebreak && shown >= view.total;
-  const tbSc: [number, number] = [0, 0];
-  view.history.slice(view.total, revealed).forEach((h) => tbSc[h.goal ? h.shooter : 1 - h.shooter]++);
-  const nextRound = done || view.status === "finished" ? -1 : revealed;
+  const canPick = !confirmExit && intro === 0 && !tbIntro && !anim && shown === game.history.length && game.status === "playing";
+  const done = game.status === "finished" && shown === game.history.length && !anim;
+  const iWon = game.winner === you;
+  const tiebreak = game.history.length > TOTAL || (shown >= TOTAL && game.history.length === TOTAL && game.status === "playing");
+  const sudden = tiebreak && shown >= TOTAL;
+  const tbSc = tally(game.history.slice(TOTAL, revealed));
+  const nextRound = done || game.status === "finished" ? -1 : revealed;
   const dot = (i: 0 | 1, round: number) => {
-    const h = round < revealed ? view.history[round] : undefined;
+    const h = round < revealed ? game.history[round] : undefined;
     const state = !h ? "pending" : (h.goal ? h.shooter === i : h.shooter !== i) ? "win" : "lose";
-    const hint = (view.first + round) % 2 === i ? "ยิง" : "รับ";
+    const hint = (game.first + round) % 2 === i ? "ยิง" : "รับ";
     return <ShotDot key={round} state={state} next={round === nextRound} hint={hint} />;
   };
   const dotsFor = (i: 0 | 1) => [
-    ...Array.from({ length: view.total }).map((_, k) => dot(i, k)),
-    ...(tiebreak ? [<span key="tb" className="mx-0.5 h-5 w-px bg-black/20" />, ...Array.from({ length: TB_SHOTS }).map((_, k) => dot(i, view.total + k))] : []),
+    ...Array.from({ length: TOTAL }).map((_, k) => dot(i, k)),
+    ...(tiebreak ? [<span key="tb" className="mx-0.5 h-5 w-px bg-black/20" />, ...Array.from({ length: TB_SHOTS }).map((_, k) => dot(i, TOTAL + k))] : []),
   ];
   const scorer = anim && anim.step >= 2 ? (anim.entry.goal ? anim.entry.shooter : 1 - anim.entry.shooter) : -1;
-  const gainFor = (i: 0 | 1) => (scorer === i && anim ? `${view.match}-${anim.entry.round}` : null);
+  const gainFor = (i: 0 | 1) => (scorer === i && anim ? `${game.match}-${anim.entry.round}` : null);
   const roleOf = (i: 0 | 1) => (done ? null : i === curShooter ? "ยิง" : "รับ");
   const statusText = done
     ? "จบเกม"
     : sudden
       ? `ต่อเวลา · ใครได้ ${TB_TARGET} แต้มก่อนชนะ · คุณ ${tbSc[you]} : ${tbSc[opp]}`
-      : `ลูกที่ ${Math.min(shown + 1, view.total)} จาก ${view.total}`;
+      : `ลูกที่ ${Math.min(shown + 1, TOTAL)} จาก ${TOTAL}`;
+  const resolving = !!anim || game.history.length > shown;
 
   pickRef.current = { canPick, sel, confirm: confirmPick };
 
@@ -1027,8 +953,8 @@ export default function KickBattle() {
         style={{ padding: "calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px)" }}
       >
         <div className="mx-auto flex max-w-3xl gap-2 sm:gap-3">
-          <PlayerPill p={view.players[0]} score={sc[0]} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou={you === 0} dots={dotsFor(0)} />
-          <PlayerPill p={view.players[1]} score={sc[1]} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={you === 1} dots={dotsFor(1)} />
+          <PlayerPill p={players[0]} score={sc[0]} idx={0} role={roleOf(0)} active={!done && curShooter === 0} gain={gainFor(0)} isYou dots={dotsFor(0)} />
+          <PlayerPill p={players[1]} score={sc[1]} idx={1} role={roleOf(1)} active={!done && curShooter === 1} gain={gainFor(1)} isYou={false} dots={dotsFor(1)} />
         </div>
         <div className="mt-2 flex justify-center">
           <span className={`${PILL} !py-1 text-xs`}>{statusText}</span>
@@ -1044,33 +970,20 @@ export default function KickBattle() {
             ←
           </button>
           <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
-            {anim ? (
+            {resolving ? (
               <p className={PILL}>ลุ้นกันหน่อย…</p>
-            ) : view.youPicked ? (
-              <p className={PILL}>
-                ล็อกแล้ว รอคู่แข่ง
-                {[0, 1, 2].map((i) => (
-                  <span key={i} className="kb-dot" style={{ animationDelay: `${i * 200}ms` }}>
-                    .
-                  </span>
-                ))}
-              </p>
             ) : (
               <>
-                <p className={PILL}>
-                  {iShoot ? "คุณเป็นผู้ยิง · ลากลูกไปมุมที่จะยิงแล้วปล่อย" : "คุณเป็นผู้รับ · ลากถุงมือไปมุมที่จะรับแล้วปล่อย"}
-                  {view.oppPicked && <span className="ml-2 rounded-full bg-[#FFD66B] px-3 py-0.5 text-xs">คู่แข่งเลือกแล้ว</span>}
-                </p>
+                <p className={PILL}>{iShoot ? "คุณเป็นผู้ยิง · ลากลูกไปมุมที่จะยิงแล้วปล่อย" : "คุณเป็นผู้รับ · ลากถุงมือไปมุมที่จะรับแล้วปล่อย"}</p>
                 <button
                   onClick={() => confirmPick()}
-                  disabled={!sel || busy}
+                  disabled={!sel || !canPick}
                   className="pointer-events-auto h-12 w-full max-w-xs rounded-full bg-gradient-to-b from-[#FF8A4C] to-[#FF5A2E] text-sm font-black text-white shadow-lg ring-2 ring-white transition-transform active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                 >
                   {sel ? (iShoot ? `ยิง${SIDE[sel]}` : `รับ${SIDE[sel]}`) : iShoot ? "เลือกทิศที่จะยิง" : "เลือกทิศที่จะรับ"}
                 </button>
               </>
             )}
-            {error && <p className="rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-[#C2410C] ring-2 ring-white">{error}</p>}
           </div>
           <span className="w-11 shrink-0" aria-hidden />
         </div>
@@ -1087,8 +1000,8 @@ export default function KickBattle() {
             </>
           ) : (
             <div className="kb-pop">
-              <p className="text-7xl">{view.first === you ? "⚽" : "🧤"}</p>
-              <p className="mt-4 text-4xl font-black tracking-tight md:text-5xl">{view.first === you ? "คุณได้ยิงก่อน" : "คุณได้เฝ้าประตู"}</p>
+              <p className="text-7xl">{game.first === you ? "⚽" : "🧤"}</p>
+              <p className="mt-4 text-4xl font-black tracking-tight md:text-5xl">{game.first === you ? "คุณได้ยิงก่อน" : "คุณได้เฝ้าประตู"}</p>
               <p className="mt-2 text-sm opacity-80">ลูกต่อไปสลับบทบาทกัน</p>
             </div>
           )}
@@ -1123,46 +1036,35 @@ export default function KickBattle() {
             </span>
             <p className="kb-pop mt-3 text-7xl">{iWon ? "🏆" : "🥲"}</p>
             <h2 className="mt-2 text-5xl font-black tracking-tight text-[#E5502A]">{iWon ? "คุณชนะ!" : "แพ้ไปนิดเดียว"}</h2>
-            {view.history.length > view.total && <p className="mt-1 text-sm text-zinc-500">ตัดสินด้วยการต่อเวลา</p>}
+            {game.history.length > TOTAL && <p className="mt-1 text-sm text-zinc-500">ตัดสินด้วยการต่อเวลา</p>}
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               {[you, opp].map((i, k) => (
                 <div key={i} className="rounded-3xl py-5 text-zinc-900 shadow-md ring-2 ring-white" style={{ background: COLORS[i] }}>
-                  <p className="truncate px-2 text-xs opacity-70">{k === 0 ? "คุณ" : view.players[i]?.name || "คู่แข่ง"}</p>
+                  <p className="truncate px-2 text-xs opacity-70">{k === 0 ? "คุณ" : BOT.name}</p>
                   <p className="text-5xl font-black tabular-nums tracking-tight">{sc[i]}</p>
                 </div>
               ))}
             </div>
 
-            {view.earned[you] > 0 &&
-              (view.awardSaved[you] ? (
+            {game.earned[you] > 0 &&
+              (awardSaved === null ? (
+                <p className="mt-3 rounded-2xl bg-white/80 px-4 py-2.5 text-sm font-medium text-zinc-600 ring-2 ring-white">กำลังบันทึกแต้ม…</p>
+              ) : awardSaved ? (
                 <p className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-bold text-[#2F5D2A] ring-2 ring-white">
-                  <StarIcon size={16} color="#FFB800" />+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
+                  <StarIcon size={16} color="#FFB800" />+{game.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
                 </p>
               ) : (
                 <p className="mt-3 rounded-2xl bg-[#FFE3D3] px-4 py-2.5 text-sm text-[#8A3B1F] ring-2 ring-white">แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว</p>
               ))}
 
-            <p className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-zinc-600">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: view.oppLeft ? "#FF4D6D" : "#4ADE80" }} aria-hidden="true" />
-              {view.oppLeft ? "คู่แข่งออกจากห้องแล้ว" : "คู่แข่งยังอยู่ในห้อง"}
-            </p>
-
-            <div className="mt-4 flex flex-col gap-2">
-              {view.oppLeft ? (
-                <button onClick={leave} className={BTN_MAIN}>
-                  จบเกม
-                </button>
-              ) : (
-                <>
-                  <button onClick={rematch} disabled={view.youRematch} className={BTN_ORANGE}>
-                    {view.youRematch ? "รอเพื่อนกดเล่นอีกรอบ…" : view.oppRematch ? "เพื่อนขอเล่นอีกรอบ กดเลย" : "เล่นอีกรอบ"}
-                  </button>
-                  <button onClick={leave} className={BTN_SUB}>
-                    ออกจากห้อง
-                  </button>
-                </>
-              )}
+            <div className="mt-6 flex flex-col gap-2">
+              <button onClick={startGame} className={BTN_ORANGE}>
+                เล่นอีกรอบ
+              </button>
+              <button onClick={leave} className={BTN_SUB}>
+                กลับหน้าเริ่มเกม
+              </button>
               <Link href="/rank" className={BTN_SUB}>
                 🏆 ดูอันดับ
               </Link>
@@ -1171,44 +1073,12 @@ export default function KickBattle() {
         </div>
       )}
 
-      {cancelled && (
-        <div className={`kb-rise absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto p-4 ${SKY_BG}`}>
-          <Confetti n={40} />
-          <Coins />
-          <div className="my-auto w-full max-w-sm text-center">
-            <span className="inline-block rounded-full bg-[#FFD66B] px-4 py-1 text-sm font-bold">คู่แข่งออกจากเกมแล้ว</span>
-            <p className="kb-pop mt-3 text-7xl">🏆</p>
-            <h2 className="mt-2 text-4xl font-black tracking-tight text-[#E5502A]">คุณชนะโดยปริยาย!</h2>
-            <p className="mt-2 text-sm text-zinc-500">ห้องนี้ถูกยกเลิกและเกมจบลงแล้ว</p>
-
-            <div className="mt-5 rounded-3xl bg-[#FFB36B] py-5 text-zinc-900 shadow-md ring-2 ring-white">
-              <p className="text-xs text-zinc-800">แต้มที่คุณทำได้ในเกมนี้</p>
-              <p className="text-6xl font-black tabular-nums tracking-tight">+{view.earned[you]}</p>
-            </div>
-            {view.earned[you] > 0 && view.awardSaved[you] && (
-              <p className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-bold text-[#2F5D2A] ring-2 ring-white">
-                <StarIcon size={16} color="#FFB800" />+{view.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
-              </p>
-            )}
-
-            <div className="mt-5 flex flex-col gap-2">
-              <button onClick={leave} className={BTN_ORANGE}>
-                สร้าง/เข้าห้องใหม่
-              </button>
-              <button onClick={exitGame} className={BTN_SUB}>
-                กลับหน้าหลัก
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmExit && !cancelled && (
+      {confirmExit && (
         <div className="kb-rise absolute inset-0 z-[70] flex items-center justify-center bg-[#1E2A4A]/55 p-6 backdrop-blur-sm">
           <div className={`kb-pop w-full max-w-sm p-7 text-center text-zinc-900 ${DIALOG}`}>
             <p className="text-5xl">🚪</p>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-[#E5502A]">ออกจากเกมนี้?</h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ ห้องจะถูกยกเลิกและเกมจะจบ แต้มที่คุณทำได้แล้วจะยังถูกเก็บไว้ ส่วนคู่แข่งจะชนะโดยปริยาย</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ จะนับว่าคุณแพ้ แต้มที่คุณทำได้แล้วจะยังถูกเก็บไว้</p>
             <div className="mt-6 flex flex-col gap-2">
               <button onClick={() => setConfirmExit(false)} className={BTN_ORANGE}>
                 เล่นต่อ
@@ -1217,7 +1087,7 @@ export default function KickBattle() {
                 onClick={exitGame}
                 className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#FF4D6D] text-sm font-bold text-white ring-2 ring-white transition-opacity hover:opacity-85"
               >
-                ออกและยกเลิกห้อง
+                ออกและยอมแพ้
               </button>
             </div>
           </div>
