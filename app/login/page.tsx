@@ -1,4 +1,4 @@
-// app/components/login/page.tsx
+// app/login/page.tsx
 "use client";
 
 import Image from "next/image";
@@ -7,7 +7,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode, Ref } from "react";
 import { useRouter } from "next/navigation";
 // departments.ts / branches.ts อยู่ที่ app/components/
-import { COMPANIES, DEPARTMENTS, departmentsOf, getCompany } from "../departments";
+import { COMPANIES, DEPARTMENTS, departmentsOf, getCompany } from "../components/departments";
 import {
   branchCode,
   branchesOf,
@@ -16,7 +16,7 @@ import {
   branchProvince,
   branchRegion,
   getBranch,
-} from "../branches";
+} from "../components/branches";
 
 /* ------------------------------------------------------------------ */
 /*  ค่าคงที่ / ตัวช่วย                                                   */

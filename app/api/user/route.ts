@@ -1,6 +1,7 @@
 // app/api/user/route.ts
 import { NextResponse } from "next/server";
 import { getDb } from "../../../lib/mongodb";
+import { getSessionUser } from "../../../lib/auth";
 
 // userId ในหน้าเว็บ = username (ตัวพิมพ์เล็ก) ที่เก็บในคอลเลกชัน users
 const MAX_AVATAR = 5 * 1024 * 1024;
@@ -68,8 +69,19 @@ export async function GET(req: Request) {
     const userId = new URL(req.url).searchParams.get("userId")?.trim().toLowerCase();
 
     if (userId) {
+      const me = await getSessionUser();
+      if (!me) {
+        return NextResponse.json({ success: false, message: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
+      }
       const u = await users.findOne({ username: userId }, { projection: { passwordHash: 0 } });
       if (!u) return NextResponse.json({ success: false, message: "ไม่พบผู้ใช้" }, { status: 404 });
+      // ข้อมูลเต็ม (รายการโปรด ฯลฯ) ให้เฉพาะเจ้าของบัญชี คนอื่นเห็นแค่ข้อมูลสาธารณะ
+      if (me.username !== userId) {
+        return NextResponse.json({
+          success: true,
+          data: { userId: u.username, name: u.nickname, avatarUrl: u.avatarUrl ?? "", points: u.points ?? 0 },
+        });
+      }
       return NextResponse.json({ success: true, data: toPublic(u) });
     }
 
@@ -83,7 +95,7 @@ export async function GET(req: Request) {
       .toArray();
     return NextResponse.json({
       success: true,
-      data: list.map((u) => ({
+      data: list.map((u: UserDoc) => ({
         userId: u.username,
         name: u.nickname,
         avatarUrl: u.avatarUrl ?? "",
@@ -120,13 +132,16 @@ export async function PATCH(req: Request) {
       nameRaw = body.name;
     }
 
-    const username = typeof userIdRaw === "string" ? userIdRaw.trim().toLowerCase() : "";
-    if (!username) {
-      return NextResponse.json({ success: false, message: "ไม่พบผู้ใช้" }, { status: 400 });
+    // แก้ได้เฉพาะบัญชีของตัวเอง: ใช้ username จาก session เท่านั้น
+    const me = await getSessionUser();
+    if (!me) {
+      return NextResponse.json({ success: false, message: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
     }
-
-    // TODO: ตรวจ session ว่าผู้เรียกเป็นเจ้าของบัญชีนี้ (ต้องใช้ฟังก์ชันอ่าน session จาก lib/auth)
-    // ตอนนี้ใครรู้ username ก็แก้ได้
+    const username: string = me.username;
+    const claimed = typeof userIdRaw === "string" ? userIdRaw.trim().toLowerCase() : "";
+    if (claimed && claimed !== username) {
+      return NextResponse.json({ success: false, message: "ไม่มีสิทธิ์แก้บัญชีนี้" }, { status: 403 });
+    }
 
     const $set: Record<string, unknown> = {};
 
