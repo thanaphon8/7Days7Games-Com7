@@ -6,7 +6,6 @@ export const runtime = "nodejs";
 // ===== Kick Battle: API บันทึกแต้ม (โหมดเล่นกับบอท ตรรกะเกมอยู่ฝั่ง client) =====
 // action เดียว: "award" -> บวกแต้มเข้า users.gameScores.kickbattle
 
-const DB_NAME = "7days7games";
 const GAME_KEY = "kickbattle";
 const POINTS_PER_HIT = 1; // ยิงเข้าหรือเซฟได้ +1 แต้ม (ไม่มีโบนัสผู้ชนะ)
 const TOTAL = 6; // ลูกในเวลาปกติ
@@ -25,9 +24,9 @@ const fail = (message: string, status: number) => NextResponse.json({ error: mes
 // บวกแต้มให้ผู้ใช้ ค้นด้วย userId ก่อน ไม่เจอค่อยลอง _id (ObjectId)
 async function addScore(id: string, points: number): Promise<boolean> {
   try {
-    const { default: clientPromise } = await import("@/lib/mongodb");
+    const { getDb } = await import("@/lib/mongodb");
     const { ObjectId } = await import("mongodb");
-    const users = (await clientPromise).db(DB_NAME).collection("users");
+    const users = (await getDb()).collection("users");
     const update = { $inc: { [`gameScores.${GAME_KEY}`]: points }, $set: { updatedAt: new Date() } };
     let matched = (await users.updateOne({ userId: id }, update)).matchedCount;
     if (!matched && ObjectId.isValid(id)) {
