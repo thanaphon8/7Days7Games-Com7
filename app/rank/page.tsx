@@ -1,10 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import Navbar, { type Profile } from "../components/navbar/page";
+import Navbar, { getAvatarSrc, type Profile } from "../components/navbar/page";
 
 const TONE = ["#17FFA2", "#0FD98A", "#0AB373"]; // สีอันดับ 1-3 (อันดับ 1 = เขียวนีออน #17FFA2 มีออร่า, อันดับ 2-3 = เขียวเข้มขึ้น ไม่มีออร่า)
 const INK = ["#00301B", "#00301B", "#00301B"];
@@ -22,47 +21,31 @@ interface PlayerRank {
 
 type Bolt = { id: number; d: string; delay: number; dur: number; w: number };
 
-// Helper แปลง Path รูปภาพให้อยู่ใน public/img/
-function getAvatarSrc(id?: string) {
-  if (!id) return "/img/p01.png";
-
-  // หากเป็น URL เต็ม หรือ Data URL
-  if (id.startsWith("http") || id.startsWith("data:")) return id;
-
-  // หากมี / นำหน้าแล้ว
-  if (id.startsWith("/")) return id;
-
-  // ถ้าส่งมาแบบมี นามสกุลไฟล์ เช่น "p24.png"
-  if (id.endsWith(".png") || id.endsWith(".jpg") || id.endsWith(".jpeg") || id.endsWith(".webp")) {
-    return `/img/${id}`;
-  }
-
-  // กรณีเป็น "p24" หรือ "24" หรือ "01"
-  return `/img/${id.startsWith("p") ? id : `p${id}`}.png`;
-}
-
-function Avatar({ id, size }: { id: string; size: string }) {
+// รูปโปรไฟล์: ใช้ getAvatarSrc ตัวเดียวกับ Navbar / admin
+// ถ้าไม่มีรูปหรือโหลดไม่ขึ้น ให้แสดงวงกลมตัวอักษรแรกของชื่อแทน
+function Avatar({ id, name, size }: { id: string; name?: string; size: string }) {
   const [failed, setFailed] = useState(false);
-  const imgSrc = getAvatarSrc(id);
+  useEffect(() => setFailed(false), [id]);
 
-  if (failed) {
-    const num = Number(id?.replace(/\D/g, "")) || 1;
+  if (!id || failed) {
+    const initial = (Array.from((name ?? "").trim())[0] ?? "?").toUpperCase();
+    const code = initial.codePointAt(0) ?? 0;
     return (
       <span
-        style={{ backgroundColor: FALLBACK_BG[(num - 1) % 4] }}
+        style={{ backgroundColor: FALLBACK_BG[code % 4] }}
         className={`flex shrink-0 items-center justify-center rounded-full font-bold text-zinc-900 ${size}`}
       >
-        {num}
+        {initial}
       </span>
     );
   }
 
   return (
-    <Image
-      src={imgSrc}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={getAvatarSrc(id)}
       alt=""
-      width={216}
-      height={216}
+      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       className={`shrink-0 rounded-full object-cover ${size}`}
     />
@@ -229,7 +212,7 @@ export default function RankPage() {
     // 1. ดึง ID และโปรไฟล์ผู้ใช้ปัจจุบันจาก LocalStorage (ใช้กับ Navbar)
     let uid: string | null = null;
     let localName = "ผู้เล่นใหม่";
-    let localAvatar = "p01";
+    let localAvatar = "";
     try {
       const v = localStorage.getItem("profile");
       if (v) {
@@ -249,13 +232,13 @@ export default function RankPage() {
     async function loadProfile() {
       if (uid) {
         try {
-          const res = await fetch(`/api/user?userId=${uid}`, { cache: "no-store" });
+          const res = await fetch(`/api/user?userId=${encodeURIComponent(uid)}`, { cache: "no-store" });
           const result = await res.json();
           if (result.success && result.data) {
             setProfile({
               userId: uid as string,
               name: result.data.name || localName,
-              avatar: result.data.avatar || result.data.avatarId || localAvatar,
+              avatar: result.data.avatarUrl || result.data.avatarId || result.data.avatar || localAvatar,
             });
             setSaved([...(result.data.savedEvents || []), ...(result.data.savedGames || [])]);
           }
@@ -282,24 +265,18 @@ export default function RankPage() {
         if (result.success && Array.isArray(result.data)) {
           const formatted: PlayerRank[] = result.data.map((user: any) => {
             const scores: Record<string, number> = user.gameScores || {};
-            const scoreValues = Object.values(scores);
+            const entries = Object.entries(scores).filter(([, v]) => Number(v) > 0);
 
-            const playedGames = scoreValues.filter((score) => Number(score) > 0).length;
-            const totalScore = scoreValues.reduce((sum: number, score: any) => sum + (Number(score) || 0), 0);
-
-            const fallbackEmailName = user.email ? user.email.split("@")[0] : null;
-            const userName =
-              user.name ||
-              user.displayName ||
-              user.username ||
-              user.nickname ||
-              fallbackEmailName ||
-              "ผู้เล่นทั่วไป";
+            // นับเฉพาะเกมจริง (ไม่นับภารกิจรายวัน) ให้ตรงกับหน้า admin
+            const playedGames = entries.filter(([k]) => k !== "dailyMission").length;
+            const sum = entries.reduce((s, [, v]) => s + (Number(v) || 0), 0);
+            // แต้มรวม: ใช้ points ถ้ามี ไม่งั้นใช้ผลรวมรายเกม (ตรงกับ API)
+            const totalScore = Number(user.points) > 0 ? Number(user.points) : sum;
 
             return {
               userId: user.userId || user._id,
-              name: userName,
-              avatar: user.avatarId || user.avatar || "p01",
+              name: user.name || user.nickname || "ผู้เล่นทั่วไป",
+              avatar: user.avatarUrl || user.avatarId || user.avatar || "",
               games: playedGames,
               score: totalScore,
             };
@@ -506,6 +483,7 @@ export default function RankPage() {
                       {first && <Crown className="absolute -top-6 left-1/2 w-9 -translate-x-1/2 -rotate-6 sm:-top-9 sm:w-14" />}
                       <Avatar
                         id={p.avatar}
+                        name={p.name}
                         size={`${first ? "h-16 w-16 sm:h-32 sm:w-32" : "h-12 w-12 sm:h-24 sm:w-24"} ring-2 ring-white/80 sm:ring-4`}
                       />
                     </div>
@@ -547,7 +525,7 @@ export default function RankPage() {
                       }`}
                     >
                       <span className="flex h-11 w-11 shrink-0 items-center justify-center bg-white/10 text-base font-bold tabular-nums sm:h-12 sm:w-12">{i + 4}</span>
-                      <Avatar id={p.avatar} size="h-11 w-11 sm:h-12 sm:w-12" />
+                      <Avatar id={p.avatar} name={p.name} size="h-11 w-11 sm:h-12 sm:w-12" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-base font-semibold sm:text-lg">
                           {p.name}

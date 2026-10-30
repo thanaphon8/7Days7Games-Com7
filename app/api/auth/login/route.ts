@@ -39,12 +39,17 @@ export async function POST(req: Request) {
 
     await createSession(u._id);
 
+    const avatar = u.avatarUrl || u.avatarPreset || "";
     return NextResponse.json({
       user: {
+        userId: u.username, // ใช้เป็น id ฝั่งหน้าเว็บ (หน้า rank / navbar / เกม ใช้ตัวนี้)
         name: u.nickname,
         username: u.display ?? u.username,
         employeeId: u.employeeId,
         avatarUrl: u.avatarUrl ?? "",
+        avatarPreset: u.avatarPreset ?? "",
+        avatar,
+        avatarId: avatar,
         points: u.points ?? 0,
         companyId: u.companyId ?? null,
         departmentId: u.departmentId ?? null,

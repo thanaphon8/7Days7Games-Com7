@@ -23,11 +23,17 @@ const MUTED = "text-[#8fa6a1]";
 
 type RawUser = {
   _id: string;
+  username?: string;
   userId?: string;
+  nickname?: string;
   name?: string;
   email?: string;
+  employeeId?: string;
+  avatarUrl?: string;
+  avatarPreset?: string;
   avatarId?: string;
   avatar?: string;
+  points?: number;
   gameScores?: Record<string, number>;
   savedEvents?: string[];
   savedGames?: string[];
@@ -56,21 +62,23 @@ type SortKey = "rank" | "name" | "games" | "total" | "createdAt";
 
 function toRow(u: RawUser): Row {
   const scores: Record<string, number> = {};
-  let total = 0;
+  let sum = 0;
   let games = 0;
   for (const [k, v] of Object.entries(u.gameScores || {})) {
     const n = Number(v) || 0;
     if (n > 0) {
       scores[k] = n;
-      total += n;
+      sum += n;
       if (k !== "dailyMission") games += 1;
     }
   }
+  // แต้มรวม: ใช้ points ถ้ามี ไม่งั้นใช้ผลรวมรายเกม (ตรงกับ /api/user และหน้า rank)
+  const total = typeof u.points === "number" && u.points > 0 ? u.points : sum;
   return {
-    id: String(u.userId || u._id),
-    name: u.name || "(ไม่มีชื่อ)",
-    email: u.email || "",
-    avatar: u.avatarId || u.avatar || "p01",
+    id: String(u.username || u.userId || u._id),
+    name: u.nickname || u.name || "(ไม่มีชื่อ)",
+    email: u.email || u.employeeId || "",
+    avatar: u.avatarUrl || u.avatarPreset || u.avatarId || u.avatar || "",
     scores,
     games,
     total,
@@ -91,7 +99,7 @@ const fmtDate = (s?: string) => {
 function downloadCsv(rows: Row[]) {
   const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r.scores)))).sort();
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const head = ["rank", "userId", "name", "email", "games", "total", ...keys.map(gameName), "banned", "createdAt"];
+  const head = ["rank", "userId", "name", "email/employeeId", "games", "total", ...keys.map(gameName), "banned", "createdAt"];
   const lines = rows.map((r, i) =>
     [i + 1, r.id, r.name, r.email, r.games, r.total, ...keys.map((k) => r.scores[k] ?? 0), r.banned, r.createdAt ?? ""]
       .map(esc)
@@ -115,18 +123,29 @@ const btnDanger = `${btn} border border-[#ff2a55]/60 bg-[#ff2a55]/15 text-white 
 const input =
   "w-full border border-white/15 bg-[#05080a] px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#17FFA2]";
 
-function Avatar({ id, size = 36 }: { id: string; size?: number }) {
+function Avatar({ id, name, size = 36 }: { id: string; name?: string; size?: number }) {
   const [failed, setFailed] = useState(false);
-  if (failed) {
+  useEffect(() => setFailed(false), [id]);
+  if (!id || failed) {
+    const initial = (Array.from((name ?? "").trim())[0] ?? "?").toUpperCase();
     return (
       <span style={{ width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-bold">
-        ?
+        {initial}
       </span>
     );
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={getAvatarSrc(id)} alt="" width={size} height={size} onError={() => setFailed(true)} className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />
+    <img
+      src={getAvatarSrc(id)}
+      alt=""
+      width={size}
+      height={size}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className="shrink-0 rounded-full object-cover"
+      style={{ width: size, height: size }}
+    />
   );
 }
 
@@ -234,7 +253,7 @@ function UserModal({
       if (res.ok && r?.success) {
         setMsg(ok);
         onChanged();
-      } else setMsg("บันทึกไม่สำเร็จ");
+      } else setMsg(r?.error || "บันทึกไม่สำเร็จ");
     } catch {
       setMsg("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
     }
@@ -256,10 +275,10 @@ function UserModal({
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-6" onClick={onClose}>
       <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto border border-[#17FFA2]/40 bg-[#0a1014] p-6 shadow-[10px_10px_0_0_#ff2a55]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-4">
-          <Avatar id={row.avatar} size={56} />
+          <Avatar id={row.avatar} name={row.name} size={56} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-xl font-bold">{row.name}</p>
-            <p className={`truncate text-sm ${MUTED}`}>{row.email || "ไม่มีอีเมล"}</p>
+            <p className={`truncate text-sm ${MUTED}`}>{row.email || "ไม่มีอีเมล / รหัสพนักงาน"}</p>
             <p className={`mt-1 break-all text-xs ${MUTED}`}>ID: {row.id}</p>
           </div>
           <button onClick={onClose} aria-label="ปิด" className="h-10 w-10 shrink-0 text-2xl text-white/70 hover:text-white">
@@ -284,8 +303,8 @@ function UserModal({
           สมัคร: {fmtDate(row.createdAt)} · อัปเดตล่าสุด: {fmtDate(row.updatedAt)} · รายการโปรด: {(row.raw.savedEvents?.length ?? 0) + (row.raw.savedGames?.length ?? 0)}
         </p>
 
-        <label className={`mt-6 block text-sm ${MUTED}`}>ชื่อที่แสดง</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={`${input} mt-1`} />
+        <label className={`mt-6 block text-sm ${MUTED}`}>ชื่อที่แสดง (2-20 ตัวอักษร)</label>
+        <input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} className={`${input} mt-1`} />
 
         <p className={`mt-6 text-sm ${MUTED}`}>แต้มรายเกม (แก้ไขได้)</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -611,7 +630,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               setQ(e.target.value);
               setPage(1);
             }}
-            placeholder="ค้นหาชื่อ / อีเมล / ID"
+            placeholder="ค้นหาชื่อ / รหัสพนักงาน / username"
             className={`${input} max-w-xs`}
           />
           {(
@@ -643,7 +662,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               <tr className={MUTED}>
                 {th("rank", "#")}
                 {th("name", "ผู้ใช้")}
-                <th className="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider">อีเมล</th>
+                <th className="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider">อีเมล / รหัสพนักงาน</th>
                 {th("games", "เกม", "text-right")}
                 {th("total", "แต้มรวม", "text-right")}
                 {th("createdAt", "สมัครเมื่อ")}
@@ -669,7 +688,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                   <td className="px-3 py-3 tabular-nums">{r.total > 0 ? rankMap.get(r.id) : "–"}</td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-3">
-                      <Avatar id={r.avatar} />
+                      <Avatar id={r.avatar} name={r.name} />
                       <span className="max-w-[200px] truncate font-semibold">{r.name}</span>
                       {r.banned && <span className="border border-[#ff2a55] bg-[#ff2a55]/20 px-1.5 py-0.5 text-[10px] font-bold">BANNED</span>}
                     </div>

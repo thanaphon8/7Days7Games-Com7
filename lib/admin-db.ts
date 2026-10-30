@@ -10,14 +10,26 @@ function client() {
   return g._adminMongo;
 }
 
-export async function usersCollection() {
+async function db() {
   const c = await client();
-  return c.db(process.env.MONGODB_DB || undefined).collection(process.env.USERS_COLLECTION || "users");
+  return c.db(process.env.MONGODB_DB || undefined);
 }
 
-// หา user ด้วย userId หรือ _id
+export async function usersCollection() {
+  return (await db()).collection(process.env.USERS_COLLECTION || "users");
+}
+
+// คอลเลกชัน session (ใช้ลบ session ตอนลบผู้ใช้)
+export async function sessionsCollection() {
+  return (await db()).collection("sessions");
+}
+
+// หา user ด้วย username (หลัก), userId หรือ _id
 export function userFilter(id: string) {
-  const or: Record<string, unknown>[] = [{ userId: id }];
+  const or: Record<string, unknown>[] = [
+    { username: id.trim().toLowerCase() },
+    { userId: id },
+  ];
   if (ObjectId.isValid(id)) or.push({ _id: new ObjectId(id) });
   return { $or: or };
 }

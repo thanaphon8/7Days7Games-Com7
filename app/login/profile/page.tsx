@@ -7,13 +7,14 @@ import { useRouter } from "next/navigation";
 export type Profile = {
   userId?: string;
   name: string;
-  avatar: string; // URL รูปโปรไฟล์ (ผู้ใช้เก่าอาจเป็น 'p1', 'p2', ...)
+  avatar: string; // URL รูปที่อัปโหลด หรือรูปสำเร็จรูป 'p1'-'p25'
 };
 
 const RED = "#ff2a55";
 const MUTED = "text-[#8fa6a1]";
+const PRESETS = Array.from({ length: 25 }, (_, i) => `p${i + 1}`); // p1 - p25 (public/img/p1.png - p25.png)
 
-// แปลงค่า avatar เป็น src ที่ใช้ได้ (รองรับผู้ใช้เก่าที่เก็บเป็น p1-p25)
+// แปลงค่า avatar เป็น src ที่ใช้ได้ (รองรับรูปสำเร็จรูป p1-p25)
 function avatarSrc(id: string): string {
   if (!id) return "";
   if (/^(https?:|\/|data:|blob:)/i.test(id)) return id;
@@ -308,6 +309,7 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarPreset, setAvatarPreset] = useState<string | null>(null); // รูปสำเร็จรูปที่เลือกใหม่ (p1-p25)
   const [savedCount, setSavedCount] = useState(0);
   const [score, setScore] = useState<number | null>(null);
   const [rank, setRank] = useState<number | null>(null);
@@ -347,19 +349,24 @@ export default function ProfilePage() {
         const initialProfile: Profile = {
           userId: currentUserId,
           name: parsed.name || "ผู้เล่นใหม่",
-          avatar: parsed.avatarId || parsed.avatar || "",
+          avatar: parsed.avatar || parsed.avatarId || "",
         };
         setProfile(initialProfile);
         setName(initialProfile.name);
 
         if (currentUserId) {
-          const res = await fetch(`/api/user?userId=${encodeURIComponent(currentUserId)}`);
+          const res = await fetch(`/api/user?userId=${encodeURIComponent(currentUserId)}`, { cache: "no-store" });
           const result = await res.json();
           if (result.success && result.data) {
             const fetchedProfile: Profile = {
               userId: currentUserId,
               name: result.data.name || initialProfile.name,
-              avatar: result.data.avatarUrl || result.data.avatarId || initialProfile.avatar,
+              avatar:
+                result.data.avatarUrl ||
+                result.data.avatarPreset ||
+                result.data.avatarId ||
+                result.data.avatar ||
+                initialProfile.avatar,
             };
             setProfile(fetchedProfile);
             setName(fetchedProfile.name);
@@ -367,7 +374,7 @@ export default function ProfilePage() {
           }
 
           // คำนวณอันดับ จากคะแนนรวมของทุกคน
-          const rankRes = await fetch("/api/user");
+          const rankRes = await fetch("/api/user", { cache: "no-store" });
           const rankResult = await rankRes.json();
           if (rankResult.success && Array.isArray(rankResult.data)) {
             const sorted = rankResult.data
@@ -399,8 +406,11 @@ export default function ProfilePage() {
 
   const cleanName = name.trim();
   const valid = cleanName.length >= 2 && cleanName.length <= 20;
-  const changed = !!profile && (cleanName !== profile.name || !!avatarFile);
-  const shownAvatar = avatarPreview ?? profile?.avatar ?? "";
+  const changed =
+    !!profile &&
+    (cleanName !== profile.name || !!avatarFile || (!!avatarPreset && avatarPreset !== profile.avatar));
+  // รูปที่แสดงในการ์ดตัวอย่าง: รูปที่เพิ่งเลือก/ถ่าย > รูปสำเร็จรูปที่เพิ่งเลือก > รูปเดิม
+  const shownAvatar = avatarPreview ?? avatarPreset ?? profile?.avatar ?? "";
 
   const applyAvatar = (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -414,6 +424,14 @@ export default function ProfilePage() {
     setError("");
     setAvatarFile(file);
     setAvatarPreview(URL.createObjectURL(file));
+    setAvatarPreset(null); // อัปโหลดรูปเอง = เลิกใช้รูปสำเร็จรูปที่เลือกไว้
+  };
+
+  const pickPreset = (p: string) => {
+    setError("");
+    setAvatarPreset(p);
+    setAvatarFile(null); // เลือกรูปสำเร็จรูป = ทิ้งรูปที่เลือก/ถ่ายไว้
+    setAvatarPreview(null);
   };
 
   async function handleSave() {
@@ -426,6 +444,7 @@ export default function ProfilePage() {
       fd.append("userId", profile.userId);
       fd.append("name", cleanName);
       if (avatarFile) fd.append("avatar", avatarFile);
+      else if (avatarPreset) fd.append("avatarPreset", avatarPreset);
 
       const res = await fetch("/api/user", { method: "PATCH", body: fd });
       const result = await res.json().catch(() => ({}));
@@ -434,7 +453,8 @@ export default function ProfilePage() {
         return;
       }
 
-      const avatar: string = result.data?.avatarUrl || profile.avatar;
+      const avatar: string =
+        result.data?.avatarUrl || result.data?.avatarPreset || result.data?.avatarId || profile.avatar;
       localStorage.setItem(
         "profile",
         JSON.stringify({ userId: profile.userId, name: cleanName, avatar, avatarId: avatar })
@@ -575,6 +595,8 @@ export default function ProfilePage() {
 
             <section className="fx-rise border-l-4 border-[#17FFA2] bg-[#0a1014]/90 p-6 backdrop-blur-sm sm:p-8" style={{ animationDelay: "240ms" }}>
               <CardTitle id="avatar-label">รูปโปรไฟล์</CardTitle>
+
+              {/* อัปโหลดรูปเอง / ถ่ายรูป */}
               <div className="mt-5 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
                 <input
                   type="file"
@@ -618,13 +640,43 @@ export default function ProfilePage() {
                       </Btn>
                     )}
                     <Btn variant="outline" onClick={() => fileInputRef.current?.click()} height="h-11" className="px-5">
-                      เลือกรูปจากเครื่อง
+                      อัปโหลดรูปจากเครื่อง
                     </Btn>
                   </div>
                   <p className={`text-xs ${MUTED}`}>
-                    {avatarFile ? "เลือกรูปใหม่แล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้" : "ไฟล์ไม่เกิน 5MB"}
+                    {avatarFile
+                      ? "เลือกรูปใหม่แล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้"
+                      : avatarPreset
+                        ? "เลือกรูปสำเร็จรูปแล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้"
+                        : "ไฟล์ไม่เกิน 5MB"}
                   </p>
                 </div>
+              </div>
+
+              {/* เลือกรูปสำเร็จรูป p1-p25 */}
+              <p className={`mt-7 text-sm ${MUTED}`}>หรือเลือกรูปสำเร็จรูป</p>
+              <div role="radiogroup" aria-labelledby="avatar-label" className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-7 sm:gap-3">
+                {PRESETS.map((p) => {
+                  const active = avatarPreset === p || (!avatarFile && !avatarPreset && profile.avatar === p);
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      aria-label={`รูปโปรไฟล์ ${p}`}
+                      onClick={() => pickPreset(p)}
+                      className={`aspect-square overflow-hidden rounded-full border-2 bg-black/40 transition-all active:scale-90 ${
+                        active
+                          ? "border-[#17FFA2] shadow-[0_0_16px_rgba(23,255,162,0.6)]"
+                          : "border-white/10 hover:border-[#17FFA2]/60"
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/img/${p}.png`} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    </button>
+                  );
+                })}
               </div>
             </section>
 

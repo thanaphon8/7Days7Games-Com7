@@ -8,9 +8,9 @@ import { HEART_PATH } from "../events/page";
 
 export type Profile = { userId?: string; name: string; avatar: string };
 
-// Helper สำหรับดึง URL ของ Avatar จาก public/img/ โดยตรง
+// Helper สำหรับดึง URL ของ Avatar (รูปสำเร็จรูปอยู่ที่ public/img/p1.png - p25.png)
 export function getAvatarSrc(avatar?: string) {
-  if (!avatar) return "/img/p01.png"; // Default รูปถ้าไม่มีข้อมูล
+  if (!avatar) return "/img/p1.png"; // Default รูปถ้าไม่มีข้อมูล
 
   // หากเป็น URL เต็ม หรือ Data URL (Base64)
   if (avatar.startsWith("http") || avatar.startsWith("data:")) {
@@ -22,7 +22,7 @@ export function getAvatarSrc(avatar?: string) {
     return avatar;
   }
 
-  // ถ้าส่งมาเป็น "p24.png" หรือ "p24" หรือ "24"
+  // ถ้าส่งมาเป็น "p24.png"
   if (
     avatar.endsWith(".png") ||
     avatar.endsWith(".jpg") ||
@@ -32,6 +32,7 @@ export function getAvatarSrc(avatar?: string) {
     return `/img/${avatar}`;
   }
 
+  // "p24" → /img/p24.png
   return `/img/${avatar}.png`;
 }
 
@@ -49,6 +50,35 @@ function Crown({ className = "" }: { className?: string }) {
         <circle key={x} cx={x} cy={y} r="2" fill="#F4D35E" stroke="#4A3B00" strokeWidth="1.5" />
       ))}
     </svg>
+  );
+}
+
+// รูปโปรไฟล์บน Navbar: ถ้าไม่มีรูปหรือโหลดไม่ขึ้น แสดงวงกลมตัวอักษรแรกของชื่อ
+function NavAvatar({ avatar, name }: { avatar: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [avatar]);
+
+  if (!avatar || failed) {
+    const initial = (Array.from((name ?? "").trim())[0] ?? "?").toUpperCase();
+    return (
+      <span
+        aria-hidden
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0f1c1a] text-base font-bold text-[#17FFA2]"
+      >
+        {initial}
+      </span>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={getAvatarSrc(avatar)}
+      alt={name}
+      referrerPolicy="no-referrer"
+      className="h-10 w-10 shrink-0 rounded-full object-cover"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -324,14 +354,7 @@ export default function Navbar({
                 {isFirst && (
                   <Crown className="absolute -top-4 left-1/2 w-6 -translate-x-1/2 -rotate-6" />
                 )}
-                <img
-                  src={getAvatarSrc(profile.avatar)}
-                  alt={profile.name}
-                  className="h-10 w-10 shrink-0 rounded-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "/img/p01.png";
-                  }}
-                />
+                <NavAvatar avatar={profile.avatar} name={profile.name} />
               </span>
               <span className="hidden max-w-28 truncate text-sm font-medium sm:block">
                 {profile.name}

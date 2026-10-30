@@ -5,6 +5,9 @@ import { getDb } from "../../../../lib/mongodb";
 import { createSession } from "../../../../lib/auth";
 import { validateOrg } from "../../../components/branches";
 
+// รูปสำเร็จรูป p1-p25 (ตรงกับ /img/p1.png - /img/p25.png)
+const PRESET_RE = /^p([1-9]|1\d|2[0-5])$/;
+
 export async function POST(req: Request) {
   try {
     let formData: FormData;
@@ -22,6 +25,9 @@ export async function POST(req: Request) {
     const departmentRaw = formData.get("departmentId");
     const branchRaw = formData.get("branchId");
     const avatarFile = formData.get("avatar") as File | null;
+    const presetRaw = formData.get("avatarPreset");
+    let avatarPreset =
+      typeof presetRaw === "string" && PRESET_RE.test(presetRaw) ? presetRaw : "";
 
     const nickname =
       typeof nicknameRaw === "string" ? nicknameRaw.trim().slice(0, 20) : "";
@@ -93,12 +99,19 @@ export async function POST(req: Request) {
           if (gasResult.success) {
             avatarUrl = gasResult.imageUrl;
             driveFileId = gasResult.fileId;
+          } else {
+            console.error("avatar upload: Apps Script ตอบว่าไม่สำเร็จ", gasResult);
           }
+        } else {
+          console.error("avatar upload: ไม่ได้ตั้ง GOOGLE_APPS_SCRIPT_URL (ใส่ใน .env.local แล้วรีสตาร์ต npm run dev)");
         }
       } catch (uploadError) {
         console.error("Failed to upload via Apps Script:", uploadError);
       }
     }
+
+    // อัปโหลดรูปเองสำเร็จ = ใช้รูปนั้น (ไม่ใช้รูปสำเร็จรูป)
+    if (avatarUrl) avatarPreset = "";
 
     const db = await getDb();
 
@@ -120,11 +133,13 @@ export async function POST(req: Request) {
         nickname,
         passwordHash,
         avatarUrl,
+        avatarPreset,
         driveFileId,
         companyId,
         departmentId,
         branchId,
         points: 0,
+        gameScores: {},
         createdAt: new Date(),
       });
 
@@ -133,10 +148,14 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           user: {
+            userId: display.toLowerCase(), // ใช้เป็น id ฝั่งหน้าเว็บ
             name: nickname,
             username: display,
             employeeId,
             avatarUrl,
+            avatarPreset,
+            avatar: avatarUrl || avatarPreset,
+            avatarId: avatarUrl || avatarPreset,
             points: 0,
             companyId,
             departmentId,

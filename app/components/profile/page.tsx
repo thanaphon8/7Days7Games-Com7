@@ -13,6 +13,11 @@ export type Profile = {
 const RED = "#ff2a55";
 const MUTED = "text-[#8fa6a1]";
 
+// รูปสำเร็จรูป /img/p1.png - /img/p25.png
+const PRESET_IDS = Array.from({ length: 25 }, (_, i) => `p${i + 1}`);
+// "p03" / "3" / "p3" -> "p3" (ไม่ใช่รูปสำเร็จรูป -> "")
+const presetOf = (v: string) => (/^p?\d{1,2}$/i.test(v) ? `p${Number(v.replace(/\D/g, ""))}` : "");
+
 // แปลงค่า avatar เป็น src ที่ใช้ได้ (รองรับผู้ใช้เก่าที่เก็บเป็น p1-p25)
 function avatarSrc(id: string): string {
   if (!id) return "";
@@ -308,6 +313,7 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarPreset, setAvatarPreset] = useState(""); // รูปสำเร็จรูปที่เลือกใหม่
   const [savedCount, setSavedCount] = useState(0);
   const [score, setScore] = useState<number | null>(null);
   const [rank, setRank] = useState<number | null>(null);
@@ -359,7 +365,7 @@ export default function ProfilePage() {
             const fetchedProfile: Profile = {
               userId: currentUserId,
               name: result.data.name || initialProfile.name,
-              avatar: result.data.avatarUrl || result.data.avatarId || initialProfile.avatar,
+              avatar: result.data.avatar || result.data.avatarUrl || result.data.avatarId || initialProfile.avatar,
             };
             setProfile(fetchedProfile);
             setName(fetchedProfile.name);
@@ -399,8 +405,12 @@ export default function ProfilePage() {
 
   const cleanName = name.trim();
   const valid = cleanName.length >= 2 && cleanName.length <= 20;
-  const changed = !!profile && (cleanName !== profile.name || !!avatarFile);
-  const shownAvatar = avatarPreview ?? profile?.avatar ?? "";
+  const changed =
+    !!profile &&
+    (cleanName !== profile.name ||
+      !!avatarFile ||
+      (!!avatarPreset && avatarPreset !== presetOf(profile.avatar)));
+  const shownAvatar = avatarPreview ?? (avatarPreset || profile?.avatar || "");
 
   const applyAvatar = (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -413,6 +423,7 @@ export default function ProfilePage() {
     }
     setError("");
     setAvatarFile(file);
+    setAvatarPreset("");
     setAvatarPreview(URL.createObjectURL(file));
   };
 
@@ -426,6 +437,7 @@ export default function ProfilePage() {
       fd.append("userId", profile.userId);
       fd.append("name", cleanName);
       if (avatarFile) fd.append("avatar", avatarFile);
+      else if (avatarPreset) fd.append("avatarPreset", avatarPreset);
 
       const res = await fetch("/api/user", { method: "PATCH", body: fd });
       const result = await res.json().catch(() => ({}));
@@ -434,7 +446,7 @@ export default function ProfilePage() {
         return;
       }
 
-      const avatar: string = result.data?.avatarUrl || profile.avatar;
+      const avatar: string = result.data?.avatar || result.data?.avatarUrl || profile.avatar;
       localStorage.setItem(
         "profile",
         JSON.stringify({ userId: profile.userId, name: cleanName, avatar, avatarId: avatar })
@@ -622,9 +634,42 @@ export default function ProfilePage() {
                     </Btn>
                   </div>
                   <p className={`text-xs ${MUTED}`}>
-                    {avatarFile ? "เลือกรูปใหม่แล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้" : "ไฟล์ไม่เกิน 5MB"}
+                    {avatarFile || avatarPreset ? "เลือกรูปใหม่แล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้" : "ไฟล์ไม่เกิน 5MB"}
                   </p>
                 </div>
+              </div>
+
+              <p className={`mb-3 mt-8 text-sm ${MUTED}`}>หรือเลือกรูปที่มีให้</p>
+              <div
+                role="radiogroup"
+                aria-labelledby="avatar-label"
+                className="grid max-h-60 grid-cols-5 gap-3 overflow-y-auto border border-white/15 bg-black/40 p-3 sm:grid-cols-7 lg:grid-cols-5 xl:grid-cols-7"
+              >
+                {PRESET_IDS.map((id) => {
+                  const on = !avatarFile && (avatarPreset ? avatarPreset === id : presetOf(profile.avatar) === id);
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-label={`รูปโปรไฟล์ ${id}`}
+                      onClick={() => {
+                        setAvatarPreset(id);
+                        setAvatarFile(null);
+                        setAvatarPreview(null);
+                        setError("");
+                      }}
+                      className={`rounded-full outline-none transition-all duration-150 focus-visible:ring-4 focus-visible:ring-[#17FFA2] ${
+                        on
+                          ? "scale-105 ring-4 ring-[#17FFA2] ring-offset-2 ring-offset-[#0a1014] shadow-[0_0_24px_rgba(23,255,162,0.6)]"
+                          : "opacity-70 hover:scale-105 hover:opacity-100"
+                      }`}
+                    >
+                      <Avatar id={id} name={id} size="aspect-square w-full" />
+                    </button>
+                  );
+                })}
               </div>
             </section>
 

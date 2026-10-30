@@ -27,10 +27,13 @@ type Place = "hq" | "store";
 type Item = { id: number; label: string; sub?: string };
 type Errors = Record<string, string | undefined>;
 type ApiUser = {
+  userId?: string; // id ฝั่งหน้าเว็บ = username ตัวพิมพ์เล็ก (ตรงกับที่ /api/user ใช้ค้นหา)
   name: string;
   username: string;
   employeeId?: string;
   avatarUrl?: string | null;
+  avatarPreset?: string | null;
+  avatar?: string | null;
   points?: number;
   companyId?: number | null;
   departmentId?: number | null;
@@ -48,6 +51,8 @@ const BRANCH_STEP = 200;
 
 const EMPLOYEE_ID_RE = /^[A-Za-z0-9]{3,20}$/;
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+// รูปสำเร็จรูป /img/p1.png - /img/p25.png
+const PRESET_IDS = Array.from({ length: 25 }, (_, i) => `p${i + 1}`);
 
 const RED = "#ff2a55";
 const MUTED = "text-[#8fa6a1]";
@@ -92,20 +97,22 @@ const stepOfErrors = (e: Errors): number | null =>
           ? 4
           : null;
 
-// เก็บโปรไฟล์ลง localStorage ให้หน้าอื่น (โปรไฟล์/อันดับ) อ่านต่อได้
+// เก็บโปรไฟล์ลง localStorage ให้หน้าอื่น (โปรไฟล์/อันดับ/เกม) อ่านต่อได้
+// userId ต้องเป็น username ตัวพิมพ์เล็ก เพราะ /api/user ค้นด้วยค่านี้
 function saveProfile(u: ApiUser) {
-  const avatar = u.avatarUrl || "";
+  const avatar = u.avatar || u.avatarUrl || u.avatarPreset || "";
+  const userId = (u.userId || u.username || "").trim().toLowerCase();
   localStorage.setItem(
     "profile",
     JSON.stringify({
-      userId: u.username,
+      userId,
       name: u.name,
       avatar,
       avatarId: avatar,
       employeeId: u.employeeId,
     })
   );
-  localStorage.setItem("userId", u.username);
+  localStorage.setItem("userId", userId);
   window.dispatchEvent(new Event("storage"));
 }
 
@@ -386,6 +393,22 @@ function Avatar({ name, src, size }: { name: string; src?: string | null; size: 
   );
 }
 
+// รูปสำเร็จรูป (ถ้าโหลดไม่ได้ จะแสดงรหัสรูปแทน)
+function PresetImg({ id }: { id: string }) {
+  const [err, setErr] = useState(false);
+  if (err) {
+    return (
+      <span className="flex aspect-square w-full items-center justify-center rounded-full bg-[#0f1c1a] text-xs font-bold text-[#17FFA2]">
+        {id.toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={`/img/${id}.png`} alt="" loading="lazy" onError={() => setErr(true)} className="aspect-square w-full rounded-full object-cover" />
+  );
+}
+
 // รายการให้เลือก (ใช้ร่วมกัน บริษัท / แผนก / สาขา)
 function PickList({
   items,
@@ -602,6 +625,7 @@ export default function Login() {
   // รูปโปรไฟล์ (ไม่บังคับ)
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarPreset, setAvatarPreset] = useState(""); // รูปสำเร็จรูปที่เลือก (ใช้เมื่อไม่ได้อัปโหลดเอง)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [camOpen, setCamOpen] = useState(false);
@@ -777,6 +801,7 @@ export default function Login() {
       return;
     }
     setAvatarFile(file);
+    setAvatarPreset("");
     setAvatarPreview(URL.createObjectURL(file));
     setErrors((p) => ({ ...p, form: undefined }));
   };
@@ -867,6 +892,7 @@ export default function Login() {
       if (place === "store" && branchId) fd.append("branchId", branchId);
       fd.append("password", password);
       if (avatarFile) fd.append("avatar", avatarFile);
+      else if (avatarPreset) fd.append("avatarPreset", avatarPreset);
 
       const res = await fetch("/api/auth/register", { method: "POST", body: fd });
       const data = (await res.json().catch(() => ({}))) as {
@@ -944,7 +970,7 @@ export default function Login() {
           s: selectedCompany ? `แผนกใน ${selectedCompany.name} เลือกจากรายการ หรือพิมพ์ค้นหา` : "เลือกจากรายการ หรือพิมพ์ค้นหา",
         },
     { t: "ตั้งค่าบัญชี", s: "ใช้ username และรหัสผ่านนี้เข้าสู่ระบบ" },
-    { t: "ใส่รูปโปรไฟล์", s: "เลือกรูปให้เพื่อนจำคุณได้ หรือข้ามไปก่อนก็ได้" },
+    { t: "เลือกรูปโปรไฟล์", s: "ถ่ายรูปหรืออัปโหลดรูปของคุณ หรือเลือกรูปที่มีให้ หรือข้ามไปก่อนก็ได้" },
   ][Math.min(step, LAST_STEP)];
 
   /* ================================================================ */
@@ -952,7 +978,7 @@ export default function Login() {
   /* ================================================================ */
 
   if (step === WELCOME && user) {
-    const avatarSrc = avatarPreview ?? user.avatarUrl ?? null;
+    const avatarSrc = avatarPreview ?? (avatarPreset ? `/img/${avatarPreset}.png` : user.avatarUrl || null);
     const branchName = selectedBranch ? branchLabel(selectedBranch) : null;
     const branchInfo = selectedBranch
       ? [branchCode(selectedBranch) ? `ID ${branchCode(selectedBranch)}` : null, branchProvince(selectedBranch)].filter(Boolean).join(" · ")
@@ -1326,7 +1352,7 @@ export default function Login() {
                     </div>
                   )}
 
-                  {/* ขั้น 5: รูปโปรไฟล์ (ข้ามได้) */}
+                  {/* ขั้น 5: รูปโปรไฟล์ (ข้ามได้) อัปโหลด/ถ่ายรูปเอง หรือเลือกรูปที่มีให้ */}
                   {step === 5 && (
                     <div className="mt-6 flex flex-col items-center">
                       <input
@@ -1350,12 +1376,15 @@ export default function Login() {
                         {avatarPreview ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={avatarPreview} alt="ตัวอย่างรูปโปรไฟล์" className="h-full w-full object-cover" />
+                        ) : avatarPreset ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`/img/${avatarPreset}.png`} alt="ตัวอย่างรูปโปรไฟล์" className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex flex-col items-center text-[13px] text-[#8fa6a1] group-hover:text-[#17FFA2]">
                             <svg className="mb-1 h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                             </svg>
-                            <span>เลือกรูป</span>
+                            <span>อัปโหลดรูป</span>
                           </div>
                         )}
                       </button>
@@ -1370,10 +1399,45 @@ export default function Login() {
                           </Btn>
                         )}
                         <Btn variant="outline" onClick={() => fileInputRef.current?.click()} className="h-11 px-5">
-                          {avatarFile ? "เลือกรูปใหม่" : "เลือกรูป"}
+                          {avatarFile ? "เลือกรูปใหม่" : "เลือกรูปจากเครื่อง"}
                         </Btn>
                       </div>
                       <span className={`mt-3 text-xs ${MUTED}`}>ไฟล์ไม่เกิน 5MB</span>
+
+                      <div className="mt-8 w-full">
+                        <p className={`mb-3 text-center text-sm ${MUTED}`}>หรือเลือกรูปที่มีให้</p>
+                        <div
+                          role="radiogroup"
+                          aria-label="รูปที่มีให้"
+                          className="scroll-neon grid max-h-56 grid-cols-5 gap-3 overflow-y-auto border border-white/15 bg-black/40 p-3 sm:grid-cols-6"
+                        >
+                          {PRESET_IDS.map((id) => {
+                            const on = !avatarFile && avatarPreset === id;
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                aria-label={`รูปโปรไฟล์ ${id}`}
+                                onClick={() => {
+                                  setAvatarPreset(id);
+                                  setAvatarFile(null);
+                                  setAvatarPreview(null);
+                                  clearErr("form");
+                                }}
+                                className={`rounded-full outline-none transition-all duration-150 focus-visible:ring-4 focus-visible:ring-[#17FFA2] ${
+                                  on
+                                    ? "scale-105 ring-4 ring-[#17FFA2] ring-offset-2 ring-offset-[#0a1014] shadow-[0_0_24px_rgba(23,255,162,0.6)]"
+                                    : "opacity-70 hover:scale-105 hover:opacity-100"
+                                }`}
+                              >
+                                <PresetImg id={id} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -1393,7 +1457,7 @@ export default function Login() {
                       </Btn>
                     )}
                     <Btn type="submit" disabled={busy} className="h-14 flex-1">
-                      {busy ? "กำลังสร้างบัญชี..." : step < LAST_STEP ? "ถัดไป" : avatarFile ? "สร้างบัญชี" : "ข้ามและสร้างบัญชี"}
+                      {busy ? "กำลังสร้างบัญชี..." : step < LAST_STEP ? "ถัดไป" : avatarFile || avatarPreset ? "สร้างบัญชี" : "ข้ามและสร้างบัญชี"}
                     </Btn>
                   </div>
                   {step === 0 && (
