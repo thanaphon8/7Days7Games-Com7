@@ -13,6 +13,7 @@ import EventsCarousel, {
 } from "./components/events/page";
 import FavoritesSheet, { type Game } from "./components/favorites/page";
 import Navbar, { getAvatarSrc, type Profile } from "./components/navbar/page";
+import { formatWait, useGameQuota, type QuotaView } from "@/lib/useGameQuota";
 
 const GAMES: Game[] = [
   {
@@ -293,6 +294,26 @@ function PlayersTag({ two }: { two: boolean }) {
   );
 }
 
+// รอบเล่นที่เหลือวันนี้ (ผู้ล็อกอินเท่านั้น): "เหลือ 2/3 รอบ" / "ไม่จำกัดรอบ" / "0/3 · ปลดล็อกใน 5 ชม. 42 น."
+function QuotaTag({ view, className = "" }: { view: QuotaView | null; className?: string }) {
+  if (!view) return null;
+  if (view.kind === "unlimited") {
+    return <p className={`text-xs font-semibold ${MUTED} ${className}`}>ไม่จำกัดรอบ</p>;
+  }
+  if (view.kind === "left") {
+    return (
+      <p className={`text-xs font-bold tabular-nums text-[#17FFA2] ${className}`}>
+        เหลือ {view.remaining}/{view.limit} รอบวันนี้
+      </p>
+    );
+  }
+  return (
+    <p className={`text-xs font-bold tabular-nums text-[#ff2a55] ${className}`}>
+      0/{view.limit} รอบ · {view.msLeft > 0 ? `ปลดล็อกใน ${formatWait(view.msLeft)}` : "กำลังรีเซ็ตรอบ..."}
+    </p>
+  );
+}
+
 function HeartButton({ saved, onToggle, label, size = 44 }: { saved: boolean; onToggle: () => void; label: string; size?: number }) {
   return (
     <button
@@ -432,11 +453,24 @@ function useCountUp(target: number, run: boolean, ms: number, onDone: () => void
 /*  GAME DETAIL                                                        */
 /* ------------------------------------------------------------------ */
 
-function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null; saved: boolean; onToggleSave: () => void; onClose: () => void }) {
+function GameDetail({
+  game,
+  saved,
+  quota,
+  onToggleSave,
+  onClose,
+}: {
+  game: Game | null;
+  saved: boolean;
+  quota: QuotaView | null;
+  onToggleSave: () => void;
+  onClose: () => void;
+}) {
   useOverlay(!!game, onClose);
   if (!game) return null;
   const soon = game.status === "SOON";
   const playable = !!game.href && !soon;
+  const out = quota?.kind === "out"; // ครบรอบวันนี้แล้ว
   const accent = soon ? "#71717A" : toneHex(game);
   const cover = COVERS[game.id];
   return (
@@ -465,7 +499,7 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
         </div>
       )}
 
-      <div className="relative mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-40 pt-[max(1.5rem,env(safe-area-inset-top))]">
+      <div className="relative mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-44 pt-[max(1.5rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Badge status={game.status} dark />
@@ -535,10 +569,13 @@ function GameDetail({ game, saved, onToggleSave, onClose }: { game: Game | null;
 
       <div className="fixed inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#05080a] from-60% to-transparent px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-12">
         <div className="w-full max-w-sm">
-          {playable ? (
+          {playable && quota && <QuotaTag view={quota} className="mb-3 text-center" />}
+          {playable && !out ? (
             <Button href={game.href} fullWidth>เริ่มเล่น</Button>
           ) : (
-            <Button disabled fullWidth variant="outline">{soon ? "เปิดเร็วๆ นี้" : "เกมกำลังเตรียมพร้อม"}</Button>
+            <Button disabled fullWidth variant="outline">
+              {playable && out ? "ครบรอบวันนี้แล้ว" : soon ? "เปิดเร็วๆ นี้" : "เกมกำลังเตรียมพร้อม"}
+            </Button>
           )}
         </div>
       </div>
@@ -612,6 +649,9 @@ export default function Home() {
 
   // เกมที่ admin ล็อกไว้ (null = ยังโหลดไม่เสร็จ)
   const [locked, setLocked] = useState<string[] | null>(null);
+
+  // รอบเล่นที่เหลือวันนี้ของแต่ละเกม (ผู้ล็อกอินเท่านั้น)
+  const quota = useGameQuota();
 
   const [topUsers, setTopUsers] = useState<RankUser[]>([]);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
@@ -978,6 +1018,8 @@ export default function Home() {
                 const soon = g.status === "SOON";
                 const accent = soon ? "#52525B" : toneHex(g);
                 const cover = COVERS[g.id];
+                const qv = soon ? null : quota.quotaOf(g.id);
+                const out = qv?.kind === "out";
                 return (
                   <Reveal key={g.id} delay={(i % 3) * 110} className="h-full">
                     <article
@@ -1023,10 +1065,11 @@ export default function Home() {
                           <p className={`text-sm ${MUTED}`}>{g.category} · {g.time}</p>
                           <h3 className="mt-1 text-2xl font-bold uppercase tracking-tight">{g.name}</h3>
                           <p className={`mt-2 text-sm leading-6 ${MUTED}`}>{g.desc}</p>
+                          <QuotaTag view={qv} className="mt-3" />
                         </div>
                         <div className="mt-6 flex items-center justify-between gap-3">
-                          <span className={btnClasses(soon ? "outline" : "solid", true)}>
-                            <BtnInner>{soon ? "เปิดเร็วๆ นี้" : "เล่นเกม"}</BtnInner>
+                          <span className={btnClasses(soon || out ? "outline" : "solid", true)}>
+                            <BtnInner>{soon ? "เปิดเร็วๆ นี้" : out ? "ครบรอบวันนี้แล้ว" : "เล่นเกม"}</BtnInner>
                           </span>
                           <HeartButton saved={savedGames.includes(g.id)} onToggle={() => toggleSaveGame(g.id)} label={g.name} />
                         </div>
@@ -1234,7 +1277,13 @@ export default function Home() {
         <div className={`${wrap} pb-[max(2rem,env(safe-area-inset-bottom))] pt-8 text-sm ${MUTED}`}>7 Days 7 Games · มินิเกมสำหรับพักสมอง</div>
       </footer>
 
-      <GameDetail game={detailGame} saved={!!detailGame && savedGames.includes(detailGame.id)} onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)} onClose={() => setGameId(null)} />
+      <GameDetail
+        game={detailGame}
+        saved={!!detailGame && savedGames.includes(detailGame.id)}
+        quota={detailGame ? quota.quotaOf(detailGame.id) : null}
+        onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)}
+        onClose={() => setGameId(null)}
+      />
 
       {/* Component รายการโปรดที่แยกออกมา */}
       <FavoritesSheet

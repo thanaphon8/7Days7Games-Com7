@@ -1,24 +1,58 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
 import { sessionsCollection, userFilter, usersCollection } from "@/lib/admin-db";
+import { getTodayPlaysMap, resetTodayPlays } from "@/lib/game-plays";
 
 export const dynamic = "force-dynamic";
 
 const deny = () => NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
 const SECRET_FIELDS = { password: 0, passwordHash: 0, hash: 0, salt: 0 };
+const GAME_KEY_RE = /^[A-Za-z0-9_]{1,40}$/;
 
+// ผู้ใช้ทุกคน + todayPlays = { gameId: จำนวนรอบที่ใช้ไปในวันนี้ } (วันนับตามรอบรีเซ็ต 06:00 ไทย)
 export async function GET() {
   if (!(await isAdmin())) return deny();
   const col = await usersCollection();
-  const data = await col.find({}, { projection: SECRET_FIELDS }).toArray();
+  const [users, plays] = await Promise.all([
+    col.find({}, { projection: SECRET_FIELDS }).toArray(),
+    getTodayPlaysMap().catch((e) => {
+      console.error("Failed to read today plays:", e);
+      return {} as Record<string, Record<string, number>>;
+    }),
+  ]);
+  const data = users.map((u) => {
+    const username = typeof u.username === "string" ? u.username : "";
+    return { ...u, todayPlays: username ? plays[username] ?? {} : {} };
+  });
   return NextResponse.json({ success: true, data });
 }
 
-// body: { id, name?, gameScores?, banned? }
+// body: { id, name?, gameScores?, banned?, resetPlays?: boolean, resetGameId?: string }
+// resetPlays: true = รีเซ็ตรอบวันนี้ของผู้ใช้ (ใส่ resetGameId เพื่อรีเซ็ตเฉพาะเกมนั้น)
 export async function PATCH(req: Request) {
   if (!(await isAdmin())) return deny();
   const body = await req.json().catch(() => null);
   if (!body?.id) return NextResponse.json({ success: false, error: "missing id" }, { status: 400 });
+
+  const col = await usersCollection();
+
+  // ---- รีเซ็ตรอบเล่นวันนี้ ----
+  if (body.resetPlays === true) {
+    if (body.resetGameId !== undefined && (typeof body.resetGameId !== "string" || !GAME_KEY_RE.test(body.resetGameId))) {
+      return NextResponse.json({ success: false, error: "bad game id" }, { status: 400 });
+    }
+    const u = await col.findOne(userFilter(String(body.id)), { projection: { username: 1 } });
+    if (!u || typeof u.username !== "string" || !u.username) {
+      return NextResponse.json({ success: false, error: "ไม่พบผู้ใช้" }, { status: 404 });
+    }
+    try {
+      const cleared = await resetTodayPlays(u.username, body.resetGameId);
+      return NextResponse.json({ success: true, cleared });
+    } catch (e) {
+      console.error("Failed to reset plays:", e);
+      return NextResponse.json({ success: false, error: "db error" }, { status: 500 });
+    }
+  }
 
   const set: Record<string, unknown> = {};
   // ชื่อที่แสดงของระบบใหม่ = nickname (จำกัด 2-20 ตัวเหมือนหน้าโปรไฟล์)
@@ -48,7 +82,6 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ success: false, error: "nothing to update" }, { status: 400 });
   }
 
-  const col = await usersCollection();
   const r = await col.updateOne(userFilter(String(body.id)), { $set: set });
   return NextResponse.json({ success: r.matchedCount > 0 });
 }
@@ -57,8 +90,8 @@ export async function DELETE(req: Request) {
   if (!(await isAdmin())) return deny();
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ success: false, error: "missing id" }, { status: 400 });
-  const col = await usersCollection();
   const filter = userFilter(id);
+  const col = await usersCollection();
   const u = await col.findOne(filter, { projection: { _id: 1 } });
   if (!u) return NextResponse.json({ success: false });
   const r = await col.deleteOne({ _id: u._id });

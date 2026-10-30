@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "../../../lib/mongodb";
 import { getSessionUser } from "../../../lib/auth";
+import { closeSession } from "../../../lib/game-plays";
 
 // userId ในหน้าเว็บ = username (ตัวพิมพ์เล็ก) ที่เก็บในคอลเลกชัน users
 const MAX_AVATAR = 5 * 1024 * 1024;
@@ -105,8 +106,8 @@ async function uploadAvatar(file: File, username: string): Promise<UploadResult>
   }
 }
 
-const fail = (message: string, status: number) =>
-  NextResponse.json({ success: false, message }, { status });
+const fail = (message: string, status: number, extra: Record<string, unknown> = {}) =>
+  NextResponse.json({ success: false, message, ...extra }, { status });
 
 /* ------------------------------------------------------------------ */
 /*  GET /api/user?userId=xxx  → ผู้ใช้คนเดียว                           */
@@ -183,7 +184,9 @@ export async function GET(req: Request) {
 /*  PATCH /api/user                                                    */
 /*  multipart: userId, name, avatar(ไฟล์), avatarPreset                  */
 /*  JSON: userId, name, avatarPreset, savedEvents, savedGames            */
-/*  JSON (เกม): userId, gameKey, score → บวกสะสมเข้า gameScores + points  */
+/*  JSON (เกม): gameKey, score, sessionId → บวกสะสมเข้า gameScores + points */
+/*    sessionId มาจาก POST /api/game/start ใช้ได้ครั้งเดียวและหมดอายุใน 40 นาที */
+/*    score = 0 ได้ (ปิดรอบโดยไม่เพิ่มแต้ม)                               */
 /* ------------------------------------------------------------------ */
 export async function PATCH(req: Request) {
   try {
@@ -194,6 +197,7 @@ export async function PATCH(req: Request) {
     let savedGamesRaw: unknown;
     let gameKeyRaw: unknown;
     let scoreRaw: unknown;
+    let sessionIdRaw: unknown;
     let avatar: File | null = null;
 
     const ct = req.headers.get("content-type") ?? "";
@@ -213,6 +217,7 @@ export async function PATCH(req: Request) {
       savedGamesRaw = body.savedGames;
       gameKeyRaw = body.gameKey;
       scoreRaw = body.score;
+      sessionIdRaw = body.sessionId;
     }
 
     // แก้ได้เฉพาะบัญชีของตัวเอง: ใช้ username จาก session เท่านั้น
@@ -224,6 +229,7 @@ export async function PATCH(req: Request) {
 
     const $set: Record<string, unknown> = {};
     const $inc: Record<string, number> = {};
+    let gameSubmit = false;
 
     // ---- บันทึกแต้มเกม (บวกสะสมทุกรอบ) ----
     if (gameKeyRaw !== undefined || scoreRaw !== undefined) {
@@ -232,11 +238,18 @@ export async function PATCH(req: Request) {
       if (typeof gameKeyRaw !== "string" || !GAME_KEY_RE.test(gameKeyRaw)) {
         return fail("ชื่อเกมไม่ถูกต้อง", 400);
       }
-      if (!Number.isFinite(score) || score <= 0 || score > MAX_SCORE_PER_ROUND) {
+      if (!Number.isFinite(score) || score < 0 || score > MAX_SCORE_PER_ROUND) {
         return fail("แต้มไม่ถูกต้อง", 400);
       }
-      $inc[`gameScores.${gameKeyRaw}`] = score;
-      $inc.points = score;
+      // ต้องมี session ของรอบที่เริ่มไว้ ยังไม่ถูกใช้ และยังไม่หมดอายุ ไม่งั้นไม่ได้แต้ม
+      if (!(await closeSession(sessionIdRaw, username, gameKeyRaw))) {
+        return fail("รอบเล่นนี้ไม่ถูกต้อง หมดอายุ หรือถูกใช้ไปแล้ว", 409, { code: "bad_session" });
+      }
+      gameSubmit = true;
+      if (score > 0) {
+        $inc[`gameScores.${gameKeyRaw}`] = score;
+        $inc.points = score;
+      }
     }
 
     if (typeof nameRaw === "string") {
@@ -281,10 +294,18 @@ export async function PATCH(req: Request) {
     const update: Record<string, unknown> = {};
     if (Object.keys($set).length) update.$set = $set;
     if (Object.keys($inc).length) update.$inc = $inc;
-    if (Object.keys(update).length === 0) return fail("ไม่มีข้อมูลที่ต้องแก้", 400);
 
     const db = await getDb();
     const users = db.collection<UserDoc>("users");
+
+    if (Object.keys(update).length === 0) {
+      // ส่งแต้มรอบที่ได้ 0 แต้ม: ปิด session ไปแล้ว ไม่มีอะไรต้องเขียน
+      if (!gameSubmit) return fail("ไม่มีข้อมูลที่ต้องแก้", 400);
+      const cur = await users.findOne({ username }, { projection: { passwordHash: 0 } });
+      if (!cur) return fail("ไม่พบผู้ใช้", 404);
+      return NextResponse.json({ success: true, data: toPublic(cur) });
+    }
+
     const r = await users.updateOne({ username }, update);
     if (r.matchedCount === 0) return fail("ไม่พบผู้ใช้", 404);
     const u = await users.findOne({ username }, { projection: { passwordHash: 0 } });

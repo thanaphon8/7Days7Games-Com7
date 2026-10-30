@@ -18,6 +18,7 @@ const GAME_NAMES: Record<string, string> = {
 const gameName = (k: string) => GAME_NAMES[k] ?? k;
 const PAGE_SIZE = 20;
 const MUTED = "text-[#8fa6a1]";
+const MAX_LIMIT = 100; // ต้องตรงกับ MAX_GAME_LIMIT ใน lib/game-locks.ts
 
 /* ---------------- types ---------------- */
 
@@ -35,6 +36,7 @@ type RawUser = {
   avatar?: string;
   points?: number;
   gameScores?: Record<string, number>;
+  todayPlays?: Record<string, number>;
   savedEvents?: string[];
   savedGames?: string[];
   banned?: boolean;
@@ -48,6 +50,7 @@ type Row = {
   email: string;
   avatar: string;
   scores: Record<string, number>;
+  todayPlays: Record<string, number>;
   games: number;
   total: number;
   banned: boolean;
@@ -72,6 +75,11 @@ function toRow(u: RawUser): Row {
       if (k !== "dailyMission") games += 1;
     }
   }
+  const todayPlays: Record<string, number> = {};
+  for (const [k, v] of Object.entries(u.todayPlays || {})) {
+    const n = Number(v) || 0;
+    if (n > 0) todayPlays[k] = n;
+  }
   // แต้มรวม: ใช้ points ถ้ามี ไม่งั้นใช้ผลรวมรายเกม (ตรงกับ /api/user และหน้า rank)
   const total = typeof u.points === "number" && u.points > 0 ? u.points : sum;
   return {
@@ -80,6 +88,7 @@ function toRow(u: RawUser): Row {
     email: u.email || u.employeeId || "",
     avatar: u.avatarUrl || u.avatarPreset || u.avatarId || u.avatar || "",
     scores,
+    todayPlays,
     games,
     total,
     banned: !!u.banned,
@@ -225,6 +234,8 @@ function UserModal({
   onChanged: () => void;
 }) {
   const keys = useMemo(() => Array.from(new Set([...Object.keys(GAME_NAMES), ...Object.keys(row.scores)])), [row]);
+  // เกมที่นับรอบเล่นต่อวัน (ไม่รวมภารกิจรายวัน)
+  const playKeys = useMemo(() => Object.keys(GAME_NAMES).filter((k) => k !== "dailyMission"), []);
   const [name, setName] = useState(row.name === "(ไม่มีชื่อ)" ? "" : row.name);
   const [scores, setScores] = useState<Record<string, string>>(() =>
     Object.fromEntries(keys.map((k) => [k, String(row.scores[k] ?? 0)]))
@@ -239,6 +250,7 @@ function UserModal({
   }, [onClose]);
 
   const newTotal = keys.reduce((s, k) => s + Math.max(0, Number(scores[k]) || 0), 0);
+  const playedToday = playKeys.reduce((s, k) => s + (row.todayPlays[k] ?? 0), 0);
 
   async function patch(body: Record<string, unknown>, ok: string) {
     setBusy(true);
@@ -325,6 +337,43 @@ function UserModal({
           รวมหลังแก้: <span className="font-bold tabular-nums text-[#17FFA2]">{fmtNum(newTotal)}</span>
         </p>
 
+        {/* รอบที่เล่นวันนี้ (รีเซ็ตทุก 06:00 เวลาไทย) */}
+        <div className="mt-6 flex flex-wrap items-end justify-between gap-2">
+          <p className={`text-sm ${MUTED}`}>รอบที่เล่นวันนี้ (รีเซ็ตทุก 06:00)</p>
+          <button
+            disabled={busy || playedToday === 0}
+            className={btnGhost}
+            onClick={() => {
+              if (!confirm(`รีเซ็ตรอบเล่นวันนี้ทุกเกมของ "${row.name}"?`)) return;
+              patch({ resetPlays: true }, "รีเซ็ตรอบวันนี้แล้ว");
+            }}
+          >
+            รีเซ็ตทุกเกม
+          </button>
+        </div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {playKeys.map((k) => {
+            const n = row.todayPlays[k] ?? 0;
+            return (
+              <div key={k} className="flex items-center justify-between gap-3 border border-white/10 bg-[#05080a] px-3 py-2">
+                <span className="truncate text-sm">{gameName(k)}</span>
+                <span className="flex items-center gap-2">
+                  <span className={`text-sm tabular-nums ${n > 0 ? "font-bold text-[#17FFA2]" : MUTED}`}>{n} รอบ</span>
+                  {n > 0 && (
+                    <button
+                      disabled={busy}
+                      className="border border-[#17FFA2]/40 px-2 py-1 text-xs font-bold hover:bg-[#17FFA2] hover:text-[#04110a] disabled:opacity-40"
+                      onClick={() => patch({ resetPlays: true, resetGameId: k }, `รีเซ็ตรอบ ${gameName(k)} แล้ว`)}
+                    >
+                      รีเซ็ต
+                    </button>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
         {msg && <p className="mt-3 text-sm text-[#17FFA2]">{msg}</p>}
 
         <div className="mt-6 flex flex-wrap gap-2">
@@ -363,13 +412,16 @@ function UserModal({
   );
 }
 
-/* ---------------- game locks ---------------- */
+/* ---------------- game locks + limits ---------------- */
 
 function GameLocks({ onUnauthorized }: { onUnauthorized: () => void }) {
   const ids = useMemo(() => Object.keys(GAME_NAMES).filter((k) => k !== "dailyMission"), []);
   const [locked, setLocked] = useState<string[]>([]);
+  const [limits, setLimits] = useState<Record<string, number>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -378,14 +430,18 @@ function GameLocks({ onUnauthorized }: { onUnauthorized: () => void }) {
         const res = await fetch("/api/admin/games", { cache: "no-store" });
         if (res.status === 401) return onUnauthorized();
         const r = await res.json();
-        if (r.success && Array.isArray(r.locked)) setLocked(r.locked);
-        else setError("โหลดสถานะล็อกไม่สำเร็จ");
+        if (r.success && Array.isArray(r.locked)) {
+          setLocked(r.locked);
+          const lim: Record<string, number> = r.limits && typeof r.limits === "object" ? r.limits : {};
+          setLimits(lim);
+          setDrafts(Object.fromEntries(ids.map((id) => [id, String(lim[id] ?? 0)])));
+        } else setError("โหลดสถานะล็อกไม่สำเร็จ");
       } catch {
         setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
       }
       setLoading(false);
     })();
-  }, [onUnauthorized]);
+  }, [onUnauthorized, ids]);
 
   async function toggle(id: string) {
     const next = !locked.includes(id);
@@ -408,40 +464,100 @@ function GameLocks({ onUnauthorized }: { onUnauthorized: () => void }) {
     setBusyId(null);
   }
 
+  async function saveLimit(id: string) {
+    const raw = (drafts[id] ?? "").trim();
+    const n = Number(raw);
+    if (raw === "" || !Number.isInteger(n) || n < 0 || n > MAX_LIMIT) {
+      setError(`ลิมิตต้องเป็นจำนวนเต็ม 0-${MAX_LIMIT} (0 = ไม่จำกัด)`);
+      return;
+    }
+    setSavingId(id);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/games", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, limit: n }),
+      });
+      if (res.status === 401) return onUnauthorized();
+      const r = await res.json().catch(() => null);
+      if (res.ok && r?.success && r.limits && typeof r.limits === "object") {
+        setLimits(r.limits);
+        setDrafts((d) => ({ ...d, [id]: String(r.limits[id] ?? 0) }));
+      } else setError(r?.error || "บันทึกลิมิตไม่สำเร็จ");
+    } catch {
+      setError("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+    }
+    setSavingId(null);
+  }
+
   return (
     <>
       <div className="mt-12 flex flex-wrap items-end justify-between gap-2">
-        <h2 className="text-xl font-bold uppercase tracking-tight">ล็อกเกม</h2>
+        <h2 className="text-xl font-bold uppercase tracking-tight">ล็อกเกม / จำกัดรอบเล่น</h2>
         <span className={`text-sm ${MUTED}`}>
           {loading ? "กำลังโหลด..." : `ล็อกอยู่ ${locked.length} / ${ids.length} เกม`}
         </span>
       </div>
       <p className={`mt-1 text-sm ${MUTED}`}>เกมที่ล็อกจะแสดงเป็นรูปกุญแจ ไม่โชว์ปกและชื่อ และผู้เล่นเข้าเล่นไม่ได้</p>
+      <p className={`mt-1 text-sm ${MUTED}`}>
+        จำกัดรอบเล่นต่อคนต่อวัน (0 = ไม่จำกัด) รีเซ็ตทุก 06:00 เวลาไทย กดเริ่มเล่นแล้วนับ 1 รอบทันที ออกจากเกมหรือรีเฟรชกลางทางจะเสียรอบและไม่ได้แต้ม
+      </p>
       {error && <p className="mt-3 border border-[#ff2a55]/60 bg-[#ff2a55]/10 p-3 text-sm">{error}</p>}
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ids.map((id) => {
           const isLocked = locked.includes(id);
+          const saved = limits[id] ?? 0;
+          const draft = drafts[id] ?? "0";
+          const dirty = String(saved) !== draft.trim();
           return (
             <div
               key={id}
-              className={`flex items-center justify-between gap-3 border p-4 ${
+              className={`flex flex-col gap-3 border p-4 ${
                 isLocked ? "border-[#ff2a55]/60 bg-[#ff2a55]/10" : "border-white/10 bg-[#0a1014]/90"
               }`}
             >
-              <div className="min-w-0">
-                <p className="truncate font-semibold">{gameName(id)}</p>
-                <p className={`mt-0.5 text-xs ${isLocked ? "text-[#ff2a55]" : "text-[#17FFA2]"}`}>
-                  {isLocked ? "🔒 ล็อกอยู่" : "เปิดให้เล่น"}
-                </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{gameName(id)}</p>
+                  <p className={`mt-0.5 text-xs ${isLocked ? "text-[#ff2a55]" : "text-[#17FFA2]"}`}>
+                    {isLocked ? "🔒 ล็อกอยู่" : "เปิดให้เล่น"}
+                  </p>
+                </div>
+                <button
+                  disabled={loading || busyId === id}
+                  aria-pressed={isLocked}
+                  onClick={() => toggle(id)}
+                  className={isLocked ? btnSolid : btnDanger}
+                >
+                  {busyId === id ? "..." : isLocked ? "ปลดล็อก" : "ล็อก"}
+                </button>
               </div>
-              <button
-                disabled={loading || busyId === id}
-                aria-pressed={isLocked}
-                onClick={() => toggle(id)}
-                className={isLocked ? btnSolid : btnDanger}
-              >
-                {busyId === id ? "..." : isLocked ? "ปลดล็อก" : "ล็อก"}
-              </button>
+
+              <div className="flex items-center gap-2 border-t border-white/10 pt-3">
+                <label htmlFor={`limit-${id}`} className={`text-xs ${MUTED}`}>
+                  รอบ/วัน
+                </label>
+                <input
+                  id={`limit-${id}`}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={MAX_LIMIT}
+                  step={1}
+                  disabled={loading}
+                  value={draft}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [id]: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && dirty && saveLimit(id)}
+                  className="w-20 border border-white/15 bg-transparent px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:border-[#17FFA2]"
+                />
+                <span className={`min-w-0 flex-1 truncate text-xs ${saved === 0 ? MUTED : "text-[#17FFA2]"}`}>
+                  {saved === 0 ? "ไม่จำกัด" : `จำกัด ${saved} ครั้ง`}
+                </span>
+                <button disabled={loading || !dirty || savingId === id} onClick={() => saveLimit(id)} className={btnGhost}>
+                  {savingId === id ? "..." : "บันทึก"}
+                </button>
+              </div>
             </div>
           );
         })}

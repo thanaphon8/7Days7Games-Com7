@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useGameRound } from "@/lib/useGameRound";
 
 const GAME_ID = "thinkfast";
 const TOTAL = 10; // จำนวนข้อต่อรอบ
@@ -13,6 +14,7 @@ const STAR_AT = [4, 7, 9]; // คะแนนที่ต้องได้ 1 / 
 type Raw = { tag: string; q: string; options: string[]; explain: string }; // options[0] คือคำตอบที่ถูก
 type Question = { tag: string; q: string; options: string[]; answer: number; explain: string };
 type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number; praise: string };
+type Quota = { authed: boolean; limit: number; remaining: number | null };
 
 // ===== คลังคำถามกวนๆ (ตัวเลือกแรกของแต่ละข้อคือคำตอบที่ถูก ระบบจะสลับลำดับให้เอง) =====
 const BANK: Raw[] = [
@@ -57,7 +59,7 @@ const BANK: Raw[] = [
 
 type Player = { id: string; name: string };
 
-// อ่านบัญชีที่ล็อกอินอยู่ ณ ตอนนี้ (ใช้ตอนกดเริ่มเล่น เพื่อจดว่าใครคือคนเล่นรอบนี้)
+// อ่านบัญชีที่ล็อกอินอยู่ ณ ตอนนี้ (ใช้แสดงชื่อและจดแต้ม +N ให้ Navbar)
 function getStoredPlayer(): Player | null {
   try {
     const v = localStorage.getItem("profile");
@@ -105,6 +107,15 @@ function rating(correct: number) {
   if (correct >= 7) return "ฉลาดแกมกวน";
   if (correct >= 4) return "โดนหลอกพอประมาณ";
   return "โดนหลอกจนหมดตัว";
+}
+
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
 }
 
 // ===== พื้นหลังลอยๆ (ตำแหน่งตายตัว กัน hydration mismatch) =====
@@ -194,14 +205,40 @@ export default function ThinkFastPage() {
   const [saveErr, setSaveErr] = useState("");
   const [gameTotal, setGameTotal] = useState<number | null>(null); // แต้มสะสมของเกมนี้ทั้งหมด
   const savedRound = useRef(false); // กันบันทึกซ้ำในรอบเดียว (แต้มสะสมถ้าบันทึกซ้ำจะบวกเบิ้ล)
-  const [player, setPlayer] = useState<Player | null>(null); // บัญชีที่เริ่มเล่นรอบนี้
+  const [player, setPlayer] = useState<Player | null>(null); // บัญชีที่เริ่มเล่นรอบนี้ (null = guest)
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const round = useGameRound(GAME_ID); // หักรอบ + เก็บ sessionId ของรอบนี้
   const [dims, setDims] = useState({ w: 360, h: 640 });
   const [natH, setNatH] = useState(640);
   const sumRef = useRef<HTMLDivElement>(null);
   const explRef = useRef<HTMLDivElement>(null);
 
-  function start() {
-    setPlayer(getStoredPlayer()); // จดบัญชีตอนเริ่มเล่น ไม่ไปอ่านใหม่ตอนจบเกม
+  // โหลดรอบที่เหลือวันนี้ของเกมนี้
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const g = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (g) setQuota({ authed: !!r.authed, limit: g.limit, remaining: g.remaining });
+    } catch {}
+  }, []);
+
+  // โหลดตอนเข้าหน้า และโหลดใหม่ตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (phase !== "play") loadQuota();
+  }, [phase, loadQuota]);
+
+  async function start() {
+    if (round.starting) return;
+    // หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าไม่สำเร็จจะไม่เริ่มเกม (round.error มีข้อความให้แสดง)
+    const r = await round.start();
+    if (!r.ok) {
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    // guest = ไม่ได้ล็อกอิน เล่นได้แต่ไม่บันทึกแต้ม / ล็อกอินแล้วแต่ไม่มี profile ในเบราว์เซอร์ ให้ id ว่าง
+    setPlayer(r.guest ? null : getStoredPlayer() ?? { id: "", name: "ผู้เล่น" });
     setQs(buildRound());
     setIdx(0);
     setPicked(null);
@@ -291,10 +328,24 @@ export default function ThinkFastPage() {
     if (picked !== null) explRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [picked]);
 
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  useEffect(() => {
+    if (phase !== "play" || !player) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [phase, player]);
+
   // คีย์ลัด: 1-4 เลือกคำตอบ, Enter ไปข้อถัดไป / เริ่มเล่น
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (phase === "intro" && e.key === "Enter") return start();
+      if (phase === "intro" && e.key === "Enter") {
+        if (!blocked) start();
+        return;
+      }
       if (phase !== "play") return;
       if (picked === null && ["1", "2", "3", "4"].includes(e.key)) choose(Number(e.key) - 1);
       else if (picked !== null && e.key === "Enter") next();
@@ -304,7 +355,7 @@ export default function ThinkFastPage() {
   });
 
   // บันทึกแต้มเมื่อจบเกม: แต้มของทุกรอบ "สะสม" บวกเข้าไปเรื่อยๆ
-  // (บันทึกให้บัญชีที่เริ่มเล่น ไม่ใช่บัญชีที่ล็อกอินล่าสุดในเบราว์เซอร์)
+  // เซิร์ฟเวอร์ใช้บัญชีจาก session และรับแต้มเฉพาะรอบที่เปิดไว้ตอนเริ่ม (sessionId ใช้ได้ครั้งเดียว)
   useEffect(() => {
     if (phase !== "end") return;
     if (!player) {
@@ -321,7 +372,7 @@ export default function ThinkFastPage() {
         const res = await fetch("/api/user", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: player.id, gameKey: GAME_ID, score }),
+          body: JSON.stringify({ gameKey: GAME_ID, score, sessionId: round.sessionIdRef.current }),
         });
         const result = await res.json().catch(() => null);
         if (!res.ok || !result?.success) {
@@ -329,7 +380,7 @@ export default function ThinkFastPage() {
         }
         const total = Number(result.data?.gameScores?.[GAME_ID]);
         if (Number.isFinite(total)) setGameTotal(total);
-        if (score > 0) addPendingGain(player.id, score); // ให้ Navbar โชว์ +N เท่ากับแต้มรอบนี้
+        if (score > 0 && player.id) addPendingGain(player.id, score); // ให้ Navbar โชว์ +N เท่ากับแต้มรอบนี้
         setSaveState("saved");
       } catch (err) {
         console.error("Failed to save score:", err);
@@ -341,21 +392,31 @@ export default function ThinkFastPage() {
   }, [phase]);
 
   const q = qs[idx];
+  const playing = phase === "play";
   // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นหน้าแรกจะโหลดคะแนนเก่ามาแสดง
   const lockNav = phase === "end" && (saveState === "idle" || saveState === "saving");
   const lockProps = {
     "aria-disabled": lockNav,
     onClick: (e: MouseEvent) => {
-      if (lockNav) e.preventDefault();
+      if (lockNav) {
+        e.preventDefault();
+        return;
+      }
+      // ออกกลางเกม = เสียรอบและไม่ได้แต้ม (guest ไม่โดน)
+      if (playing && player && !confirm("ออกจากเกมตอนนี้จะเสียรอบเล่นและไม่ได้แต้มรอบนี้ ต้องการออกใช่ไหม?")) {
+        e.preventDefault();
+      }
     },
   };
   const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
   const revealed = picked !== null;
   const isRight = revealed && q && picked === q.answer;
-  const playing = phase === "play";
   const panic = playing && !revealed && timeLeft <= 5;
   const stars = STAR_AT.filter((s) => score >= s).length;
   const avgTime = times.length ? times.reduce((a, b) => a + b, 0) / times.length : 0;
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  const qText = quotaText(quota);
 
   // ===== เลย์เอาต์หน้าสรุป: จอกว้าง = 2 คอลัมน์, มือถือ = คอลัมน์เดียวย่อให้พอดีจอ =====
   const wide = dims.w >= 900 && dims.h >= 560;
@@ -436,8 +497,14 @@ export default function ThinkFastPage() {
         )}
         {saveState === "error" && `บันทึกคะแนนไม่สำเร็จ${saveErr ? `: ${saveErr}` : ""}`}
       </p>
-      <button onClick={start} disabled={lockNav} className={`${BTN_MAIN} mt-3`}>
-        เล่นอีกครั้ง
+      {qText && <p className="mt-1 text-xs font-medium text-zinc-700">{qText}</p>}
+      {round.error && (
+        <p role="alert" className="mt-1 text-xs font-medium text-[#E5484D]">
+          {round.error}
+        </p>
+      )}
+      <button onClick={start} disabled={lockNav || round.starting || blocked} className={`${BTN_MAIN} mt-3`}>
+        {round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : "เล่นอีกครั้ง"}
       </button>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Link href="/rank" className={`${BTN_SUB}${lockCls}`} {...lockProps}>
@@ -591,12 +658,19 @@ export default function ThinkFastPage() {
               <p className="relative mt-5 max-w-md text-base leading-7 opacity-80 sm:text-lg sm:leading-8">
                 {TOTAL} ข้อ คำถามกวนๆ ที่ฟังเผินๆ ง่ายนิดเดียว แต่ตอบเร็วเมื่อไรก็โดนหลอกเมื่อนั้น อ่านดีๆ แล้วลองดูว่าคุณจะรอดกี่ข้อ
               </p>
+              {qText && <p className="relative mt-5 text-sm font-semibold">{qText}</p>}
               <button
                 onClick={start}
-                className="relative mt-8 h-14 w-full rounded-full bg-[#4A2412] px-8 text-base font-medium text-white transition-opacity hover:opacity-85 sm:w-auto"
+                disabled={round.starting || blocked}
+                className="relative mt-4 h-14 w-full rounded-full bg-[#4A2412] px-8 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
-                เริ่มเล่น
+                {round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : "เริ่มเล่น"}
               </button>
+              {round.error && (
+                <p role="alert" className="relative mt-3 text-sm font-semibold">
+                  {round.error}
+                </p>
+              )}
             </section>
 
             <section className="rounded-[2rem] bg-zinc-50 p-6 sm:p-8">
@@ -610,6 +684,8 @@ export default function ThinkFastPage() {
                   "ตอบผิดหรือหมดเวลาไม่ได้คะแนน แต่จะเฉลยให้ทุกข้อ",
                   "กดปุ่ม 1–4 บนคีย์บอร์ดเพื่อเลือกคำตอบ และกด Enter เพื่อไปข้อถัดไป",
                   "คะแนนของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
+                  ...(quota?.authed && quota.limit > 0 ? [`เล่นได้วันละ ${quota.limit} รอบ รีเซ็ตทุก 06:00 น. เวลาประเทศไทย`] : []),
+                  "กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม",
                 ].map((r) => (
                   <li key={r} className="flex gap-3 text-base leading-7 text-zinc-600">
                     <span className="mt-2.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#F4A58A]" />

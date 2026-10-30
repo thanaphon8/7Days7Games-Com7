@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useGameRound } from "@/lib/useGameRound";
 
 const GAME_ID = "com7quiz";
 const TIME_PER_Q = 15; // วินาทีต่อข้อ
@@ -18,6 +19,7 @@ const MUTED = "text-[#8fa6a1]";
 type Raw = { tag: string; q: string; options: string[]; explain: string }; // options[0] คือคำตอบที่ถูก
 type Question = { tag: string; q: string; options: string[]; answer: number; explain: string };
 type Fx = { id: number; kind: "win" | "lose" | "timeout"; gain: number; praise: string };
+type Quota = { authed: boolean; limit: number; remaining: number | null };
 
 // ===== คำถามเกี่ยวกับบริษัท COM7 (ตัวเลือกแรกของแต่ละข้อคือคำตอบที่ถูก ระบบจะสลับลำดับให้เอง) =====
 // ที่มา: ควิซ "รู้จัก COM7 แค่ไหน?" (COM7 E-SPORT FUN DAY) ข้อมูลอ้างอิงจาก comseven.com
@@ -43,7 +45,7 @@ const TOTAL = BANK.length; // 15 ข้อ ออกครบทุกข้อ�
 
 type Player = { id: string; name: string };
 
-// อ่านบัญชีที่ล็อกอินอยู่ ณ ตอนนี้ (ใช้ตอนกดเริ่มเล่น เพื่อจดว่าใครคือคนเล่นรอบนี้)
+// อ่านบัญชีที่ล็อกอินอยู่ ณ ตอนนี้ (ใช้แสดงชื่อและจดแต้ม +N ให้ Navbar)
 function getStoredPlayer(): Player | null {
   try {
     const v = localStorage.getItem("profile");
@@ -91,6 +93,15 @@ function rating(correct: number) {
   if (correct >= 10) return "รู้จัก COM7 ดีเยี่ยม";
   if (correct >= 6) return "เริ่มคุ้นเคยกับ COM7";
   return "ต้องไปเดินดูร้าน COM7 เพิ่มแล้ว";
+}
+
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
 }
 
 // ทำให้คำว่า "ไม่ใช่" ในโจทย์เด่นขึ้น กันอ่านพลาด
@@ -189,10 +200,36 @@ export default function Com7QuizPage() {
   const [gameTotal, setGameTotal] = useState<number | null>(null); // แต้มสะสมของเกมนี้ทั้งหมด
   const savedRound = useRef(false); // กันบันทึกซ้ำในรอบเดียว (แต้มสะสมถ้าบันทึกซ้ำจะบวกเบิ้ล)
   const explainRef = useRef<HTMLDivElement>(null);
-  const [player, setPlayer] = useState<Player | null>(null); // บัญชีที่เริ่มเล่นรอบนี้
+  const [player, setPlayer] = useState<Player | null>(null); // บัญชีที่เริ่มเล่นรอบนี้ (null = guest)
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const round = useGameRound(GAME_ID); // หักรอบ + เก็บ sessionId ของรอบนี้
 
-  function start() {
-    setPlayer(getStoredPlayer()); // จดบัญชีตอนเริ่มเล่น ไม่ไปอ่านใหม่ตอนจบเกม
+  // โหลดรอบที่เหลือวันนี้ของเกมนี้
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const g = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (g) setQuota({ authed: !!r.authed, limit: g.limit, remaining: g.remaining });
+    } catch {}
+  }, []);
+
+  // โหลดตอนเข้าหน้า และโหลดใหม่ตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (phase !== "play") loadQuota();
+  }, [phase, loadQuota]);
+
+  async function start() {
+    if (round.starting) return;
+    // หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าไม่สำเร็จจะไม่เริ่มเกม (round.error มีข้อความให้แสดง)
+    const r = await round.start();
+    if (!r.ok) {
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    // guest = ไม่ได้ล็อกอิน เล่นได้แต่ไม่บันทึกแต้ม / ล็อกอินแล้วแต่ไม่มี profile ในเบราว์เซอร์ ให้ id ว่าง
+    setPlayer(r.guest ? null : getStoredPlayer() ?? { id: "", name: "ผู้เล่น" });
     setQs(buildRound());
     setIdx(0);
     setPicked(null);
@@ -265,12 +302,24 @@ export default function Com7QuizPage() {
     if (picked !== null) explainRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [picked]);
 
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  useEffect(() => {
+    if (phase !== "play" || !player) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [phase, player]);
+
   // คีย์ลัด: 1-4 เลือกคำตอบ, Enter ไปข้อถัดไป / เริ่มเล่น
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (phase === "intro" && e.key === "Enter") {
         e.preventDefault();
-        return start();
+        if (!blocked) start();
+        return;
       }
       if (phase !== "play") return;
       if (picked === null && ["1", "2", "3", "4"].includes(e.key)) choose(Number(e.key) - 1);
@@ -284,7 +333,7 @@ export default function Com7QuizPage() {
   });
 
   // บันทึกแต้มเมื่อจบเกม: แต้มของทุกรอบ "สะสม" บวกเข้าไปเรื่อยๆ
-  // (บันทึกให้บัญชีที่เริ่มเล่น ไม่ใช่บัญชีที่ล็อกอินล่าสุดในเบราว์เซอร์)
+  // เซิร์ฟเวอร์ใช้บัญชีจาก session และรับแต้มเฉพาะรอบที่เปิดไว้ตอนเริ่ม (sessionId ใช้ได้ครั้งเดียว)
   useEffect(() => {
     if (phase !== "end") return;
     if (!player) {
@@ -301,7 +350,7 @@ export default function Com7QuizPage() {
         const res = await fetch("/api/user", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: player.id, gameKey: GAME_ID, score }),
+          body: JSON.stringify({ gameKey: GAME_ID, score, sessionId: round.sessionIdRef.current }),
         });
         const result = await res.json().catch(() => null);
         if (!res.ok || !result?.success) {
@@ -310,7 +359,7 @@ export default function Com7QuizPage() {
         // แต้มสะสมของเกมนี้หลังบวกแล้ว (API ส่งเอกสารผู้ใช้ที่อัปเดตแล้วกลับมา)
         const total = Number(result.data?.gameScores?.[GAME_ID]);
         if (Number.isFinite(total)) setGameTotal(total);
-        if (score > 0) addPendingGain(player.id, score); // ให้ Navbar โชว์ +N เท่ากับแต้มรอบนี้
+        if (score > 0 && player.id) addPendingGain(player.id, score); // ให้ Navbar โชว์ +N เท่ากับแต้มรอบนี้
         setSaveState("saved");
       } catch (err) {
         console.error("Failed to save score:", err);
@@ -322,20 +371,30 @@ export default function Com7QuizPage() {
   }, [phase]);
 
   const q = qs[idx];
+  const playing = phase === "play";
   // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นหน้าแรกจะโหลดคะแนนเก่ามาแสดง
   const lockNav = phase === "end" && (saveState === "idle" || saveState === "saving");
   const lockProps = {
     "aria-disabled": lockNav,
     onClick: (e: MouseEvent) => {
-      if (lockNav) e.preventDefault();
+      if (lockNav) {
+        e.preventDefault();
+        return;
+      }
+      // ออกกลางเกม = เสียรอบและไม่ได้แต้ม (guest ไม่โดน)
+      if (playing && player && !confirm("ออกจากเกมตอนนี้จะเสียรอบเล่นและไม่ได้แต้มรอบนี้ ต้องการออกใช่ไหม?")) {
+        e.preventDefault();
+      }
     },
   };
   const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
   const revealed = picked !== null;
   const isRight = revealed && q && picked === q.answer;
-  const playing = phase === "play";
   const panic = playing && !revealed && timeLeft <= 5;
   const avgTime = times.length ? times.reduce((a, b) => a + b, 0) / times.length : 0;
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  const qText = quotaText(quota);
 
   return (
     <div className="relative isolate flex min-h-[100dvh] flex-col items-center overflow-x-clip bg-[#05080a] bg-[linear-gradient(rgba(23,255,162,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(23,255,162,0.045)_1px,transparent_1px)] bg-[size:56px_56px] font-sans text-white">
@@ -514,10 +573,20 @@ export default function Com7QuizPage() {
               <p className="relative mt-5 max-w-md text-base font-medium leading-7 opacity-85 sm:text-lg sm:leading-8">
                 {TOTAL} ข้อ คำถามเกี่ยวกับบริษัทของเรา ตั้งแต่ร้านแรกจนถึงธุรกิจใหม่ ตอบให้ไวและแม่น แล้วดูว่าคุณเลือดเขียวแค่ไหน
               </p>
-              <button onClick={start} className="btn-fx relative mt-8 inline-flex h-14 items-center overflow-hidden bg-[#04110a] px-9 text-base font-bold uppercase tracking-wider text-[#17FFA2] transition-all hover:bg-black hover:shadow-[0_0_30px_rgba(0,0,0,.5)] active:scale-95">
+              {qText && <p className="relative mt-5 text-sm font-bold">{qText}</p>}
+              <button
+                onClick={start}
+                disabled={round.starting || blocked}
+                className="btn-fx relative mt-4 inline-flex h-14 items-center overflow-hidden bg-[#04110a] px-9 text-base font-bold uppercase tracking-wider text-[#17FFA2] transition-all hover:bg-black hover:shadow-[0_0_30px_rgba(0,0,0,.5)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 <span className="btn-shine" aria-hidden="true" />
-                <span className="relative">เริ่มเล่น</span>
+                <span className="relative">{round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : "เริ่มเล่น"}</span>
               </button>
+              {round.error && (
+                <p role="alert" className="relative mt-3 text-sm font-bold">
+                  {round.error}
+                </p>
+              )}
             </section>
 
             <section className="mt-4 grid grid-cols-3 gap-3">
@@ -544,6 +613,8 @@ export default function Com7QuizPage() {
                   "ตอบผิดหรือหมดเวลาไม่ได้คะแนน แต่จะเฉลยให้ทุกข้อ",
                   "กดปุ่ม 1–4 บนคีย์บอร์ดเพื่อเลือกคำตอบ และกด Enter เพื่อไปข้อถัดไป",
                   "คะแนนของทุกรอบที่เล่นจบจะสะสมเข้าคะแนนรวมของคุณ ยิ่งเล่นยิ่งเพิ่ม",
+                  ...(quota?.authed && quota.limit > 0 ? [`เล่นได้วันละ ${quota.limit} รอบ รีเซ็ตทุก 06:00 น. เวลาประเทศไทย`] : []),
+                  "กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม",
                 ].map((r) => (
                   <li key={r} className="flex gap-3 text-base leading-7 text-white/75">
                     <span className="mt-2.5 h-2.5 w-2.5 shrink-0 rotate-45 bg-[#17FFA2]" />
@@ -735,11 +806,17 @@ export default function Com7QuizPage() {
               )}
               {saveState === "error" && `บันทึกคะแนนไม่สำเร็จ${saveErr ? `: ${saveErr}` : ""}`}
             </p>
+            {qText && <p className="mt-1 text-center text-sm font-bold text-[#17FFA2]">{qText}</p>}
+            {round.error && (
+              <p role="alert" className="mt-2 text-center text-sm font-bold text-[#ff6b86]">
+                {round.error}
+              </p>
+            )}
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-center">
-              <button onClick={start} disabled={lockNav} className={`btn-fx col-span-2 ${btnSolid}`}>
+              <button onClick={start} disabled={lockNav || round.starting || blocked} className={`btn-fx col-span-2 ${btnSolid}`}>
                 <span className="btn-shine" aria-hidden="true" />
-                <span className="relative">เล่นอีกครั้ง</span>
+                <span className="relative">{round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : "เล่นอีกครั้ง"}</span>
               </button>
               <Link href="/rank" className={`btn-fx ${btnOutline}${lockCls}`} {...lockProps}>
                 <span className="btn-shine" aria-hidden="true" />
