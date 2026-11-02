@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useGameRound } from "@/lib/useGameRound";
 
 /* =========================================================
    Basketball — ฟิสิกส์ 3 มิติ (หน่วยเมตร) วาดลง canvas ด้วยกล้อง perspective
@@ -144,8 +145,19 @@ type Game = {
   particles: Particle[]; pops: Pop[]; pts: Pt[];
   liveSx: number; liveSy: number; gaugeV: number; gaugeA: number; hint: string; hintT: number; lastSec: number;
 };
-type Phase = "ready" | "playing" | "over";
+// menu = หน้าก่อนเริ่ม (ยังไม่หักรอบ), ready = กำลังขึ้น READY/GO (หักรอบแล้ว), playing = กำลังเล่น, over = จบเกม
+type Phase = "menu" | "ready" | "playing" | "over";
 type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
+type Quota = { authed: boolean; limit: number; remaining: number | null };
+
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
+}
 
 // ===== เมทริกซ์หมุนลูกบอล =====
 function spinR(R: number[], wx: number, wy: number, wz: number, dt: number) {
@@ -782,12 +794,14 @@ function FireText({ text, size }: { text: string; size: string }) {
 }
 
 const BTN_MAIN =
-  "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85";
+  "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50";
 const BTN_SUB =
   "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] text-sm font-medium transition-colors hover:bg-black/[.04]";
 // ปุ่มกลมลอยบนจอเกม (โหมดเต็มจอบนมือถือ)
 const BTN_ROUND =
   "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-lg shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
+
+const LEAVE_MSG = "ออกจากเกมตอนนี้จะเสียรอบเล่นและไม่ได้แต้มรอบนี้ ต้องการออกใช่ไหม?";
 
 /* =========================================================
    หน้าเกม
@@ -796,19 +810,42 @@ export default function BasketballPage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gRef = useRef<Game>(newGame());
-  const phaseRef = useRef<Phase>("ready");
+  const phaseRef = useRef<Phase>("menu");
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
 
   const [dims, setDims] = useState({ w: 360, h: 640 });
-  const [intro, setIntro] = useState<"ready" | "go" | null>("ready");
+  const [intro, setIntro] = useState<"ready" | "go" | null>(null);
   const introTimers = useRef<number[]>([]);
-  const [phase, setPhase] = useState<Phase>("ready");
+  const [phase, setPhase] = useState<Phase>("menu");
   const [timeLeft, setTimeLeft] = useState(DURATION);
   const [hud, setHud] = useState({ score: 0, streak: 0, made: 0, shots: 0, best: 0, level: 1, swishes: 0 });
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [isMuted, setIsMuted] = useState(false);
   const [record, setRecord] = useState(0);
   const [newRecord, setNewRecord] = useState(false);
+
+  // ===== รอบเล่นต่อวัน =====
+  const round = useGameRound(GAME_ID); // หักรอบที่เซิร์ฟเวอร์ + เก็บ sessionId ของรอบนี้
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const [guest, setGuest] = useState(true); // true = ไม่ได้ล็อกอิน (เล่นได้ ไม่นับรอบ ไม่บันทึกแต้ม)
+  const guestRef = useRef(true);
+  const beginRef = useRef<() => void>(() => {});
+  const blockedRef = useRef(false);
+
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const g = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (g) setQuota({ authed: !!r.authed, limit: g.limit, remaining: g.remaining });
+    } catch {}
+  }, []);
+
+  // โหลดรอบที่เหลือตอนอยู่หน้าก่อนเริ่ม และตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (phase === "menu" || phase === "over") loadQuota();
+  }, [phase, loadQuota]);
 
   // โหลดค่าที่จำไว้
   useEffect(() => {
@@ -828,24 +865,17 @@ export default function BasketballPage() {
   }
 
   // ===== บันทึกคะแนนรอบนี้ (บวกเข้าคะแนนสะสมฝั่ง API ด้วย $inc) =====
+  // เซิร์ฟเวอร์ใช้บัญชีจาก session และรับแต้มเฉพาะรอบที่เปิดไว้ตอนเริ่ม (sessionId ใช้ได้ครั้งเดียว)
+  // ส่งทุกรอบแม้ได้ 0 แต้ม เพื่อปิด session ของรอบนั้น
   async function saveScore(score: number) {
-    if (score <= 0) return;
-    let userId: string | null = null;
-    try {
-      const raw = localStorage.getItem("profile");
-      if (raw) {
-        const p = JSON.parse(raw);
-        userId = p.userId || p.id || p._id || null;
-      }
-    } catch {}
-    if (!userId) { setSaveState("guest"); return; }
+    if (guestRef.current) { setSaveState("guest"); return; }
     setSaveState("saving");
     try {
       // API ใช้ $inc อยู่แล้ว จึงส่งเฉพาะแต้มของรอบนี้ ห้ามส่งยอดรวมไป ไม่งั้นจะถูกบวกซ้ำ
       const res = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, gameKey: GAME_ID, score }),
+        body: JSON.stringify({ gameKey: GAME_ID, score, sessionId: round.sessionIdRef.current }),
       });
       const result = await res.json().catch(() => null);
       setSaveState(res.ok && result?.success ? "saved" : "error");
@@ -854,11 +884,19 @@ export default function BasketballPage() {
     }
   }
 
-  // เริ่มรอบใหม่: แสดง READY → GO!!! แล้วเริ่มจับเวลา
-  function beginRound() {
+  // เริ่มรอบใหม่: หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าสำเร็จจึงแสดง READY → GO!!! แล้วเริ่มจับเวลา
+  async function beginRound() {
+    audio(); // ปลดล็อกเสียงในจังหวะที่ผู้เล่นกดปุ่ม (ก่อน await)
+    const r = await round.start();
+    if (!r.ok) {
+      // ครบรอบ / เกมถูกล็อก / เน็ตหลุด: ไม่เริ่มเกม (round.error มีข้อความให้แสดง)
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    guestRef.current = r.guest;
+    setGuest(r.guest);
     introTimers.current.forEach((t) => clearTimeout(t));
     introTimers.current = [];
-    audio();
     gRef.current = newGame();
     phaseRef.current = "ready";
     setHud({ score: 0, streak: 0, made: 0, shots: 0, best: 0, level: 1, swishes: 0 });
@@ -877,6 +915,9 @@ export default function BasketballPage() {
       window.setTimeout(() => setIntro(null), 2200)
     );
   }
+
+  // ให้คีย์ลัดเรียกฟังก์ชัน/ค่าล่าสุดเสมอ (ตัว listener ผูกครั้งเดียวตอนเปิดหน้า)
+  beginRef.current = beginRound;
 
   // ปรับขนาด canvas ให้เต็มหน้าจอทุกอุปกรณ์ (มือถือและคอม)
   useEffect(() => {
@@ -912,14 +953,25 @@ export default function BasketballPage() {
     sizeRef.current = { w: dims.w, h: dims.h, dpr };
   }, [dims]);
 
-  // คีย์ลัดบนคอม: Space/Enter = เริ่ม, M = เสียง
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  useEffect(() => {
+    if ((phase !== "ready" && phase !== "playing") || guest) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [phase, guest]);
+
+  // คีย์ลัดบนคอม: Space/Enter = เริ่ม (หน้าก่อนเริ่ม/หน้าสรุป), M = เสียง
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyM") toggleMute();
-      if ((e.code === "Space" || e.code === "Enter") && phaseRef.current === "over") {
+      if ((e.code === "Space" || e.code === "Enter") && (phaseRef.current === "over" || phaseRef.current === "menu")) {
         if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
         e.preventDefault();
-        beginRound();
+        if (!blockedRef.current) beginRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -927,11 +979,9 @@ export default function BasketballPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // เข้าหน้าแล้วเริ่ม READY → GO!!! อัตโนมัติ
+  // เลิกตัวจับเวลา READY/GO ตอนออกจากหน้า (ไม่เริ่มเกมเองตอนเปิดหน้าแล้ว ต้องกดปุ่มเริ่มก่อน)
   useEffect(() => {
-    beginRound();
     return () => introTimers.current.forEach((t) => clearTimeout(t));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ===== ลูปเกมหลัก =====
@@ -1325,10 +1375,33 @@ export default function BasketballPage() {
   const saveText: Record<SaveState, string> = {
     idle: "",
     saving: "กำลังบันทึกแต้ม...",
-    saved: `บวก ${hud.score} แต้มเข้าคะแนนสะสมของคุณแล้ว`,
+    saved: hud.score > 0 ? `บวก ${hud.score} แต้มเข้าคะแนนสะสมของคุณแล้ว` : "บันทึกรอบนี้แล้ว (ไม่ได้แต้ม)",
     guest: "เข้าสู่ระบบเพื่อสะสมแต้มเข้าอันดับ",
     error: "บันทึกแต้มไม่สำเร็จ",
   };
+
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  blockedRef.current = blocked;
+  const qText = quotaText(quota);
+  const startLabel = round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : null;
+
+  // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นแต้มอาจไม่ถูกบันทึก
+  const lockNav = over && (saveState === "idle" || saveState === "saving");
+  const lockProps = {
+    "aria-disabled": lockNav,
+    onClick: (e: React.MouseEvent) => {
+      if (lockNav) e.preventDefault();
+    },
+  };
+  const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
+
+  // ออกกลางเกม = เสียรอบและไม่ได้แต้ม (guest ไม่โดน)
+  function confirmLeave(e: React.MouseEvent) {
+    if (!guest && !confirm(LEAVE_MSG)) e.preventDefault();
+  }
+
+  const showHud = phase === "ready" || phase === "playing";
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden overscroll-none bg-zinc-50 font-sans text-zinc-900" style={{ touchAction: "none" }}>
@@ -1366,7 +1439,7 @@ export default function BasketballPage() {
             />
 
             {/* HUD ขณะเล่น: ซ้อนบนจอเกม ไม่กินพื้นที่ (เว้นขอบ notch/แถบล่างของมือถือด้วย safe-area) */}
-            {phase !== "over" && (
+            {showHud && (
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{ padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)" }}
@@ -1460,7 +1533,7 @@ export default function BasketballPage() {
 
                   {/* ปุ่มกลับ/เสียง ลอยมุมล่างซ้าย (กด M เพื่อเปิด/ปิดเสียงบนคอมได้) */}
                   <div className="absolute bottom-3 left-3 flex gap-2">
-                    <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND}>←</Link>
+                    <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND} onClick={confirmLeave}>←</Link>
                     <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={BTN_ROUND}>
                       {isMuted ? "🔇" : "🔊"}
                     </button>
@@ -1487,10 +1560,57 @@ export default function BasketballPage() {
               </div>
             )}
 
+            {/* ===== หน้าก่อนเริ่มเกม: ยังไม่หักรอบจนกว่าจะกด "เริ่มเล่น" ===== */}
+            {phase === "menu" && (
+              <div className="bb-anim absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
+                <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 560, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
+                  <div className="text-center" style={{ animation: "bb-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
+                    <span className="inline-block rounded-full bg-zinc-100 px-4 py-1 text-sm font-medium text-zinc-600">
+                      อาร์เคด · {DURATION} วินาที
+                    </span>
+                    <h1 className="mt-4 text-5xl font-black italic leading-[1.05] tracking-tighter text-zinc-900">Basketball</h1>
+                    <p className="mt-3 text-sm leading-6 text-zinc-600">
+                      ลากลูกบาสแล้วสะบัดขึ้นไปทางห่วง ยิงเข้าติดกัน {FIRE_STREAK} ลูกขึ้นไปลูกบาสจะติดไฟ
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                      <div className="rounded-2xl bg-[#B7CBB0]/60 py-3">
+                        <p className="text-xl font-semibold tabular-nums">{DURATION} วิ</p>
+                        <p className="text-xs text-zinc-600">เวลา</p>
+                      </div>
+                      <div className="rounded-2xl bg-[#A8B5E8]/50 py-3">
+                        <p className="text-xl font-semibold tabular-nums">{POINT_PER_BASKET}</p>
+                        <p className="text-xs text-zinc-600">คะแนนต่อลูก</p>
+                      </div>
+                      <div className="rounded-2xl bg-[#F4A58A]/50 py-3">
+                        <p className="text-xl font-semibold tabular-nums">+{TIME_BONUS} วิ</p>
+                        <p className="text-xs text-zinc-600">ทุก {TIME_BONUS_EVERY} คอมโบ</p>
+                      </div>
+                    </div>
+
+                    {qText && <p className="mt-4 text-sm font-semibold text-zinc-800">{qText}</p>}
+                    <p className="mt-3 text-xs leading-5 text-zinc-500">
+                      กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม
+                    </p>
+                    {round.error && (
+                      <p role="alert" className="mt-3 text-xs font-semibold text-[#E5484D]">
+                        {round.error}
+                      </p>
+                    )}
+
+                    <button onClick={beginRound} disabled={round.starting || blocked} className={`${BTN_MAIN} mt-4`}>
+                      {startLabel ?? "เริ่มเล่น"}
+                    </button>
+                    <Link href="/#games" className="mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ===== หน้าสรุปคะแนน: เต็มพอดีกรอบจอเกม ไม่ต้องเลื่อน (ย่อ/ขยายเนื้อหาตามขนาดกรอบ) ===== */}
             {over && (
               <div className="bb-anim absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#F7E9A8] via-white to-white">
-                <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 590, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
+                <div style={{ width: 340, transform: `scale(${Math.min((dims.h * 0.94) / 630, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
                   <div className="text-center" style={{ animation: "bb-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
                     <span className={`inline-block rounded-full px-4 py-1 text-sm font-medium ${newRecord ? "bg-[#F4D35E]" : "bg-zinc-100 text-zinc-600"}`}>
                       {newRecord ? "🏆 สถิติใหม่!" : "หมดเวลา!"}
@@ -1530,11 +1650,19 @@ export default function BasketballPage() {
                     </div>
 
                     <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
-                    <p className="h-4 text-xs text-zinc-500">{saveText[saveState]}</p>
+                    <p className="h-4 text-xs text-zinc-500" aria-live="polite">{saveText[saveState]}</p>
+                    {qText && <p className="mt-1 text-xs font-semibold text-zinc-700">{qText}</p>}
+                    {round.error && (
+                      <p role="alert" className="mt-1 text-xs font-semibold text-[#E5484D]">
+                        {round.error}
+                      </p>
+                    )}
 
-                    <button onClick={beginRound} className={`${BTN_MAIN} mt-4`}>เล่นอีกครั้ง</button>
-                    <Link href="/rank" className={`${BTN_SUB} mt-3`}>ดูอันดับ</Link>
-                    <Link href="/#games" className="mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
+                    <button onClick={beginRound} disabled={lockNav || round.starting || blocked} className={`${BTN_MAIN} mt-4`}>
+                      {startLabel ?? "เล่นอีกครั้ง"}
+                    </button>
+                    <Link href="/rank" className={`${BTN_SUB} mt-3${lockCls}`} {...lockProps}>ดูอันดับ</Link>
+                    <Link href="/#games" className={`mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600${lockCls}`} {...lockProps}>กลับหน้าหลัก</Link>
                   </div>
                 </div>
               </div>

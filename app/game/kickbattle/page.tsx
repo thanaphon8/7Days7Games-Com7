@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAvatarSrc } from "../../components/navbar/page";
+import { useGameRound } from "@/lib/useGameRound";
 
 // ===== Kick Battle · จุดโทษดวลเดือด (เล่นกับบอท ธีมเดียวกับ Up and Up) =====
 type Dir = "L" | "C" | "R";
@@ -19,12 +20,13 @@ type Game = {
   earned: [number, number];
 };
 type Anim = { entry: Shot; step: 0 | 1 | 2 };
+type Quota = { authed: boolean; limit: number; remaining: number | null };
 
+const GAME_ID = "kickbattle";
 const TOTAL = 6;
 const TB_TARGET = 2;
 const TB_SHOTS = 3;
 const POINTS_PER_HIT = 1; // ยิงเข้าหรือเซฟได้ +1 แต้ม (ไม่มีโบนัสผู้ชนะ)
-const MAX_AWARD = (TOTAL + TB_SHOTS) * POINTS_PER_HIT; // เพดานเดียวกับ API
 const HARD_CHANCE = 0.3; // โอกาสที่บอทจะ "อ่านทาง" ในแต่ละลูก (ที่เหลือสุ่มล้วน)
 // โอกาสที่บอทจะ "พลาด" ในลูกที่ตัวเองควรได้แต้ม (ปรับความได้เปรียบของผู้เล่น)
 // 0 = ยุติธรรมเป๊ะ (ผู้เล่นชนะราว 50%) / 0.15 ≈ ผู้เล่นชนะราว 60-65% / 0.3 ≈ 75%+
@@ -46,6 +48,15 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const coin = (): 0 | 1 => (Math.random() < 0.5 ? 0 : 1);
 const rndDir = (): Dir => DIRS[Math.floor(Math.random() * 3)];
 const rndOf = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
+}
 
 // ใครได้แต้มจากแต่ละลูก: ยิงเข้า -> ผู้ยิง / เซฟได้ -> ผู้รับ
 function tally(history: Shot[]): [number, number] {
@@ -116,7 +127,7 @@ const CSS = `
 const BTN_MAIN = "h-14 w-full rounded-full bg-[#1E2A4A] text-base font-semibold text-white transition-opacity hover:opacity-85 disabled:opacity-40";
 const BTN_ORANGE =
   "h-14 w-full rounded-full bg-gradient-to-b from-[#FF8A4C] to-[#FF5A2E] text-lg font-black text-white shadow-lg ring-2 ring-white transition-transform active:scale-95 disabled:opacity-40 disabled:active:scale-100";
-const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white/70 text-sm font-medium transition-colors hover:bg-white";
+const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white/70 text-sm font-medium transition-colors hover:bg-white disabled:opacity-40";
 const BTN_ROUND =
   "pointer-events-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/90 text-lg font-bold text-[#1E3A6B] shadow-sm ring-2 ring-white transition-transform active:scale-95";
 const PILL = "rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-[#1E3A6B] shadow-sm ring-2 ring-white";
@@ -153,28 +164,6 @@ function useMe() {
     setMe({ id: String(id), name, avatar });
   }, []);
   return me;
-}
-
-// บันทึกแต้มเข้า users.gameScores.kickbattle
-async function postAward(playerId: string, points: number): Promise<boolean> {
-  const r = await fetch("/api/kickbattle", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "award", playerId, points: Math.min(points, MAX_AWARD) }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `เชื่อมต่อ API ไม่ได้ (HTTP ${r.status})`);
-  return !!j.saved;
-}
-
-// ใช้ตอนออกกลางเกม/ปิดหน้า: keepalive ให้คำขอไปถึงแม้หน้าถูกปิด
-function sendAward(playerId: string, points: number) {
-  fetch("/api/kickbattle", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "award", playerId, points: Math.min(points, MAX_AWARD) }),
-    keepalive: true,
-  }).catch(() => {});
 }
 
 function Confetti({ n = 30 }: { n?: number }) {
@@ -617,32 +606,48 @@ export default function KickBattle() {
   const awardedRef = useRef(0); // match ล่าสุดที่ส่งแต้มไปแล้ว กันส่งซ้ำ
   const lockRef = useRef(false); // กันกดเลือกซ้ำระหว่างรอแอนิเมชัน
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const liveRef = useRef<{ game: Game | null; id: string | null }>({ game: null, id: null });
-  liveRef.current = { game, id: me?.id ?? null };
   const pickRef = useRef<{ canPick: boolean; sel: Dir | null; confirm: (d?: Dir) => void }>({ canPick: false, sel: null, confirm: () => {} });
   pickRef.current.canPick = false;
+
+  // ===== รอบเล่นต่อวัน =====
+  const round = useGameRound(GAME_ID); // หักรอบที่เซิร์ฟเวอร์ + เก็บ sessionId ของรอบนี้
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const [guest, setGuest] = useState(true); // true = ไม่ได้ล็อกอิน (เล่นได้ ไม่นับรอบ ไม่บันทึกแต้ม)
+
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const g = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (g) setQuota({ authed: !!r.authed, limit: g.limit, remaining: g.remaining });
+    } catch {}
+  }, []);
+
+  const inGame = !!game;
+  const finishedAll = !!game && game.status === "finished" && shown === game.history.length;
+
+  // โหลดรอบที่เหลือตอนอยู่หน้าล็อบบี้ และตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (!inGame || finishedAll) loadQuota();
+  }, [inGame, finishedAll, loadQuota]);
+
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  const warnLeave = inGame && !guest && !(finishedAll && awardSaved !== null);
+  useEffect(() => {
+    if (!warnLeave) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [warnLeave]);
 
   const later = (fn: () => void, ms: number) => {
     timers.current.push(setTimeout(fn, ms));
   };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
-
-  // ออกกลางเกม/ปิดหน้า = แพ้ แต้มที่ทำได้แล้วยังเก็บไว้ (ใช้ได้แค่ ref จึงเรียกจาก cleanup ได้)
-  function forfeitAward() {
-    const { game: g, id } = liveRef.current;
-    if (!g || !id || awardedRef.current === g.match) return;
-    awardedRef.current = g.match;
-    if (g.earned[0] > 0) sendAward(id, g.earned[0]);
-  }
-
-  useEffect(() => {
-    const h = () => forfeitAward();
-    window.addEventListener("pagehide", h);
-    return () => {
-      window.removeEventListener("pagehide", h);
-      h();
-    };
-  }, []);
 
   useEffect(() => {
     const f = () => setPortrait(window.innerWidth < window.innerHeight);
@@ -660,8 +665,15 @@ export default function KickBattle() {
     lockRef.current = false;
   }, [shown, game?.match]);
 
-  function startGame() {
-    if (!me) return;
+  // เริ่มเกม: หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าไม่สำเร็จจะไม่เริ่ม (round.error มีข้อความให้แสดง)
+  async function startGame() {
+    if (!me || round.starting) return;
+    const r = await round.start();
+    if (!r.ok) {
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    setGuest(r.guest);
     timers.current.forEach(clearTimeout);
     timers.current = [];
     tbKey.current = "";
@@ -684,8 +696,8 @@ export default function KickBattle() {
     later(() => setGo(false), 4600);
   }
 
+  // ออกกลางเกม = แพ้ ไม่ได้แต้มรอบนี้ (รอบถูกหักไปแล้วตอนเริ่ม)
   function leave() {
-    forfeitAward();
     timers.current.forEach(clearTimeout);
     timers.current = [];
     tbKey.current = "";
@@ -733,18 +745,32 @@ export default function KickBattle() {
     later(() => setTbIntro(false), 3000);
   }, [game, shown, anim]);
 
-  // เกมจบและแอนิเมชันครบแล้ว -> ส่งแต้มเข้าคะแนนรวม (ครั้งเดียวต่อเกม)
+  // บันทึกแต้มรอบนี้ผ่าน /api/user (เซิร์ฟเวอร์ตรวจ session ของรอบที่เปิดไว้ตอนเริ่ม)
+  // ส่งทุกเกมแม้ได้ 0 แต้ม เพื่อปิด session ของเกมนั้น
+  async function saveScore(points: number): Promise<boolean> {
+    try {
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameKey: GAME_ID, score: points, sessionId: round.sessionIdRef.current }),
+      });
+      const j = await res.json().catch(() => null);
+      return res.ok && !!j?.success;
+    } catch {
+      return false;
+    }
+  }
+
+  // เกมจบและแอนิเมชันครบแล้ว -> ส่งแต้มเข้าคะแนนรวม (ครั้งเดียวต่อเกม) guest ไม่บันทึก
   useEffect(() => {
-    if (!game || !me || anim || game.status !== "finished" || shown !== game.history.length) return;
+    if (!game || anim || game.status !== "finished" || shown !== game.history.length) return;
+    if (guest) return;
     if (awardedRef.current === game.match) return;
     awardedRef.current = game.match;
-    const pts = game.earned[0];
-    if (pts <= 0) return;
     setAwardSaved(null);
-    postAward(me.id, pts)
-      .then(setAwardSaved)
-      .catch(() => setAwardSaved(false));
-  }, [game, shown, anim, me]);
+    saveScore(game.earned[0]).then(setAwardSaved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, shown, anim, guest]);
 
   useEffect(() => {
     if (intro !== 1) return;
@@ -805,6 +831,10 @@ export default function KickBattle() {
 
     setGame({ ...g, history, earned, winner, status: winner !== null ? "finished" : "playing" });
   }
+
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  const qText = quotaText(quota);
 
   const menu = (children: React.ReactNode, hero = false) => (
     <div className={`fixed inset-0 z-50 overflow-y-auto font-sans text-zinc-900 ${hero ? "bg-[#8FD3FF]" : SKY_BG}`}>
@@ -874,10 +904,16 @@ export default function KickBattle() {
               <p className="text-xs font-bold tracking-[.2em] text-[#5B4300]">คู่แข่งของคุณ</p>
               <h2 className="text-2xl font-black tracking-tight text-[#1E2A4A]">{BOT.name}</h2>
               <p className="mt-1 text-sm leading-6 text-[#5B4300]">กดเริ่มแล้วเล่นได้เลย ไม่ต้องรอใครเข้าห้อง</p>
+              {qText && <p className="mt-2 text-sm font-bold text-[#1E2A4A]">{qText}</p>}
             </div>
-            <button onClick={startGame} className={BTN_ORANGE}>
-              เริ่มเล่น
+            <button onClick={startGame} disabled={round.starting || blocked} className={BTN_ORANGE}>
+              {round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : "เริ่มเล่น"}
             </button>
+            {round.error && (
+              <p role="alert" className="text-sm font-bold text-[#8A2A10]">
+                {round.error}
+              </p>
+            )}
           </div>
         </div>
 
@@ -887,7 +923,11 @@ export default function KickBattle() {
             <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">ผู้ยิงเลือกซ้าย กลาง หรือขวา ผู้รับเลือกทิศเดียวกันได้เหมือนกัน เลือกพร้อมกันและซ่อนกันจนกว่าจะเปิดผล</li>
             <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">ยิงคนละทิศกับที่ผู้รับเลือก ผู้ยิงได้ 1 แต้ม ถ้าตรงกัน ผู้รับเซฟได้ 1 แต้ม และแต้มที่คุณทำได้บวกเข้าคะแนนรวมเมื่อจบเกม ทั้งชนะและแพ้ได้แต้มตามลูกที่ตัวเองทำได้</li>
             <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">สลับบทบาทกันทุกลูก เล่น 6 ลูก (ยิงคนละ 3 ลูก) ใครแต้มสูงกว่าชนะ ถ้าเสมอต่อเวลาอีกสูงสุด 3 ลูก ใครได้ 2 แต้มก่อนชนะ ไม่มีโบนัสผู้ชนะ</li>
-            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">บอทบางลูกเดาสุ่ม บางลูกอ่านทางจากที่คุณเคยเลือก ถ้าคุณออกจากเกมระหว่างเล่น ถือว่าแพ้ แต้มที่ทำได้แล้วยังเก็บไว้</li>
+            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">บอทบางลูกเดาสุ่ม บางลูกอ่านทางจากที่คุณเคยเลือก</li>
+            {quota?.authed && quota.limit > 0 && (
+              <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">เล่นได้วันละ {quota.limit} รอบ รีเซ็ตทุก 06:00 น. เวลาประเทศไทย</li>
+            )}
+            <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2">กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น ถือว่าแพ้ จะเสียรอบนั้นและไม่ได้แต้มเลย</li>
             <li className="rounded-2xl bg-[#EAF6FF]/80 px-3 py-2">วิธีเล่น: ลากลูกบอล (หรือถุงมือ) ไปที่มุมที่ต้องการแล้วปล่อย หรือกดเลือกมุม หรือใช้ปุ่มลูกศร ← ↓ → แล้วกด Enter</li>
           </ul>
         </div>
@@ -906,6 +946,7 @@ export default function KickBattle() {
   const iShoot = curShooter === you;
   const canPick = !confirmExit && intro === 0 && !tbIntro && !anim && shown === game.history.length && game.status === "playing";
   const done = game.status === "finished" && shown === game.history.length && !anim;
+  const saving = done && !guest && awardSaved === null; // ห้ามเริ่มรอบใหม่/ออกจนกว่าจะบันทึกแต้มเสร็จ
   const iWon = game.winner === you;
   const tiebreak = game.history.length > TOTAL || (shown >= TOTAL && game.history.length === TOTAL && game.status === "playing");
   const sudden = tiebreak && shown >= TOTAL;
@@ -1056,24 +1097,42 @@ export default function KickBattle() {
             </div>
 
             {game.earned[you] > 0 &&
-              (awardSaved === null ? (
+              (guest ? (
+                <p className="mt-3 rounded-2xl bg-white/80 px-4 py-2.5 text-sm font-medium text-zinc-600 ring-2 ring-white">
+                  <Link href="/login" className="font-bold text-[#E5502A] underline underline-offset-4">เข้าสู่ระบบ</Link> เพื่อบันทึกแต้มเข้าอันดับ
+                </p>
+              ) : awardSaved === null ? (
                 <p className="mt-3 rounded-2xl bg-white/80 px-4 py-2.5 text-sm font-medium text-zinc-600 ring-2 ring-white">กำลังบันทึกแต้ม…</p>
               ) : awardSaved ? (
                 <p className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#E4EEDF] px-4 py-2.5 text-sm font-bold text-[#2F5D2A] ring-2 ring-white">
                   <StarIcon size={16} color="#FFB800" />+{game.earned[you]} แต้มเข้าคะแนนรวมของคุณแล้ว
                 </p>
               ) : (
-                <p className="mt-3 rounded-2xl bg-[#FFE3D3] px-4 py-2.5 text-sm text-[#8A3B1F] ring-2 ring-white">แต้มรอบนี้ยังไม่ถูกบันทึก ตรวจว่าเข้าสู่ระบบแล้ว</p>
+                <p className="mt-3 rounded-2xl bg-[#FFE3D3] px-4 py-2.5 text-sm text-[#8A3B1F] ring-2 ring-white">บันทึกแต้มรอบนี้ไม่สำเร็จ</p>
               ))}
 
+            {qText && <p className="mt-3 text-sm font-bold text-[#1E2A4A]">{qText}</p>}
+            {round.error && (
+              <p role="alert" className="mt-2 text-sm font-bold text-[#8A2A10]">
+                {round.error}
+              </p>
+            )}
+
             <div className="mt-6 flex flex-col gap-2">
-              <button onClick={startGame} className={BTN_ORANGE}>
-                เล่นอีกรอบ
+              <button onClick={startGame} disabled={saving || round.starting || blocked} className={BTN_ORANGE}>
+                {round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : "เล่นอีกรอบ"}
               </button>
-              <button onClick={leave} className={BTN_SUB}>
+              <button onClick={leave} disabled={saving} className={BTN_SUB}>
                 กลับหน้าเริ่มเกม
               </button>
-              <Link href="/rank" className={BTN_SUB}>
+              <Link
+                href="/rank"
+                aria-disabled={saving}
+                onClick={(e) => {
+                  if (saving) e.preventDefault();
+                }}
+                className={`${BTN_SUB}${saving ? " pointer-events-none opacity-40" : ""}`}
+              >
                 🏆 ดูอันดับ
               </Link>
             </div>
@@ -1086,7 +1145,11 @@ export default function KickBattle() {
           <div className={`kb-pop w-full max-w-sm p-7 text-center text-zinc-900 ${DIALOG}`}>
             <p className="text-5xl">🚪</p>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-[#E5502A]">ออกจากเกมนี้?</h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-500">ถ้าออกตอนนี้ จะนับว่าคุณแพ้ แต้มที่คุณทำได้แล้วจะยังถูกเก็บไว้</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">
+              {guest
+                ? "ถ้าออกตอนนี้ จะนับว่าคุณแพ้"
+                : "ถ้าออกตอนนี้ จะนับว่าคุณแพ้ เสียรอบเล่นนี้ไปแล้ว และไม่ได้แต้มรอบนี้เลย"}
+            </p>
             <div className="mt-6 flex flex-col gap-2">
               <button onClick={() => setConfirmExit(false)} className={BTN_ORANGE}>
                 เล่นต่อ
