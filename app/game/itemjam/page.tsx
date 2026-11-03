@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useGameRound } from "@/lib/useGameRound";
 
 /* =========================================================
   Item Jam — จัดของชนิดเดียวกันไว้ช่องเดียวกัน ผ่าน Level ให้ไกลที่สุดก่อนหมดเวลา
@@ -19,6 +20,7 @@ const CHEERS = ["น่ารักสุดๆ!", "เก่งมาก!", "�
 const CONFETTI = ["💖", "✨", "⭐", "🫧", "🎀", "💫", "🌸"];
 const STREAK_MS = 7000; // ครบชุดต่อกันภายในเวลานี้ = สตรีค (เอฟเฟกต์และเสียงสูงขึ้น ไม่มีผลกับแต้ม)
 const DRAG_SCALE = 1.50; // ขนาดของที่กำลังลาก (ขยายเล็กน้อย)
+const LEAVE_MSG = "ออกจากเกมตอนนี้จะเสียรอบเล่นและไม่ได้แต้มรอบนี้ ต้องการออกใช่ไหม?";
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const bonusTime = (types: number) => 6 + types * 3; // ผ่าน Level ได้เวลาเพิ่ม (Level ยากได้เยอะกว่า)
 
@@ -49,7 +51,7 @@ const NEW_LINES = ["เก๊บๆ! ขอเข้าร่วมด้วย�
 const REPEAT_TIPS = [
   "ลองเหลือช่องว่างไว้เสมอ จะวางแผนง่ายขึ้นนะ",
   "ย้ายชิ้นที่ขวางทางออกก่อน แล้วค่อยจัดชุดนะ",
-  "กดย้อนกลับ ↩ ได้ ถ้าย้ายพลาด",
+  "คิดให้รอบคอบก่อนย้าย เพราะย้ายแล้วย้อนกลับไม่ได้",
 ];
 
 // ===== ของในเกม (ตัวการ์ตูนน่ารัก สีพาสเทล) — มี 20 ตัว สุ่มเข้ามาทีละตัวตามแต่ละ Level =====
@@ -159,7 +161,6 @@ const sfx = {
   },
   ting: (run: number) => tone(NOTES[clamp(run, 0, 5)] * 2, 0.5, "sine", 0.1), // ติ๊งใส ยิ่งเรียงสูงยิ่งแหลม
   nope: () => tone(230, 0.14, "sine", 0.1, 170),
-  undo: () => tone(620, 0.14, "sine", 0.1, 400),
   // ระฆังไล่เสียงตอนครบชุด ยิ่งครบติดกันยิ่งสูงขึ้น
   lock: (streak: number) => {
     const k = Math.pow(2, (clamp(streak - 1, 0, 6) * 2) / 12);
@@ -181,8 +182,10 @@ const sfx = {
 };
 
 // ===== ชนิดข้อมูล =====
-type Phase = "intro" | "playing" | "clear" | "cutscene" | "over";
+// menu = หน้าก่อนเริ่ม (ยังไม่หักรอบ), intro = READY/GO (หักรอบแล้ว), playing, clear, cutscene, over = จบเกม
+type Phase = "menu" | "intro" | "playing" | "clear" | "cutscene" | "over";
 type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
+type Quota = { authed: boolean; limit: number; remaining: number | null };
 type Item = { id: number; t: number; land: number };
 type Fx = { id: number; kind: "text" | "burst" | "ring" | "screen"; x: number; y: number; text?: string; title?: string; color: string; big?: boolean };
 // snap = true ช่วงสั้นๆ หลังเริ่มลาก ให้ของเลื่อนจากช่องมาที่นิ้วอย่างนุ่มนวล แล้วค่อยตามนิ้วแบบเรียลไทม์
@@ -191,12 +194,21 @@ type G = {
   round: number; dealId: number; phase: Phase; stage: number; types: number; cut: number;
   cast: number[]; cutNew: number[]; cutBye: number[]; cutFriends: number[]; // ตัวละครของ Level ปัจจุบัน / คัตซีน
   slots: Item[][]; sel: number | null; nope: number; lastMoved: number; nextId: number;
-  drag: Drag | null; history: { from: number; to: number }[];
+  drag: Drag | null;
   score: number; timeLeft: number; lastSec: number;
   moves: number; locks: number; stageLocks: number; streak: number; lastLockAt: number;
   fastest: number; stageStart: number;
   fx: Fx[]; fxId: number;
 };
+
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
+}
 
 function shuffle<T>(a: T[]) {
   const r = [...a];
@@ -209,11 +221,11 @@ function shuffle<T>(a: T[]) {
 const isDone = (s: Item[]) => s.length === CAP && s.every((it) => it.t === s[0].t);
 
 // เริ่มต้นไม่มีของ (ไม่สุ่ม) เพื่อไม่ให้ hydration ไม่ตรงกัน แล้วค่อยสุ่มจัดวางตอนเริ่ม Level
-function newG(round: number): G {
+function newG(round: number, phase: Phase = "intro"): G {
   return {
-    round, dealId: 0, phase: "intro", stage: 1, types: 3, cut: 0,
+    round, dealId: 0, phase, stage: 1, types: 3, cut: 0,
     cast: [0, 1, 2], cutNew: [], cutBye: [], cutFriends: [],
-    slots: [], sel: null, nope: -1, lastMoved: -1, nextId: 0, drag: null, history: [],
+    slots: [], sel: null, nope: -1, lastMoved: -1, nextId: 0, drag: null,
     score: 0, timeLeft: DURATION, lastSec: DURATION,
     moves: 0, locks: 0, stageLocks: 0, streak: 0, lastLockAt: -1e9,
     fastest: 0, stageStart: 0, fx: [], fxId: 0,
@@ -346,7 +358,7 @@ function Tile({ t, s, done }: { t: number; s: number; done: boolean }) {
   );
 }
 
-const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85";
+const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50";
 const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] text-sm font-medium transition-colors hover:bg-black/[.04]";
 const BTN_ROUND = "pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-xl shadow-sm ring-1 ring-black/5 backdrop-blur transition-transform active:scale-95";
 const POP_SHADOW = "0 2px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 0 14px rgba(255,255,255,.9)";
@@ -359,7 +371,7 @@ const BUBBLES = [
   ========================================================= */
 export default function ItemJamPage() {
   const gRef = useRef<G>(null as unknown as G);
-  if (!gRef.current) gRef.current = newG(0);
+  if (!gRef.current) gRef.current = newG(0, "menu");
   const g = gRef.current;
   const [, force] = useReducer((x: number) => x + 1, 0);
 
@@ -373,7 +385,7 @@ export default function ItemJamPage() {
   const pressRef = useRef<{ pid: number; k: number; sx: number; sy: number; lx: number; touch: boolean } | null>(null);
 
   const [dims, setDims] = useState({ w: 360, h: 640 });
-  const [intro, setIntro] = useState<"ready" | "go" | null>("ready");
+  const [intro, setIntro] = useState<"ready" | "go" | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [isMuted, setIsMuted] = useState(false);
   const [record, setRecord] = useState(0);
@@ -381,6 +393,60 @@ export default function ItemJamPage() {
   const [praise, setPraise] = useState("");
   const sumRef = useRef<HTMLDivElement>(null);
   const [natH, setNatH] = useState(620);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuH, setMenuH] = useState(520);
+
+  // ===== รอบเล่นต่อวัน =====
+  const round = useGameRound(GAME_ID); // หักรอบที่เซิร์ฟเวอร์ + เก็บ sessionId ของรอบนี้
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const [guest, setGuest] = useState(true); // true = ไม่ได้ล็อกอิน (เล่นได้ ไม่นับรอบ ไม่บันทึกแต้ม)
+  const guestRef = useRef(true);
+  const beginRef = useRef<() => void>(() => {});
+  const blockedRef = useRef(false);
+  const aliveRef = useRef(true);
+
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const gm = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (gm) setQuota({ authed: !!r.authed, limit: gm.limit, remaining: gm.remaining });
+    } catch {}
+  }, []);
+
+  // โหลดรอบที่เหลือตอนอยู่หน้าก่อนเริ่ม และตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (g.phase === "menu" || g.phase === "over") loadQuota();
+  }, [g.phase, loadQuota]);
+
+  // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นแต้มอาจไม่ถูกบันทึก
+  const lockNav = g.phase === "over" && (saveState === "idle" || saveState === "saving");
+  const lockProps = {
+    "aria-disabled": lockNav,
+    onClick: (e: React.MouseEvent) => {
+      if (lockNav) e.preventDefault();
+    },
+  };
+  const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
+
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  const inRound = g.phase === "intro" || g.phase === "playing" || g.phase === "clear" || g.phase === "cutscene";
+  const warnLeave = (inRound || lockNav) && !guest;
+  useEffect(() => {
+    if (!warnLeave) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [warnLeave]);
+
+  // ออกกลางเกม = เสียรอบและไม่ได้แต้ม (guest ไม่โดน)
+  function confirmLeave(e: React.MouseEvent) {
+    if (!guest && !confirm(LEAVE_MSG)) e.preventDefault();
+  }
 
   const later = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
@@ -411,23 +477,16 @@ export default function ItemJamPage() {
   }
 
   // ===== บันทึกคะแนนรอบนี้ (API ใช้ $inc จึงส่งเฉพาะแต้มของรอบนี้) =====
+  // เซิร์ฟเวอร์ใช้บัญชีจาก session และรับแต้มเฉพาะรอบที่เปิดไว้ตอนเริ่ม (sessionId ใช้ได้ครั้งเดียว)
+  // ส่งทุกรอบแม้ได้ 0 แต้ม เพื่อปิด session ของรอบนั้น
   async function saveScore(score: number) {
-    if (score <= 0) return;
-    let userId: string | null = null;
-    try {
-      const raw = localStorage.getItem("profile");
-      if (raw) {
-        const p = JSON.parse(raw);
-        userId = p.userId || p.id || p._id || null;
-      }
-    } catch {}
-    if (!userId) { setSaveState("guest"); return; }
+    if (guestRef.current) { setSaveState("guest"); return; }
     setSaveState("saving");
     try {
       const res = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, gameKey: GAME_ID, score }),
+        body: JSON.stringify({ gameKey: GAME_ID, score, sessionId: round.sessionIdRef.current }),
       });
       const result = await res.json().catch(() => null);
       setSaveState(res.ok && result?.success ? "saved" : "error");
@@ -564,18 +623,28 @@ export default function ItemJamPage() {
     cur.sel = null;
     cur.drag = null;
     cur.nope = -1;
-    cur.history = [];
     cur.stageLocks = 0;
     cur.stageStart = performance.now();
     cur.phase = "playing";
     force();
   }
 
-  function beginRound() {
+  // เริ่มรอบใหม่: หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าสำเร็จจึงแสดง READY → GO!!! แล้วเริ่มเกม
+  async function beginRound() {
+    if (round.starting) return;
+    audio(); // ปลดล็อกเสียงในจังหวะที่ผู้เล่นกดปุ่ม (ก่อน await)
+    const r = await round.start();
+    if (!aliveRef.current) return;
+    if (!r.ok) {
+      // ครบรอบ / เกมถูกล็อก / เน็ตหลุด: ไม่เริ่มเกม (round.error มีข้อความให้แสดง)
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    guestRef.current = r.guest;
+    setGuest(r.guest);
     clearTimers();
     cutTimers.current.forEach((id) => clearTimeout(id));
     cutTimers.current = [];
-    audio();
     pressRef.current = null;
     roundRef.current += 1;
     gRef.current = newG(roundRef.current);
@@ -592,6 +661,9 @@ export default function ItemJamPage() {
     }, 1300);
     later(() => setIntro(null), 2200);
   }
+
+  // ให้คีย์ลัดเรียกฟังก์ชันล่าสุดเสมอ (ตัว listener ผูกครั้งเดียวตอนเปิดหน้า)
+  beginRef.current = beginRound;
 
   function endGame() {
     const cur = gRef.current;
@@ -679,7 +751,6 @@ export default function ItemJamPage() {
   function lockSlot(cur: G, k: number) {
     cur.locks += 1;
     cur.stageLocks += 1;
-    cur.history = []; // ช่องที่เรียบร้อยแล้วย้อนกลับไม่ได้
     const now = performance.now();
     cur.streak = now - cur.lastLockAt < STREAK_MS ? cur.streak + 1 : 1;
     cur.lastLockAt = now;
@@ -725,7 +796,6 @@ export default function ItemJamPage() {
     cur.lastMoved = it.id;
     cur.sel = null;
     cur.moves += 1;
-    cur.history.push({ from, to: k });
     let run = 0;
     for (let i = slot.length - 1; i >= 0 && slot[i].t === it.t; i--) run++;
     later(() => sfx.put(false), 240);
@@ -770,22 +840,6 @@ export default function ItemJamPage() {
       return;
     }
     moveItem(cur, from, k);
-    force();
-  }
-
-  function undo() {
-    const cur = gRef.current;
-    if (cur.phase !== "playing" || cur.drag) return;
-    const h = cur.history.pop();
-    if (!h) return;
-    const it = cur.slots[h.to].pop();
-    if (!it) return;
-    cur.slots[h.from].push(it);
-    it.land += 1;
-    cur.lastMoved = it.id;
-    cur.sel = null;
-    audio();
-    sfx.undo();
     force();
   }
 
@@ -897,18 +951,17 @@ export default function ItemJamPage() {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  // คีย์ลัดบนคอม: Space/Enter = เล่นอีกครั้ง (หน้าสรุป) หรือเริ่ม Level (หน้าคัตซีน), M = เสียง, Z = ย้อนกลับ
+  // คีย์ลัดบนคอม: Space/Enter = เริ่มเล่น (หน้าก่อนเริ่ม) / เล่นอีกครั้ง (หน้าสรุป) / เริ่ม Level (หน้าคัตซีน), M = เสียง
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyM") toggleMute();
-      if (e.code === "KeyZ") undo();
       if (e.code === "Space" || e.code === "Enter") {
         const ph = gRef.current.phase;
-        if (ph !== "over" && ph !== "cutscene") return;
+        if (ph !== "over" && ph !== "cutscene" && ph !== "menu") return;
         if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
         e.preventDefault();
-        if (ph === "over") beginRound();
-        else finishCutscene(gRef.current);
+        if (ph === "cutscene") finishCutscene(gRef.current);
+        else if (!blockedRef.current) beginRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -916,10 +969,11 @@ export default function ItemJamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // เข้าหน้าแล้วเริ่ม READY → GO!!! อัตโนมัติ
+  // ไม่เริ่มเกมเองตอนเปิดหน้าแล้ว (ต้องกด "เริ่มเล่น" ก่อน) ที่นี่เหลือแค่เก็บกวาดตอนออกจากหน้า
   useEffect(() => {
-    beginRound();
+    aliveRef.current = true;
     return () => {
+      aliveRef.current = false;
       clearTimers();
       cutTimers.current.forEach((id) => clearTimeout(id));
       cutTimers.current = [];
@@ -930,6 +984,7 @@ export default function ItemJamPage() {
 
   useEffect(() => {
     if (g.phase === "over" && sumRef.current) setNatH(sumRef.current.offsetHeight);
+    if (g.phase === "menu" && menuRef.current) setMenuH(menuRef.current.offsetHeight);
   });
 
   // ===== ค่าที่ใช้แสดงผล =====
@@ -944,6 +999,7 @@ export default function ItemJamPage() {
   const boardW = lay.cols * lay.slotW + (lay.cols - 1) * lay.gap;
   const boardH = lay.lift + lay.rows * lay.slotH + (lay.rows - 1) * lay.rowGap;
   const over = g.phase === "over";
+  const menu = g.phase === "menu";
   const playing = g.phase === "playing";
   const drag = g.drag;
   const timeLow = g.lastSec <= 10 && (playing || g.phase === "clear");
@@ -951,7 +1007,6 @@ export default function ItemJamPage() {
   const shownScore = useCountUp(g.score, over);
   const stars = starsFor(g.stage);
   const stagesDone = g.score / STAGE_POINTS;
-  const canUndo = playing && !drag && g.history.length > 0;
   const cs = g.phase === "cutscene" && g.cut ? cutsceneInfo(g.cut, g.cutNew, g.cutBye, g.cutFriends) : null;
   const friendSize = cs ? clamp(Math.floor(300 / Math.max(1, cs.friends.length)) - 8, 30, 56) : 56;
   const newSize = cs && cs.added.length > 1 ? 92 : 120;
@@ -960,10 +1015,16 @@ export default function ItemJamPage() {
   const saveText: Record<SaveState, string> = {
     idle: "",
     saving: "กำลังบันทึกแต้ม...",
-    saved: `บวก ${g.score} แต้มเข้าคะแนนสะสมของคุณแล้ว`,
+    saved: g.score > 0 ? `บวก ${g.score} แต้มเข้าคะแนนสะสมของคุณแล้ว` : "บันทึกรอบนี้แล้ว (ไม่ได้แต้ม)",
     guest: "เข้าสู่ระบบเพื่อสะสมแต้มเข้าอันดับ",
     error: "บันทึกแต้มไม่สำเร็จ",
   };
+
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  blockedRef.current = blocked;
+  const qText = quotaText(quota);
+  const startLabel = round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : null;
 
   // รายการของทั้งหมดพร้อมตำแหน่ง (เรียงตาม id เพื่อให้ DOM ไม่ขยับ ทำให้อนิเมชันเลื่อนลื่น)
   const placed: { it: Item; k: number; i: number; top: boolean; done: boolean }[] = [];
@@ -1040,7 +1101,7 @@ export default function ItemJamPage() {
           paddingTop: topPad,
           paddingBottom: bottomPad,
           opacity: g.phase === "intro" ? 0 : 1,
-          visibility: over ? "hidden" : "visible", // ซ่อนของทั้งหมดตอนหน้าสรุป ไม่ให้ไอคอนค้าง
+          visibility: over || menu ? "hidden" : "visible", // ซ่อนของทั้งหมดตอนหน้าสรุป/หน้าก่อนเริ่ม ไม่ให้ไอคอนค้าง
           zIndex: 0, // กักของในกระดานไว้ใน stacking context ของ main
           touchAction: "none",
           cursor: drag ? "grabbing" : "grab",
@@ -1219,7 +1280,7 @@ export default function ItemJamPage() {
       )}
 
       {/* ===== HUD (ซ้อนบนจอ ไม่กินพื้นที่) ===== */}
-      {!over && (
+      {!over && !menu && (
         <div className="pointer-events-none absolute inset-0" style={{ padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)" }}>
           <div className="relative h-full w-full">
             {/* เวลา มุมบนซ้าย: ตัวเลขใหญ่ไล่สีชมพู-ส้ม-เหลือง ไม่มีกรอบขาว ไม่มีไอคอน (≤ 10 วิ: แดงและสั่น) */}
@@ -1285,22 +1346,9 @@ export default function ItemJamPage() {
               </span>
             </div>
 
-            {/* ปุ่มย้อนกลับ มุมล่างขวา (กด Z บนคอมได้) */}
-            <div className="absolute bottom-3 right-3 sm:bottom-5 sm:right-5">
-              <button
-                type="button"
-                onClick={undo}
-                disabled={!canUndo}
-                title="ย้อนกลับ (Z)"
-                className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-full bg-white/90 px-5 text-sm font-semibold shadow-sm ring-1 ring-black/5 backdrop-blur transition-all active:scale-95 disabled:opacity-40"
-              >
-                <span aria-hidden className="text-lg">↩</span>ย้อนกลับ
-              </button>
-            </div>
-
-            {/* ปุ่มกลับ/เสียง มุมล่างซ้าย (กด M เพื่อเปิด/ปิดเสียงบนคอมได้) */}
+            {/* ปุ่มกลับ/เสียง มุมล่างซ้าย (กด M เพื่อเปิด/ปิดเสียงบนคอมได้) ปุ่มกลับจะถามยืนยันก่อน เพราะออกแล้วเสียรอบ */}
             <div className="absolute bottom-3 left-3 flex gap-2 sm:bottom-5 sm:left-5">
-              <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND}>←</Link>
+              <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND} onClick={confirmLeave}>←</Link>
               <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={BTN_ROUND}>
                 {isMuted ? "🔇" : "🔊"}
               </button>
@@ -1437,6 +1485,55 @@ export default function ItemJamPage() {
         </div>
       )}
 
+      {/* ===== หน้าก่อนเริ่มเกม: ยังไม่หักรอบจนกว่าจะกด "เริ่มเล่น" ===== */}
+      {menu && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#FFE0EC] via-white to-white">
+          <div style={{ width: 340, height: menuH, transform: `scale(${Math.min((dims.h * 0.94) / menuH, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
+            <div ref={menuRef} className="text-center" style={{ animation: "ij-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
+              <span className="inline-block rounded-full bg-zinc-100 px-4 py-1 text-sm font-medium text-zinc-600">
+                ตรรกะ · {DURATION} วินาที
+              </span>
+              <div className="mt-3">
+                <PopText text="Item Jam" size="text-6xl" />
+              </div>
+              <p className="mt-2 text-sm leading-6 text-zinc-600">
+                จัดของชนิดเดียวกันไว้ช่องเดียวกัน ผ่าน Level ให้ไกลที่สุดก่อนหมดเวลา ยิ่งผ่านไกลยิ่งยาก
+              </p>
+
+              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded-2xl bg-[#97D58C]/55 py-3">
+                  <p className="text-xl font-semibold tabular-nums">{DURATION} วิ</p>
+                  <p className="text-xs text-zinc-600">เวลาเริ่มต้น</p>
+                </div>
+                <div className="rounded-2xl bg-[#9DB4F2]/50 py-3">
+                  <p className="text-xl font-semibold tabular-nums">{STAGE_POINTS}</p>
+                  <p className="text-xs text-zinc-600">คะแนนต่อ Level</p>
+                </div>
+                <div className="rounded-2xl bg-[#FFB874]/50 py-3">
+                  <p className="text-xl font-semibold">+เวลา</p>
+                  <p className="text-xs text-zinc-600">ทุกครั้งที่ผ่าน</p>
+                </div>
+              </div>
+
+              {qText && <p className="mt-4 text-sm font-semibold text-zinc-800">{qText}</p>}
+              <p className="mt-3 text-xs leading-5 text-zinc-500">
+                กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม
+              </p>
+              {round.error && (
+                <p role="alert" className="mt-3 text-xs font-semibold text-[#E5484D]">
+                  {round.error}
+                </p>
+              )}
+
+              <button onClick={beginRound} disabled={round.starting || blocked} className={`${BTN_MAIN} mt-4`}>
+                {startLabel ?? "เริ่มเล่น"}
+              </button>
+              <Link href="/#games" className="mt-3 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== หน้าสรุปคะแนน ===== */}
       {over && (
         <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#FFE0EC] via-white to-white">
@@ -1486,11 +1583,19 @@ export default function ItemJamPage() {
 
               <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
               <p className="h-4 text-xs text-zinc-500" role="status">{saveText[saveState]}</p>
+              {qText && <p className="mt-1 text-xs font-semibold text-zinc-700">{qText}</p>}
+              {round.error && (
+                <p role="alert" className="mt-1 text-xs font-semibold text-[#E5484D]">
+                  {round.error}
+                </p>
+              )}
 
-              <button onClick={beginRound} className={`${BTN_MAIN} mt-4`}>เล่นอีกครั้ง</button>
+              <button onClick={beginRound} disabled={lockNav || round.starting || blocked} className={`${BTN_MAIN} mt-4`}>
+                {startLabel ?? "เล่นอีกครั้ง"}
+              </button>
               <div className="mt-3 grid grid-cols-2 gap-3">
-                <Link href="/rank" className={BTN_SUB}>ดูอันดับ</Link>
-                <Link href="/" className={BTN_SUB}>หน้าหลัก</Link>
+                <Link href="/rank" className={`${BTN_SUB}${lockCls}`} {...lockProps}>ดูอันดับ</Link>
+                <Link href="/" className={`${BTN_SUB}${lockCls}`} {...lockProps}>หน้าหลัก</Link>
               </div>
             </div>
           </div>
