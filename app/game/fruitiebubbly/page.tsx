@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useGameRound } from "@/lib/useGameRound";
 
 /* =========================================================
   Fruitie Bubbly — ปล่อยผลไม้ลงโหล ผลไม้ชนิดเดียวกันชนกันจะรวมร่างเป็นผลไม้ใหญ่ขึ้น
@@ -52,6 +53,7 @@ const DANGER_CLEAR = 0.4; // อยู่ต่ำกว่าเส้นต่
 const DANGER_LIMIT = 10; // ค้างเหนือเส้นสะสมครบเวลานี้ = จบเกม (วินาที) — ระหว่างนั้นแสดงตัวเลขนับถอยหลัง
 const COMBO_WIN = 1.3; // รวมร่างต่อกันภายในเวลานี้ = คอมโบ (วินาที)
 const MAX_PARTS = 140; // จำกัดจำนวนอนุภาคกันกระตุก
+const LEAVE_MSG = "ออกจากเกมตอนนี้จะเสียรอบเล่นและไม่ได้แต้มรอบนี้ ต้องการออกใช่ไหม?";
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 // ขนาดแก้มชมพู: รัศมีเป็นสัดส่วนของ u (u = สเกลหน้า) — วงกลมจริง ไม่ใช่วงรี
@@ -324,8 +326,10 @@ const sfx = {
 };
 
 // ===== ชนิดข้อมูล =====
-type Phase = "intro" | "playing" | "over";
+// menu = หน้าก่อนเริ่ม (ยังไม่หักรอบ), intro = READY/GO (หักรอบแล้ว), playing, over = จบเกม
+type Phase = "menu" | "intro" | "playing" | "over";
 type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
+type Quota = { authed: boolean; limit: number; remaining: number | null };
 type F = {
   id: number; x: number; y: number; px: number; py: number; // px,py = ตำแหน่งก้าวก่อนหน้า (ไว้ interpolate)
   vx: number; vy: number; a: number; w: number; lv: number; age: number;
@@ -348,10 +352,19 @@ type G = {
   parts: P[]; texts: Tx[]; rings: Rg[];
 };
 
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
+}
+
 // เริ่มต้นไม่สุ่ม (กัน hydration ไม่ตรงกัน) แล้วค่อยสุ่มตอนเริ่มรอบ
-function newG(round: number): G {
+function newG(round: number, phase: Phase = "intro"): G {
   return {
-    round, phase: "intro", fruits: [], nextId: 0,
+    round, phase, fruits: [], nextId: 0,
     score: 0, drops: 0, merges: 0, combo: 0, bestCombo: 0,
     lastMergeT: -1e9, simT: 0, maxLv: 0,
     cur: 0, next: 0, cool: 0, aimX: W / 2, aimT: W / 2,
@@ -1059,7 +1072,7 @@ function render(ctx: CanvasRenderingContext2D, g: G, v: View) {
     drawFruit(ctx, f.lv, f.px + (f.x - f.px) * al, f.py + (f.y - f.py) * al, f.a, 1 + f.p, f.s, f.sa, 1, emotionOf(g, f), f.id, lx, ly, g.clock);
   }
 
-  // ผนังโหลด (ทับผลไม้ให้ดูเป็นกระจก)
+  // ผนังโหล (ทับผลไม้ให้ดูเป็นกระจก)
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -1189,7 +1202,7 @@ function FruitImg({ lv, size }: { lv: number; size: number }) {
   );
 }
 
-const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85";
+const BTN_MAIN = "h-14 w-full rounded-full bg-zinc-900 text-base font-medium text-white transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50";
 const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] text-sm font-medium transition-colors hover:bg-black/[.04]";
 const BTN_ROUND = "pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-xl shadow-sm ring-1 ring-black/5 transition-transform active:scale-95";
 const POP_SHADOW = "0 2px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 0 14px rgba(255,255,255,.9)";
@@ -1202,7 +1215,7 @@ const BUBBLES = [
   ========================================================= */
 export default function FruitieBubblyPage() {
   const gRef = useRef<G>(null as unknown as G);
-  if (!gRef.current) gRef.current = newG(0);
+  if (!gRef.current) gRef.current = newG(0, "menu");
   const g = gRef.current;
   const [, force] = useReducer((x: number) => x + 1, 0);
 
@@ -1215,7 +1228,7 @@ export default function FruitieBubblyPage() {
   const keysRef = useRef({ l: false, r: false });
 
   const [dims, setDims] = useState({ w: 360, h: 640 });
-  const [intro, setIntro] = useState<"ready" | "go" | null>("ready");
+  const [intro, setIntro] = useState<"ready" | "go" | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedPts, setSavedPts] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -1228,6 +1241,18 @@ export default function FruitieBubblyPage() {
   const pausedRef = useRef(false); // เปิดหน้าเกณฑ์ระหว่างเล่น = หยุดเกมชั่วคราว
   const sumRef = useRef<HTMLDivElement>(null);
   const [natH, setNatH] = useState(620);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuH, setMenuH] = useState(520);
+
+  // ===== รอบเล่นต่อวัน =====
+  const round = useGameRound(GAME_ID); // หักรอบที่เซิร์ฟเวอร์ + เก็บ sessionId ของรอบนี้
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const [guest, setGuest] = useState(true); // true = ไม่ได้ล็อกอิน (เล่นได้ ไม่นับรอบ ไม่บันทึกแต้ม)
+  const guestRef = useRef(true);
+  const beginRef = useRef<() => void>(() => {});
+  const blockedRef = useRef(false);
+  const lockRef = useRef(false);
+  const aliveRef = useRef(true);
 
   const later = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
@@ -1238,6 +1263,21 @@ export default function FruitieBubblyPage() {
     timers.current.forEach((t) => clearTimeout(t));
     timers.current = [];
   };
+
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const gm = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (gm) setQuota({ authed: !!r.authed, limit: gm.limit, remaining: gm.remaining });
+    } catch {}
+  }, []);
+
+  // โหลดรอบที่เหลือตอนอยู่หน้าก่อนเริ่ม และตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (g.phase === "menu" || g.phase === "over") loadQuota();
+  }, [g.phase, loadQuota]);
 
   // โหลดค่าที่จำไว้
   useEffect(() => {
@@ -1263,23 +1303,16 @@ export default function FruitieBubblyPage() {
   }
 
   // ===== บันทึกแต้มรอบนี้ (API ใช้ $inc จึงส่งเฉพาะแต้มของรอบนี้ ซึ่งแปลงจากเกณฑ์แล้ว 0-15) =====
-  async function saveScore(score: number) {
-    if (score <= 0) return;
-    let userId: string | null = null;
-    try {
-      const raw = localStorage.getItem("profile");
-      if (raw) {
-        const p = JSON.parse(raw);
-        userId = p.userId || p.id || p._id || null;
-      }
-    } catch {}
-    if (!userId) { setSaveState("guest"); return; }
+  // เซิร์ฟเวอร์ใช้บัญชีจาก session และรับแต้มเฉพาะรอบที่เปิดไว้ตอนเริ่ม (sessionId ใช้ได้ครั้งเดียว)
+  // ส่งทุกรอบแม้ได้ 0 แต้ม เพื่อปิด session ของรอบนั้น
+  async function saveScore(points: number) {
+    if (guestRef.current) { setSaveState("guest"); return; }
     setSaveState("saving");
     try {
       const res = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, gameKey: GAME_ID, score }),
+        body: JSON.stringify({ gameKey: GAME_ID, score: points, sessionId: round.sessionIdRef.current }),
       });
       const result = await res.json().catch(() => null);
       setSaveState(res.ok && result?.success ? "saved" : "error");
@@ -1289,9 +1322,20 @@ export default function FruitieBubblyPage() {
   }
 
   // ===== ลำดับเกม =====
-  function beginRound() {
+  // เริ่มรอบใหม่: หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าสำเร็จจึงแสดง READY → GO!!! แล้วเริ่มเล่น
+  async function beginRound() {
+    if (round.starting) return;
+    audio(); // ปลดล็อกเสียงในจังหวะที่ผู้เล่นกดปุ่ม (ก่อน await)
+    const r = await round.start();
+    if (!aliveRef.current) return;
+    if (!r.ok) {
+      // ครบรอบ / เกมถูกล็อก / เน็ตหลุด: ไม่เริ่มเกม (round.error มีข้อความให้แสดง)
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    guestRef.current = r.guest;
+    setGuest(r.guest);
     clearTimers();
-    audio();
     pressRef.current = null;
     pausedRef.current = false;
     setShowRules(false);
@@ -1317,6 +1361,9 @@ export default function FruitieBubblyPage() {
     }, 1300);
     later(() => setIntro(null), 2200);
   }
+
+  // ให้คีย์ลัดเรียกฟังก์ชันล่าสุดเสมอ (ตัว listener ผูกครั้งเดียวตอนเปิดหน้า)
+  beginRef.current = beginRound;
 
   function endGame() {
     const cur = gRef.current;
@@ -1418,7 +1465,7 @@ export default function FruitieBubblyPage() {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  // คีย์ลัดบนคอม: ← → เล็ง, Space/Enter ปล่อยผลไม้ (หน้าสรุป = เล่นอีกครั้ง), M = เสียง
+  // คีย์ลัดบนคอม: ← → เล็ง, Space/Enter ปล่อยผลไม้ (หน้าก่อนเริ่ม/หน้าสรุป = เริ่มเล่น), M = เสียง
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Escape" && pausedRef.current) { pausedRef.current = false; setShowRules(false); return; }
@@ -1429,8 +1476,13 @@ export default function FruitieBubblyPage() {
         if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
         if (pausedRef.current) return;
         const ph = gRef.current.phase;
-        if (ph === "over") { e.preventDefault(); beginRound(); }
-        else if (ph === "playing") { e.preventDefault(); if (!e.repeat) drop(); }
+        if (ph === "over") {
+          e.preventDefault();
+          if (!blockedRef.current && !lockRef.current) beginRef.current();
+        } else if (ph === "menu") {
+          e.preventDefault();
+          if (!blockedRef.current) beginRef.current();
+        } else if (ph === "playing") { e.preventDefault(); if (!e.repeat) drop(); }
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -1565,15 +1617,20 @@ export default function FruitieBubblyPage() {
   // โหลดรูปผลไม้ SVG
   useEffect(() => { loadArt(); }, []);
 
-  // เข้าหน้าแล้วเริ่ม READY → GO!!! อัตโนมัติ
+  // ไม่เริ่มเกมเองตอนเปิดหน้าแล้ว (ต้องกด "เริ่มเล่น" ก่อน) ที่นี่เหลือแค่เก็บกวาดตอนออกจากหน้า
+  // aliveRef กัน beginRound ที่รอเซิร์ฟเวอร์อยู่ไปเริ่มเกมหลังผู้เล่นออกจากหน้าแล้ว
   useEffect(() => {
-    beginRound();
-    return () => clearTimers();
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      clearTimers();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (g.phase === "over" && sumRef.current) setNatH(sumRef.current.offsetHeight);
+    if (g.phase === "menu" && menuRef.current) setMenuH(menuRef.current.offsetHeight);
   });
 
   // หน้าสรุป: คะแนนนับขึ้น → ชิป "+แต้ม" บินลงมาที่กล่องแต้มสะสม → นับแต้ม + ประกายดาว
@@ -1599,6 +1656,7 @@ export default function FruitieBubblyPage() {
   const boardTop = topPad + (dims.h - topPad - bottomPad - boardH) / 2;
   const ladderTop = topPad + (dims.h - topPad - bottomPad - boardH) / 2 + boardH + 6; // ใต้ก้นโหล เว้นช่องไฟนิดนึง
   const over = g.phase === "over";
+  const menu = g.phase === "menu";
   const playing = g.phase === "playing";
   const stars = starsFor(g.score);
   const nt = nextTier(g.score); // เกณฑ์ถัดไป (null = ถึงสูงสุดแล้ว)
@@ -1609,10 +1667,45 @@ export default function FruitieBubblyPage() {
   const saveText: Record<SaveState, string> = {
     idle: "",
     saving: "กำลังบันทึกแต้ม...",
-    saved: `บวก ${savedPts} แต้มเข้าคะแนนสะสมของคุณแล้ว`,
+    saved: savedPts > 0 ? `บวก ${savedPts} แต้มเข้าคะแนนสะสมของคุณแล้ว` : "บันทึกรอบนี้แล้ว (ไม่ได้แต้ม)",
     guest: "เข้าสู่ระบบเพื่อสะสมแต้มเข้าอันดับ",
     error: "บันทึกแต้มไม่สำเร็จ",
   };
+
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  blockedRef.current = blocked;
+  const qText = quotaText(quota);
+  const startLabel = round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : null;
+
+  // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นแต้มอาจไม่ถูกบันทึก
+  const lockNav = over && (saveState === "idle" || saveState === "saving");
+  lockRef.current = lockNav;
+  const lockProps = {
+    "aria-disabled": lockNav,
+    onClick: (e: React.MouseEvent) => {
+      if (lockNav) e.preventDefault();
+    },
+  };
+  const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
+
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  const inRound = g.phase === "intro" || g.phase === "playing";
+  const warnLeave = (inRound || lockNav) && !guest;
+  useEffect(() => {
+    if (!warnLeave) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [warnLeave]);
+
+  // ออกกลางเกม = เสียรอบและไม่ได้แต้ม (guest ไม่โดน)
+  function confirmLeave(e: React.MouseEvent) {
+    if (!guest && !confirm(LEAVE_MSG)) e.preventDefault();
+  }
 
   return (
     <div className="fb-anim fixed inset-0 z-50 select-none overflow-hidden overscroll-none bg-gradient-to-b from-[#9CF0DA] via-[#FFF2B0] to-[#FFADD2] font-sans text-zinc-900" style={{ touchAction: "manipulation" }}>
@@ -1652,7 +1745,7 @@ export default function FruitieBubblyPage() {
           paddingTop: topPad,
           paddingBottom: bottomPad,
           opacity: g.phase === "intro" ? 0 : 1,
-          visibility: over ? "hidden" : "visible",
+          visibility: over || menu ? "hidden" : "visible", // ซ่อนโหลตอนหน้าสรุป/หน้าก่อนเริ่ม
           zIndex: 0,
           touchAction: "none",
           cursor: playing ? "crosshair" : "default",
@@ -1676,7 +1769,7 @@ export default function FruitieBubblyPage() {
       )}
 
       {/* ===== HUD (ซ้อนบนจอ ไม่กินพื้นที่) ===== */}
-      {!over && (
+      {!over && !menu && (
         <div className="pointer-events-none absolute inset-0" style={{ padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)" }}>
           <div className="relative h-full w-full">
             {/* คะแนน มุมบนซ้าย */}
@@ -1725,7 +1818,7 @@ export default function FruitieBubblyPage() {
             {/* แถวล่าง: ปุ่มกลับ/เสียง (ซ้าย) + ลำดับวิวัฒนาการผลไม้ */}
             <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 sm:inset-x-5 sm:bottom-5">
               <div className="flex shrink-0 gap-2">
-                <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND}>←</Link>
+                <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND} onClick={confirmLeave}>←</Link>
                 <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={BTN_ROUND}>
                   {isMuted ? "🔇" : "🔊"}
                 </button>
@@ -1760,7 +1853,7 @@ export default function FruitieBubblyPage() {
       )}
 
       {/* แถวผลไม้ (มือถือแนวตั้ง): อยู่ใต้ก้นโหล ไม่บังปุ่มด้านล่าง */}
-      {stack && !over && (
+      {stack && !over && !menu && (
         <div className="pointer-events-none absolute inset-x-3 flex items-center justify-center" style={{ top: ladderTop, gap: 3 }}>
           {FRUITS.map((f, i) => (
             <span
@@ -1798,6 +1891,64 @@ export default function FruitieBubblyPage() {
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div key={intro} style={{ animation: intro === "ready" ? "fb-intro .5s cubic-bezier(.2,1.3,.4,1) both" : "fb-go .9s ease-out both" }}>
             <PopText text={intro === "ready" ? "READY" : "GO!!!"} size={intro === "ready" ? "text-6xl sm:text-8xl" : "text-7xl sm:text-9xl"} />
+          </div>
+        </div>
+      )}
+
+      {/* ===== หน้าก่อนเริ่มเกม: ยังไม่หักรอบจนกว่าจะกด "เริ่มเล่น" ===== */}
+      {menu && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#FFC9E0] via-[#FFF6D6] to-white">
+          <div style={{ width: 340, height: menuH, transform: `scale(${Math.min((dims.h * 0.94) / menuH, (dims.w * 0.94) / 340, 1.35)})` }} className="shrink-0">
+            <div ref={menuRef} className="text-center" style={{ animation: "fb-rise .45s cubic-bezier(.2,.8,.2,1) both" }}>
+              <span className="inline-block rounded-full bg-zinc-100 px-4 py-1 text-sm font-medium text-zinc-600">อาร์เคด · รวมร่างผลไม้</span>
+              <div className="mt-3">
+                <PopText text="Fruitie Bubbly" size="text-5xl" />
+              </div>
+              <p className="mt-2 text-sm leading-6 text-zinc-600">
+                ปล่อยผลไม้ลงโหล ผลไม้ชนิดเดียวกันชนกันจะรวมร่างเป็นผลไม้ใหญ่ขึ้น ไปให้ถึงแตงโม อย่าให้กองสูงเกินเส้นประนานเกินไป
+              </p>
+
+              <div className="mt-3 flex items-center justify-center gap-1" aria-hidden>
+                {[0, 2, 4, 6, 8, 10].map((lv) => (
+                  <FruitImg key={lv} lv={lv} size={34} />
+                ))}
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded-2xl bg-[#97D58C]/55 py-3">
+                  <p className="text-xl font-semibold tabular-nums">{FRUITS.length}</p>
+                  <p className="text-xs text-zinc-600">ระดับผลไม้</p>
+                </div>
+                <div className="rounded-2xl bg-[#FF9EC0]/50 py-3">
+                  <p className="text-xl font-semibold tabular-nums">{DANGER_LIMIT} วิ</p>
+                  <p className="text-xs text-zinc-600">ล้นเส้นแล้วจบ</p>
+                </div>
+                <div className="rounded-2xl bg-[#FFD66B]/70 py-3">
+                  <p className="text-xl font-semibold tabular-nums">{MAX_SAVE}</p>
+                  <p className="text-xs text-zinc-600">แต้มสูงสุด/รอบ</p>
+                </div>
+              </div>
+
+              {qText && <p className="mt-4 text-sm font-semibold text-zinc-800">{qText}</p>}
+              <p className="mt-3 text-xs leading-5 text-zinc-500">
+                กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม
+              </p>
+              {round.error && (
+                <p role="alert" className="mt-3 text-xs font-semibold text-[#E5484D]">
+                  {round.error}
+                </p>
+              )}
+
+              <button onClick={beginRound} disabled={round.starting || blocked} className={`${BTN_MAIN} mt-4`}>
+                {startLabel ?? "เริ่มเล่น"}
+              </button>
+              <button onClick={() => setRules(true)} className="mt-3 text-xs font-medium text-[#C2457B] underline underline-offset-2">
+                ดูเกณฑ์แต้มสะสม
+              </button>
+              <div>
+                <Link href="/#games" className="mt-2 inline-block text-xs text-zinc-400 transition-colors hover:text-zinc-600">กลับหน้าหลัก</Link>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1898,15 +2049,23 @@ export default function FruitieBubblyPage() {
 
               <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
               <p className="h-4 text-xs text-zinc-500" role="status">{saveText[saveState]}</p>
+              {qText && <p className="mt-1 text-xs font-semibold text-zinc-700">{qText}</p>}
+              {round.error && (
+                <p role="alert" className="mt-1 text-xs font-semibold text-[#E5484D]">
+                  {round.error}
+                </p>
+              )}
 
               <button onClick={() => setRules(true)} className="mt-1 text-xs font-medium text-[#C2457B] underline underline-offset-2">
                 ดูเกณฑ์แต้มสะสม
               </button>
 
-              <button onClick={beginRound} className={`${BTN_MAIN} mt-3`}>เล่นอีกครั้ง</button>
+              <button onClick={beginRound} disabled={lockNav || round.starting || blocked} className={`${BTN_MAIN} mt-3`}>
+                {startLabel ?? "เล่นอีกครั้ง"}
+              </button>
               <div className="mt-3 grid grid-cols-2 gap-3">
-                <Link href="/rank" className={BTN_SUB}>ดูอันดับ</Link>
-                <Link href="/" className={BTN_SUB}>หน้าหลัก</Link>
+                <Link href="/rank" className={`${BTN_SUB}${lockCls}`} {...lockProps}>ดูอันดับ</Link>
+                <Link href="/" className={`${BTN_SUB}${lockCls}`} {...lockProps}>หน้าหลัก</Link>
               </div>
             </div>
           </div>
@@ -1967,10 +2126,11 @@ export default function FruitieBubblyPage() {
               <li>🍒 ได้คะแนน 0 = ไม่ได้แต้ม</li>
               <li>🍊 ผู้เล่นทั่วไปมักได้ 150–450 คะแนน (3–6 แต้ม)</li>
               <li>🍉 ต้องเข้าสู่ระบบจึงจะบันทึกแต้มเข้าบัญชี</li>
+              <li>⏱️ กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรชหรือออกจากเกมระหว่างเล่นจะเสียรอบและไม่ได้แต้ม</li>
             </ul>
 
             <button onClick={() => setRules(false)} className={`${BTN_MAIN} mt-3 !h-12`}>
-              {over ? "ปิด" : "ปิดและเล่นต่อ"}
+              {over || menu ? "ปิด" : "ปิดและเล่นต่อ"}
             </button>
           </div>
         </div>
