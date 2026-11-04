@@ -85,6 +85,26 @@ function searchItems(query: string, list: Item[]): Item[] {
     .map((r) => r.x);
 }
 
+// ตัดกลางภาพเป็นสี่เหลี่ยมจัตุรัสแล้วย่อเป็น JPEG (ถ้าเบราว์เซอร์อ่านไฟล์ไม่ได้ คืนไฟล์เดิม)
+async function resizeSquare(file: File, size: number): Promise<File> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const side = Math.min(bmp.width, bmp.height);
+    const out = Math.min(side, size);
+    const c = document.createElement("canvas");
+    c.width = out;
+    c.height = out;
+    const ctx = c.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, out, out);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/jpeg", 0.85));
+    return blob ? new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" }) : file;
+  } catch {
+    return file;
+  }
+}
+
 // step ที่มี error ของฟิลด์นั้น (ไว้เด้งกลับไปแก้เมื่อเซิร์ฟเวอร์ตีกลับ)
 const stepOfErrors = (e: Errors): number | null =>
   e.nickname
@@ -797,9 +817,15 @@ export default function Login() {
 
   /* ---------- รูปโปรไฟล์ ---------- */
 
-  const applyAvatar = (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      setErrors((p) => ({ ...p, form: "ขนาดไฟล์รูปภาพต้องไม่เกิน 5MB" }));
+  const applyAvatar = async (picked: File) => {
+    if (picked.size > 15 * 1024 * 1024) {
+      setErrors((p) => ({ ...p, form: "ไฟล์รูปใหญ่เกินไป เลือกรูปอื่น" }));
+      return;
+    }
+    // ย่อเป็นสี่เหลี่ยมจัตุรัส 512px ก่อนส่ง (Vercel จำกัด body ~4.5MB และประหยัดที่บน Drive)
+    const file = await resizeSquare(picked, 512);
+    if (file.size > 4 * 1024 * 1024) {
+      setErrors((p) => ({ ...p, form: "อ่านรูปนี้ไม่ได้ ลองรูปแบบ JPG หรือ PNG" }));
       return;
     }
     setAvatarFile(file);
@@ -1395,7 +1421,7 @@ export default function Login() {
                           {avatarFile ? "เลือกรูปใหม่" : "เลือกรูปจากเครื่อง"}
                         </Btn>
                       </div>
-                      <span className={`mt-3 text-xs ${MUTED}`}>ไฟล์ไม่เกิน 5MB</span>
+                      <span className={`mt-3 text-xs ${MUTED}`}>ระบบจะย่อรูปให้อัตโนมัติ</span>
 
                       <div className="mt-8 w-full">
                         <p className={`mb-3 text-center text-sm ${MUTED}`}>หรือเลือกรูปที่มีให้</p>

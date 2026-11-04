@@ -4,9 +4,12 @@ import bcrypt from "bcryptjs";
 import { getDb } from "../../../../lib/mongodb";
 import { createSession } from "../../../../lib/auth";
 import { validateOrg } from "../../../components/branches";
+import { uploadAvatar, deleteAvatar } from "../../../../lib/drive-gas";
 
 // รูปสำเร็จรูป p1-p25 (ตรงกับ /img/p1.png - /img/p25.png)
 const PRESET_RE = /^p([1-9]|1\d|2[0-5])$/;
+// หน้าเว็บย่อรูปก่อนส่งแล้ว (~100KB) กันไฟล์ใหญ่ผิดปกติที่ฝั่งเซิร์ฟเวอร์อีกชั้น
+const MAX_AVATAR = 4 * 1024 * 1024;
 
 export async function POST(req: Request) {
   try {
@@ -70,43 +73,19 @@ export async function POST(req: Request) {
     let avatarUrl = "";
     let driveFileId = "";
 
-    // หากมีรูปโปรไฟล์ ให้ส่งแปลงเป็น Base64 แล้วส่งให้ Google Apps Script บันทึก
+    // มีรูปโปรไฟล์ → อัปโหลดขึ้น Google Drive ผ่าน Apps Script (lib/drive-gas.ts)
+    // อัปโหลดไม่สำเร็จ = สมัครต่อได้โดยไม่มีรูป (เหมือนเดิม)
     if (avatarFile && avatarFile.size > 0) {
-      try {
-        const arrayBuffer = await avatarFile.arrayBuffer();
-        const fileBase64 = Buffer.from(arrayBuffer).toString("base64");
-        const ext = avatarFile.name.split(".").pop() || "jpg";
-        const fileName = `avatar_${display}_${Date.now()}.${ext}`;
-
-        const GAS_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
-
-        if (GAS_URL) {
-          const gasResponse = await fetch(GAS_URL, {
-            method: "POST",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8",
-            },
-            redirect: "follow",
-            body: JSON.stringify({
-              fileBase64,
-              fileName,
-              fileType: avatarFile.type,
-            }),
-          });
-
-          const gasResult = await gasResponse.json();
-
-          if (gasResult.success) {
-            avatarUrl = gasResult.imageUrl;
-            driveFileId = gasResult.fileId;
-          } else {
-            console.error("avatar upload: Apps Script ตอบว่าไม่สำเร็จ", gasResult);
-          }
+      if (avatarFile.size > MAX_AVATAR) {
+        console.error("avatar upload: ไฟล์ใหญ่เกิน", avatarFile.size);
+      } else {
+        const up = await uploadAvatar(avatarFile, display.toLowerCase());
+        if (up.ok) {
+          avatarUrl = up.url;
+          driveFileId = up.fileId;
         } else {
-          console.error("avatar upload: ไม่ได้ตั้ง GOOGLE_APPS_SCRIPT_URL (ใส่ใน .env.local แล้วรีสตาร์ต npm run dev)");
+          console.error("avatar upload ไม่สำเร็จ:", up.reason);
         }
-      } catch (uploadError) {
-        console.error("Failed to upload via Apps Script:", uploadError);
       }
     }
 
@@ -117,6 +96,7 @@ export async function POST(req: Request) {
 
     // ตรวจรหัสพนักงานซ้ำในบริษัทเดียวกันก่อน (กันซ้ำจริงอีกชั้นด้วย unique index ดู catch ด้านล่าง)
     if (await db.collection("users").findOne({ companyId, employeeId })) {
+      await deleteAvatar(driveFileId); // สมัครไม่ผ่าน: ลบรูปที่เพิ่งอัปโหลด กันไฟล์ค้างบน Drive
       return NextResponse.json(
         { errors: { employeeId: "รหัสพนักงานนี้ถูกใช้แล้วในบริษัทนี้" } },
         { status: 409 }
@@ -165,6 +145,7 @@ export async function POST(req: Request) {
         { status: 201 }
       );
     } catch (e) {
+      await deleteAvatar(driveFileId); // insert ไม่สำเร็จ: ลบรูปที่เพิ่งอัปโหลด
       if ((e as { code?: number }).code === 11000) {
         // แยกว่าชนที่รหัสพนักงานหรือ username
         const key = (e as { keyPattern?: Record<string, unknown> }).keyPattern;

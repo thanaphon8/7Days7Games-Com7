@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 import { getDb } from "../../../lib/mongodb";
 import { getSessionUser } from "../../../lib/auth";
 import { closeSession } from "../../../lib/game-plays";
+import { uploadAvatar, deleteAvatar } from "../../../lib/drive-gas";
 
 // userId ในหน้าเว็บ = username (ตัวพิมพ์เล็ก) ที่เก็บในคอลเลกชัน users
-const MAX_AVATAR = 5 * 1024 * 1024;
+// หน้าเว็บย่อรูปก่อนส่งแล้ว (~100KB) ค่านี้กันไฟล์ใหญ่ผิดปกติ และต่ำกว่าขีดจำกัด body ของ Vercel (~4.5MB)
+const MAX_AVATAR = 4 * 1024 * 1024;
 // รูปสำเร็จรูป p1-p25 (ตรงกับ /img/p1.png - /img/p25.png)
 const PRESET_RE = /^p([1-9]|1\d|2[0-5])$/;
 const GAME_KEY_RE = /^[A-Za-z0-9_]{1,40}$/;
@@ -18,6 +20,7 @@ type UserDoc = {
   employeeId?: string; // รหัสพนักงาน (กรอกตอนสมัคร) ให้เห็นเฉพาะเจ้าของบัญชี
   avatarUrl?: string; // รูปที่ผู้ใช้อัปโหลดเอง
   avatarPreset?: string; // รูปสำเร็จรูป เช่น "p3"
+  driveFileId?: string; // id ไฟล์รูปบน Google Drive (ไว้ลบตอนเปลี่ยนรูป)
   points?: number;
   gameScores?: Record<string, number>;
   savedEvents?: unknown[];
@@ -67,47 +70,6 @@ const strList = (v: unknown): string[] | null =>
   v.every((x) => typeof x === "string" && x.length > 0 && x.length <= 64)
     ? (v as string[])
     : null;
-
-// อัปโหลดรูปผ่าน Google Apps Script (เหมือน register)
-type UploadResult = { ok: true; url: string; fileId: string } | { ok: false; reason: string };
-
-async function uploadAvatar(file: File, username: string): Promise<UploadResult> {
-  const GAS_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
-  if (!GAS_URL) {
-    console.error("avatar upload: ไม่ได้ตั้ง GOOGLE_APPS_SCRIPT_URL (ใส่ใน .env.local แล้วรีสตาร์ต npm run dev)");
-    return { ok: false, reason: "ยังไม่ได้ตั้งค่า GOOGLE_APPS_SCRIPT_URL" };
-  }
-  try {
-    const fileBase64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-    const ext = file.name.split(".").pop() || "jpg";
-    const res = await fetch(GAS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      redirect: "follow",
-      body: JSON.stringify({
-        fileBase64,
-        fileName: `avatar_${username}_${Date.now()}.${ext}`,
-        fileType: file.type,
-      }),
-    });
-    const text = await res.text();
-    let out: { success?: boolean; imageUrl?: string; fileId?: string; error?: string; message?: string };
-    try {
-      out = JSON.parse(text);
-    } catch {
-      console.error("avatar upload: Apps Script ไม่ได้ตอบเป็น JSON", res.status, text.slice(0, 200));
-      return { ok: false, reason: "Apps Script ไม่ได้ตอบเป็น JSON (เช็กว่า deploy แบบ Anyone)" };
-    }
-    if (!out.success || !out.imageUrl) {
-      console.error("avatar upload: Apps Script ตอบว่าไม่สำเร็จ", out);
-      return { ok: false, reason: out.error || out.message || "Apps Script ตอบว่าไม่สำเร็จ" };
-    }
-    return { ok: true, url: out.imageUrl, fileId: out.fileId ?? "" };
-  } catch (e) {
-    console.error("avatar upload: เรียก Apps Script ไม่สำเร็จ", e);
-    return { ok: false, reason: "เรียก Apps Script ไม่สำเร็จ" };
-  }
-}
 
 const fail = (message: string, status: number, extra: Record<string, unknown> = {}) =>
   NextResponse.json({ success: false, message, ...extra }, { status });
@@ -262,9 +224,9 @@ export async function PATCH(req: Request) {
     }
 
     if (avatar) {
-      // อัปโหลดรูปเอง
+      // อัปโหลดรูปเอง (ขึ้น Google Drive ผ่าน Apps Script)
       if (!avatar.type.startsWith("image/")) return fail("ไฟล์ต้องเป็นรูปภาพ", 400);
-      if (avatar.size > MAX_AVATAR) return fail("ขนาดไฟล์รูปภาพต้องไม่เกิน 5MB", 400);
+      if (avatar.size > MAX_AVATAR) return fail("ขนาดไฟล์รูปภาพต้องไม่เกิน 4MB", 400);
       const up = await uploadAvatar(avatar, username);
       if (!up.ok) {
         const dev = process.env.NODE_ENV !== "production";
@@ -309,8 +271,21 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: true, data: toPublic(cur) });
     }
 
+    // เปลี่ยนรูป (อัปโหลดใหม่ หรือเปลี่ยนเป็นรูปสำเร็จรูป): จำ id ไฟล์เก่าไว้ลบทิ้งบน Drive
+    const changesAvatar = "driveFileId" in $set;
+    const before = changesAvatar
+      ? await users.findOne({ username }, { projection: { driveFileId: 1 } })
+      : null;
+
     const r = await users.updateOne({ username }, update);
-    if (r.matchedCount === 0) return fail("ไม่พบผู้ใช้", 404);
+    if (r.matchedCount === 0) {
+      // ไม่พบผู้ใช้: ลบรูปที่เพิ่งอัปโหลด กันไฟล์ค้าง
+      if (typeof $set.driveFileId === "string") await deleteAvatar($set.driveFileId);
+      return fail("ไม่พบผู้ใช้", 404);
+    }
+    if (before?.driveFileId && before.driveFileId !== $set.driveFileId) {
+      await deleteAvatar(before.driveFileId); // ลบรูปเก่าหลังบันทึกรูปใหม่สำเร็จแล้ว
+    }
     const u = await users.findOne({ username }, { projection: { passwordHash: 0 } });
     return NextResponse.json({ success: true, data: u ? toPublic(u) : null });
   } catch (e) {
