@@ -15,6 +15,7 @@ const MAX_SCORE_PER_ROUND = 100000; // กันค่าผิดปกติ
 type UserDoc = {
   username: string;
   nickname: string;
+  employeeId?: string; // รหัสพนักงาน (กรอกตอนสมัคร) ให้เห็นเฉพาะเจ้าของบัญชี
   avatarUrl?: string; // รูปที่ผู้ใช้อัปโหลดเอง
   avatarPreset?: string; // รูปสำเร็จรูป เช่น "p3"
   points?: number;
@@ -38,11 +39,13 @@ const totalPoints = (u: Pick<UserDoc, "points" | "gameScores">) => {
   return Object.values(u.gameScores ?? {}).reduce((s, v) => s + (Number(v) || 0), 0);
 };
 
+// ข้อมูลเต็มของเจ้าของบัญชี (ใช้เฉพาะตอนเจ้าของบัญชีเรียกดูตัวเอง และตอบกลับ PATCH)
 const toPublic = (u: UserDoc) => {
   const avatar = effAvatar(u);
   return {
     userId: u.username,
     name: u.nickname,
+    employeeId: u.employeeId ?? "",
     avatar,
     avatarId: avatar,
     avatarUrl: u.avatarUrl ?? "",
@@ -124,7 +127,7 @@ export async function GET(req: Request) {
       if (!me) return fail("กรุณาเข้าสู่ระบบ", 401);
       const u = await users.findOne({ username: userId }, { projection: { passwordHash: 0 } });
       if (!u) return fail("ไม่พบผู้ใช้", 404);
-      // ข้อมูลเต็ม (รายการโปรด ฯลฯ) ให้เฉพาะเจ้าของบัญชี คนอื่นเห็นแค่ข้อมูลสาธารณะ
+      // ข้อมูลเต็ม (รายการโปรด รหัสพนักงาน ฯลฯ) ให้เฉพาะเจ้าของบัญชี คนอื่นเห็นแค่ข้อมูลสาธารณะ
       if (me.username !== userId) {
         const avatar = effAvatar(u);
         return NextResponse.json({

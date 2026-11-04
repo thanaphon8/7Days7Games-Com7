@@ -1,13 +1,24 @@
-// app/components/login/profile/page.tsx
+// app/login/profile/page.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getCompany, getDepartment } from "../../components/departments";
+import { branchFullLabel, branchProvince, branchRegion, getBranch } from "../../components/branches";
 
 export type Profile = {
   userId?: string;
   name: string;
   avatar: string; // URL รูปที่อัปโหลด หรือรูปสำเร็จรูป 'p1'-'p25'
+};
+
+// ข้อมูลการทำงานที่กรอกตอนสมัคร (ดูอย่างเดียว)
+type OrgInfo = {
+  username?: string;
+  employeeId?: string;
+  companyId?: number | null;
+  departmentId?: number | null;
+  branchId?: number | null;
 };
 
 const RED = "#ff2a55";
@@ -167,6 +178,28 @@ function CloseBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
+// ปุ่มดินสอ: กดเพื่อเปิด/ปิดโหมดแก้ไขรูปโปรไฟล์
+function PencilBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={active ? "ปิดการแก้ไขรูปโปรไฟล์" : "แก้ไขรูปโปรไฟล์"}
+      aria-pressed={active}
+      className={`flex h-10 w-10 items-center justify-center rounded-full border-2 outline-none transition-all focus-visible:ring-4 focus-visible:ring-white active:scale-90 ${
+        active
+          ? "border-[#17FFA2] bg-[#17FFA2] text-[#04110a] shadow-[0_0_18px_rgba(23,255,162,0.6)]"
+          : "border-[#17FFA2] bg-[#0a1014] text-[#17FFA2] hover:bg-[#17FFA2] hover:text-[#04110a]"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+      </svg>
+    </button>
+  );
+}
+
 function CardTitle({ id, htmlFor, children }: { id?: string; htmlFor?: string; children: React.ReactNode }) {
   const cls = "text-lg font-bold uppercase tracking-tight";
   return (
@@ -306,6 +339,7 @@ const pageShell =
 export default function ProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [orgInfo, setOrgInfo] = useState<OrgInfo>({});
   const [name, setName] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -318,7 +352,9 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
   const [camOpen, setCamOpen] = useState(false);
   const [canCam, setCanCam] = useState(false);
+  const [editingAvatar, setEditingAvatar] = useState(false); // กดดินสอ = แสดงส่วนเลือกรูป
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarSecRef = useRef<HTMLElement>(null);
 
   // ได้มงกุฎเมื่ออยู่อันดับ 1 และมีคะแนนแล้ว
   const isTop = rank === 1 && (score ?? 0) > 0;
@@ -333,6 +369,12 @@ export default function ProfilePage() {
     },
     [avatarPreview]
   );
+
+  // เปิดโหมดแก้ไขรูป: เลื่อนหน้าไปที่ส่วนเลือกรูป
+  useEffect(() => {
+    if (!editingAvatar) return;
+    avatarSecRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [editingAvatar]);
 
   useEffect(() => {
     async function loadData() {
@@ -353,6 +395,8 @@ export default function ProfilePage() {
         };
         setProfile(initialProfile);
         setName(initialProfile.name);
+        // ค่าเริ่มต้นจาก localStorage (รอ API มาทับ)
+        setOrgInfo({ username: currentUserId, employeeId: parsed.employeeId || "" });
 
         if (currentUserId) {
           const res = await fetch(`/api/user?userId=${encodeURIComponent(currentUserId)}`, { cache: "no-store" });
@@ -371,6 +415,13 @@ export default function ProfilePage() {
             setProfile(fetchedProfile);
             setName(fetchedProfile.name);
             setSavedCount((result.data.savedEvents?.length || 0) + (result.data.savedGames?.length || 0));
+            setOrgInfo({
+              username: result.data.userId || currentUserId,
+              employeeId: result.data.employeeId || parsed.employeeId || "",
+              companyId: result.data.companyId ?? null,
+              departmentId: result.data.departmentId ?? null,
+              branchId: result.data.branchId ?? null,
+            });
           }
 
           // คำนวณอันดับ จากคะแนนรวมของทุกคน
@@ -457,7 +508,13 @@ export default function ProfilePage() {
         result.data?.avatarUrl || result.data?.avatarPreset || result.data?.avatarId || profile.avatar;
       localStorage.setItem(
         "profile",
-        JSON.stringify({ userId: profile.userId, name: cleanName, avatar, avatarId: avatar })
+        JSON.stringify({
+          userId: profile.userId,
+          name: cleanName,
+          avatar,
+          avatarId: avatar,
+          employeeId: result.data?.employeeId || orgInfo.employeeId || "",
+        })
       );
       window.dispatchEvent(new Event("storage"));
       router.back();
@@ -510,6 +567,22 @@ export default function ProfilePage() {
     [String(savedCount), "โปรด"],
   ];
 
+  // ข้อมูลการทำงาน (ดูอย่างเดียว) ช่องไหนไม่มีข้อมูลจะถูกซ่อน
+  const company = getCompany(orgInfo.companyId);
+  const dept = getDepartment(orgInfo.departmentId);
+  const branch = getBranch(orgInfo.branchId);
+  const orgRows: { label: string; value: string; wide?: boolean }[] = (
+    [
+      { label: "รหัสพนักงาน", value: orgInfo.employeeId?.trim() || "" },
+      { label: "Username", value: orgInfo.username?.trim() || "" },
+      { label: "บริษัท", value: company?.name ?? "" },
+      { label: "แผนก", value: dept?.name ?? "", wide: true },
+      { label: "สาขา", value: branch ? branchFullLabel(branch) : "", wide: true },
+      { label: "จังหวัด", value: branch ? branchProvince(branch) ?? "" : "" },
+      { label: "ภูมิภาค", value: branch ? branchRegion(branch) ?? "" : "" },
+    ] as { label: string; value: string; wide?: boolean }[]
+  ).filter((r) => r.value);
+
   return (
     <div className={pageShell}>
       <style>{STYLES}</style>
@@ -550,6 +623,10 @@ export default function ProfilePage() {
                   name={cleanName}
                   size="h-24 w-24 ring-4 ring-[#17FFA2] shadow-[0_0_28px_rgba(23,255,162,0.5)] sm:h-28 sm:w-28 lg:h-36 lg:w-36"
                 />
+                {/* ปุ่มดินสอ: มุมล่างขวาของรูป */}
+                <div className="absolute bottom-0 right-0 z-10">
+                  <PencilBtn active={editingAvatar} onClick={() => setEditingAvatar((v) => !v)} />
+                </div>
               </div>
               <div className="min-w-0 lg:mt-5">
                 <p className="truncate text-2xl font-bold uppercase tracking-tight sm:text-3xl">{cleanName || "ชื่อของคุณ"}</p>
@@ -593,92 +670,130 @@ export default function ProfilePage() {
               </p>
             </section>
 
-            <section className="fx-rise border-l-4 border-[#17FFA2] bg-[#0a1014]/90 p-6 backdrop-blur-sm sm:p-8" style={{ animationDelay: "240ms" }}>
-              <CardTitle id="avatar-label">รูปโปรไฟล์</CardTitle>
-
-              {/* อัปโหลดรูปเอง / ถ่ายรูป */}
-              <div className="mt-5 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    applyAvatar(f);
-                    e.target.value = "";
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="เลือกรูปโปรไฟล์"
-                  className="group relative flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-[#17FFA2]/50 bg-black/40 transition-all hover:border-[#17FFA2] hover:shadow-[0_0_24px_rgba(23,255,162,0.35)] active:scale-95"
-                >
-                  {shownAvatar && avatarSrc(shownAvatar) ? (
-                    <Avatar id={shownAvatar} name={cleanName} size="h-full w-full" />
-                  ) : (
-                    <span className="flex flex-col items-center text-[13px] text-[#8fa6a1] group-hover:text-[#17FFA2]">
-                      <svg className="mb-1 h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      เลือกรูป
-                    </span>
-                  )}
-                </button>
-
-                <div className="flex flex-col items-center gap-3 sm:items-start">
-                  <div className="flex flex-wrap items-center justify-center gap-3">
-                    {canCam && (
-                      <Btn onClick={() => setCamOpen(true)} height="h-11" className="px-5">
-                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
-                          <circle cx="12" cy="13" r="3.5" />
-                        </svg>
-                        ถ่ายรูป
-                      </Btn>
-                    )}
-                    <Btn variant="outline" onClick={() => fileInputRef.current?.click()} height="h-11" className="px-5">
-                      อัปโหลดรูปจากเครื่อง
-                    </Btn>
-                  </div>
-                  <p className={`text-xs ${MUTED}`}>
-                    {avatarFile
-                      ? "เลือกรูปใหม่แล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้"
-                      : avatarPreset
-                        ? "เลือกรูปสำเร็จรูปแล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้"
-                        : "ไฟล์ไม่เกิน 5MB"}
-                  </p>
-                </div>
-              </div>
-
-              {/* เลือกรูปสำเร็จรูป p1-p25 */}
-              <p className={`mt-7 text-sm ${MUTED}`}>หรือเลือกรูปสำเร็จรูป</p>
-              <div role="radiogroup" aria-labelledby="avatar-label" className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-7 sm:gap-3">
-                {PRESETS.map((p) => {
-                  const active = avatarPreset === p || (!avatarFile && !avatarPreset && profile.avatar === p);
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      aria-label={`รูปโปรไฟล์ ${p}`}
-                      onClick={() => pickPreset(p)}
-                      className={`aspect-square overflow-hidden rounded-full border-2 bg-black/40 transition-all active:scale-90 ${
-                        active
-                          ? "border-[#17FFA2] shadow-[0_0_16px_rgba(23,255,162,0.6)]"
-                          : "border-white/10 hover:border-[#17FFA2]/60"
-                      }`}
+            {/* ===== ข้อมูลการทำงาน (ดูอย่างเดียว แก้ไม่ได้) ===== */}
+            {orgRows.length > 0 && (
+              <section
+                aria-labelledby="work-label"
+                className="fx-rise border-l-4 border-[#17FFA2] bg-[#0a1014]/90 p-6 backdrop-blur-sm sm:p-8"
+                style={{ animationDelay: "200ms" }}
+              >
+                <CardTitle id="work-label">ข้อมูลการทำงาน</CardTitle>
+                <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {orgRows.map((r) => (
+                    <div
+                      key={r.label}
+                      className={`border border-white/10 bg-black/40 px-4 py-3 ${r.wide ? "sm:col-span-2" : ""}`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`/img/${p}.png`} alt="" className="h-full w-full object-cover" loading="lazy" />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+                      <dt className={`text-xs ${MUTED}`}>{r.label}</dt>
+                      <dd className="mt-0.5 break-words text-[15px] font-semibold">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className={`mt-3 text-xs ${MUTED}`}>ข้อมูลนี้ตั้งตอนสมัคร แก้ไขไม่ได้ และเห็นเฉพาะคุณ</p>
+              </section>
+            )}
+
+            {/* ===== รูปโปรไฟล์ (ซ่อนไว้ จนกว่าจะกดดินสอ) ===== */}
+            {editingAvatar && (
+              <section
+                ref={avatarSecRef}
+                className="fx-rise border-l-4 border-[#17FFA2] bg-[#0a1014]/90 p-6 backdrop-blur-sm sm:p-8"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle id="avatar-label">รูปโปรไฟล์</CardTitle>
+                  <button
+                    type="button"
+                    onClick={() => setEditingAvatar(false)}
+                    className="h-9 px-3 text-sm font-semibold text-[#8fa6a1] transition-colors hover:text-[#17FFA2]"
+                  >
+                    ซ่อน
+                  </button>
+                </div>
+
+                {/* อัปโหลดรูปเอง / ถ่ายรูป */}
+                <div className="mt-5 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      applyAvatar(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="เลือกรูปโปรไฟล์"
+                    className="group relative flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-[#17FFA2]/50 bg-black/40 transition-all hover:border-[#17FFA2] hover:shadow-[0_0_24px_rgba(23,255,162,0.35)] active:scale-95"
+                  >
+                    {shownAvatar && avatarSrc(shownAvatar) ? (
+                      <Avatar id={shownAvatar} name={cleanName} size="h-full w-full" />
+                    ) : (
+                      <span className="flex flex-col items-center text-[13px] text-[#8fa6a1] group-hover:text-[#17FFA2]">
+                        <svg className="mb-1 h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        เลือกรูป
+                      </span>
+                    )}
+                  </button>
+
+                  <div className="flex flex-col items-center gap-3 sm:items-start">
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      {canCam && (
+                        <Btn onClick={() => setCamOpen(true)} height="h-11" className="px-5">
+                          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
+                            <circle cx="12" cy="13" r="3.5" />
+                          </svg>
+                          ถ่ายรูป
+                        </Btn>
+                      )}
+                      <Btn variant="outline" onClick={() => fileInputRef.current?.click()} height="h-11" className="px-5">
+                        อัปโหลดรูปจากเครื่อง
+                      </Btn>
+                    </div>
+                    <p className={`text-xs ${MUTED}`}>
+                      {avatarFile
+                        ? "เลือกรูปใหม่แล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้"
+                        : avatarPreset
+                          ? "เลือกรูปสำเร็จรูปแล้ว กด บันทึกการเปลี่ยนแปลง เพื่อใช้รูปนี้"
+                          : "ไฟล์ไม่เกิน 5MB"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* เลือกรูปสำเร็จรูป p1-p25 */}
+                <p className={`mt-7 text-sm ${MUTED}`}>หรือเลือกรูปสำเร็จรูป</p>
+                <div role="radiogroup" aria-labelledby="avatar-label" className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-7 sm:gap-3">
+                  {PRESETS.map((p) => {
+                    const active = avatarPreset === p || (!avatarFile && !avatarPreset && profile.avatar === p);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        aria-label={`รูปโปรไฟล์ ${p}`}
+                        onClick={() => pickPreset(p)}
+                        className={`aspect-square overflow-hidden rounded-full border-2 bg-black/40 transition-all active:scale-90 ${
+                          active
+                            ? "border-[#17FFA2] shadow-[0_0_16px_rgba(23,255,162,0.6)]"
+                            : "border-white/10 hover:border-[#17FFA2]/60"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/img/${p}.png`} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {error && (
               <p role="alert" style={{ borderColor: RED }} className="border-l-4 bg-[#ff2a55]/10 px-4 py-3 text-sm text-[#ff7b94]">
