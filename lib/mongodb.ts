@@ -32,6 +32,16 @@ async function ensureIndexes(db: Db) {
     const sessions = db.collection("sessions");
     await sessions.createIndex({ tokenHash: 1 }, { unique: true });
     await sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // หมดอายุแล้ว Mongo ลบเอง
+
+    // token รีเซ็ตรหัสผ่าน (เก็บแค่ hash, อายุสั้น, ใช้ครั้งเดียว)
+    const resetTokens = db.collection("reset_tokens");
+    await resetTokens.createIndex({ tokenHash: 1 }, { unique: true });
+    await resetTokens.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+    // ตัวนับครั้งที่กรอกผิด (กันเดา) หมดอายุแล้ว Mongo ลบเอง
+    const rateLimits = db.collection("rate_limits");
+    await rateLimits.createIndex({ key: 1 }, { unique: true });
+    await rateLimits.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   } catch (e) {
     console.error("ensureIndexes failed", e);
   }

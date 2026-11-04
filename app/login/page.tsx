@@ -602,6 +602,7 @@ export default function Login() {
   // login
   const [lgUser, setLgUser] = useState("");
   const [lgPass, setLgPass] = useState("");
+  const [resetOk, setResetOk] = useState(false); // มาจากหน้าลืมรหัสผ่าน (?reset=1)
 
   // register
   const [nickname, setNickname] = useState("");
@@ -636,6 +637,7 @@ export default function Login() {
 
   useEffect(() => {
     if (window.location.hash === "#signup") setMode("up");
+    if (new URLSearchParams(window.location.search).get("reset") === "1") setResetOk(true);
     setCanCam(!!navigator.mediaDevices?.getUserMedia);
   }, []);
 
@@ -843,6 +845,7 @@ export default function Login() {
 
     setBusy(true);
     setErrors({});
+    setResetOk(false);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -955,6 +958,7 @@ export default function Login() {
   const switchMode = (next: Mode) => {
     setMode(next);
     setErrors({});
+    setResetOk(false);
   };
 
   /* ---------- หัวข้อของแต่ละขั้น ---------- */
@@ -1059,38 +1063,19 @@ export default function Login() {
 
         {/* ===== ฝั่งขวา: ฟอร์ม ===== */}
         <main className="flex min-h-0 flex-col bg-[#0a1014]/95 p-6 backdrop-blur-sm sm:p-8 md:p-10">
-          {/* แท็บ */}
-          <div role="tablist" className="flex w-fit shrink-0 gap-2">
-            {(
-              [
-                ["in", "เข้าสู่ระบบ"],
-                ["up", "สมัครเข้าร่วม"],
-              ] as const
-            ).map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                role="tab"
-                aria-selected={mode === m}
-                onClick={() => switchMode(m)}
-                className={`btn-fx relative min-h-[44px] overflow-hidden px-5 py-2.5 text-xs font-bold uppercase tracking-wider outline-none transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-95 ${
-                  mode === m
-                    ? "bg-[#17FFA2] text-[#04110a] shadow-[0_0_22px_rgba(23,255,162,0.45)]"
-                    : "border border-[#17FFA2]/50 bg-[#17FFA2]/15 text-white hover:border-[#17FFA2] hover:bg-[#17FFA2] hover:text-[#04110a]"
-                }`}
-              >
-                <span className="btn-shine" aria-hidden="true" />
-                <span className="relative">{label}</span>
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={onSubmit} noValidate className="mt-6 flex min-h-0 flex-1 flex-col">
+         
+          <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
             {/* ---------------- LOGIN ---------------- */}
             {mode === "in" && (
               <div className="flex flex-1 flex-col justify-center">
                 <h2 className="text-3xl font-bold uppercase tracking-tight [text-shadow:0_0_26px_rgba(23,255,162,0.35)]">ยินดีต้อนรับกลับ</h2>
                 <p className={`mt-2 text-sm ${MUTED}`}>เข้าสู่ระบบเพื่อเล่นต่อและดูอันดับของคุณ</p>
+
+                {resetOk && (
+                  <p role="status" className="mt-5 border-l-4 border-[#17FFA2] bg-[#17FFA2]/10 px-4 py-3 text-sm text-[#17FFA2]">
+                    ตั้งรหัสผ่านใหม่แล้ว เข้าสู่ระบบด้วยรหัสผ่านใหม่ได้เลย
+                  </p>
+                )}
 
                 <div className="mt-8 flex flex-col gap-4">
                   <Field
@@ -1112,6 +1097,14 @@ export default function Login() {
                     error={errors.password}
                     trailing={<ShowBtn show={show} onToggle={() => setShow((v) => !v)} />}
                   />
+                  <div className="-mt-2 text-right">
+                    <Link
+                      href="/login/forgot"
+                      className="text-sm font-semibold text-[#8fa6a1] underline underline-offset-4 transition-colors hover:text-[#17FFA2]"
+                    >
+                      ลืมรหัสผ่าน?
+                    </Link>
+                  </div>
                 </div>
 
                 {errors.form && (
@@ -1328,7 +1321,7 @@ export default function Login() {
                         autoComplete="off"
                         placeholder="เช่น A12345"
                         error={errors.employeeId}
-                        hint="3-20 ตัว ใช้ a-z 0-9"
+                        hint="3-20 ตัว ใช้ a-z 0-9 (ใช้ยืนยันตัวตนตอนลืมรหัสผ่าน)"
                       />
                       <Field
                         label="รหัสผ่าน"
