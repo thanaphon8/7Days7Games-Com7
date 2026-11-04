@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useGameRound } from "@/lib/useGameRound";
 
 /* =========================================================
   UP AND UP! — เกมปีนหน้าผา 2D ดูมีมิติ
@@ -51,6 +52,7 @@ const STAND_OY = 40; // ตอนยืน: จุดอ้างอิงตั
 const LEDGE_Y = 106; // ความสูงของชั้นหินฐานแคมป์ (ตำแหน่งเท้าตอนยืน)
 const PRE = 0.12; // เวลาย่อตัวก่อนกระโดด (วินาที)
 const JD = 0.9; // เวลากระโดดทั้งหมดจนเกาะหินก้อนแรก (วินาที)
+const LEAVE_MSG = "ออกจากเกมตอนนี้จะเสียรอบเล่นและไม่ได้แต้มรอบนี้ ต้องการออกใช่ไหม?";
 // ตัวละคร: drain = ตัวคูณการลดแรงเกาะ, v = ตัวคูณความเร็วพุ่ง, grip/spd = ดาวโชว์ในหน้าเลือก (เต็ม 5)
 type Hero = "m" | "f";
 const HERO: Record<Hero, { n: string; sym: string; col: string; drain: number; v: number; catch: number; grip: number; spd: number; d: string }> = {
@@ -220,6 +222,7 @@ const sfx = {
 // ===== ชนิดข้อมูล =====
 type Phase = "menu" | "intro" | "playing" | "over";
 type SaveState = "idle" | "saving" | "saved" | "guest" | "error";
+type Quota = { authed: boolean; limit: number; remaining: number | null };
 type Kind = "rock" | "ice" | "crumble";
 type Hold = { id: number; x: number; y: number; r: number; kind: Kind; pts: number[]; crack: number; shake: number; dead: boolean; fall: number; fv: number };
 type Pt = { x: number; y: number; vx: number; vy: number; life: number; max: number; c: string; size: number; star: boolean };
@@ -238,6 +241,15 @@ type G = {
   fx: { x: number; y: number; z: number; s: number }[];
   parts: Pt[]; texts: Tx[]; rings: Rg[];
 };
+
+// ข้อความรอบที่เหลือวันนี้ (null = ไม่ต้องแสดง เช่น guest หรือยังโหลดไม่เสร็จ)
+function quotaText(q: Quota | null): string | null {
+  if (!q || !q.authed) return null;
+  if (q.limit <= 0) return "เล่นได้ไม่จำกัดรอบ";
+  const left = q.remaining ?? 0;
+  if (left <= 0) return "ครบจำนวนรอบวันนี้แล้ว กลับมาเล่นใหม่หลัง 06:00 น.";
+  return `วันนี้เหลือ ${left}/${q.limit} รอบ (รีเซ็ตทุก 06:00 น.)`;
+}
 
 function addHold(g: G, x: number, y: number, kind: Kind, r = 13 + Math.random() * 4) {
   const pts: number[] = [];
@@ -1548,9 +1560,9 @@ function Pips({ n }: { n: number }) {
   );
 }
 
-const BTN_MAIN = "h-14 w-full rounded-full bg-[#1E2A4A] text-base font-semibold text-white transition-opacity hover:opacity-85";
-const BTN_ORANGE = "h-14 w-full rounded-full bg-gradient-to-b from-[#FF8A4C] to-[#FF5A2E] text-lg font-black text-white shadow-lg ring-2 ring-white transition-transform active:scale-95";
-const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white/70 text-sm font-medium transition-colors hover:bg-white";
+const BTN_MAIN = "h-14 w-full rounded-full bg-[#1E2A4A] text-base font-semibold text-white transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50";
+const BTN_ORANGE = "h-14 w-full rounded-full bg-gradient-to-b from-[#FF8A4C] to-[#FF5A2E] text-lg font-black text-white shadow-lg ring-2 ring-white transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
+const BTN_SUB = "inline-flex h-12 w-full items-center justify-center rounded-full border border-black/[.08] bg-white/70 text-sm font-medium transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50";
 const BTN_DARK = "inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-white/15 text-sm font-medium text-white ring-1 ring-white/25 transition-colors hover:bg-white/25";
 const BTN_ROUND = "pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-xl shadow-sm ring-1 ring-black/5 transition-transform active:scale-95";
 const POP_SHADOW = "0 2px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 0 14px rgba(255,255,255,.9)";
@@ -1602,6 +1614,16 @@ export default function UpAndUpPage() {
   const [ptsLand, setPtsLand] = useState(false);
   const [natH, setNatH] = useState(620);
 
+  // ===== รอบเล่นต่อวัน =====
+  const round = useGameRound(GAME_ID); // หักรอบที่เซิร์ฟเวอร์ + เก็บ sessionId ของรอบนี้
+  const [quota, setQuota] = useState<Quota | null>(null); // รอบที่เหลือวันนี้
+  const [guest, setGuest] = useState(true); // true = ไม่ได้ล็อกอิน (เล่นได้ ไม่นับรอบ ไม่บันทึกแต้ม)
+  const guestRef = useRef(true);
+  const beginRef = useRef<() => void>(() => {});
+  const blockedRef = useRef(false);
+  const lockRef = useRef(false);
+  const aliveRef = useRef(true);
+
   const later = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
     timers.current.push(id);
@@ -1611,6 +1633,21 @@ export default function UpAndUpPage() {
     timers.current.forEach((t) => clearTimeout(t));
     timers.current = [];
   };
+
+  const loadQuota = useCallback(async () => {
+    try {
+      const res = await fetch("/api/game/status", { cache: "no-store" });
+      const r = await res.json().catch(() => null);
+      if (!res.ok || !r?.success) return;
+      const gm = (r.games as { gameId: string; limit: number; remaining: number | null }[]).find((x) => x.gameId === GAME_ID);
+      if (gm) setQuota({ authed: !!r.authed, limit: gm.limit, remaining: gm.remaining });
+    } catch {}
+  }, []);
+
+  // โหลดรอบที่เหลือตอนอยู่หน้าเมนู และตอนจบเกม (ไม่โหลดระหว่างเล่น)
+  useEffect(() => {
+    if (g.phase === "menu" || g.phase === "over") loadQuota();
+  }, [g.phase, loadQuota]);
 
   useEffect(() => {
     try {
@@ -1649,23 +1686,16 @@ export default function UpAndUpPage() {
   }
 
   // ===== บันทึกแต้มรอบนี้ (API ใช้ $inc จึงส่งเฉพาะแต้มของรอบนี้ ซึ่งแปลงจากเกณฑ์แล้ว 0-15) =====
-  async function saveScore(score: number) {
-    if (score <= 0) return;
-    let userId: string | null = null;
-    try {
-      const raw = localStorage.getItem("profile");
-      if (raw) {
-        const p = JSON.parse(raw);
-        userId = p.userId || p.id || p._id || null;
-      }
-    } catch {}
-    if (!userId) { setSaveState("guest"); return; }
+  // เซิร์ฟเวอร์ใช้บัญชีจาก session และรับแต้มเฉพาะรอบที่เปิดไว้ตอนเริ่ม (sessionId ใช้ได้ครั้งเดียว)
+  // ส่งทุกรอบแม้ได้ 0 แต้ม เพื่อปิด session ของรอบนั้น
+  async function saveScore(points: number) {
+    if (guestRef.current) { setSaveState("guest"); return; }
     setSaveState("saving");
     try {
       const res = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, gameKey: GAME_ID, score }),
+        body: JSON.stringify({ gameKey: GAME_ID, score: points, sessionId: round.sessionIdRef.current }),
       });
       const result = await res.json().catch(() => null);
       setSaveState(res.ok && result?.success ? "saved" : "error");
@@ -1689,13 +1719,25 @@ export default function UpAndUpPage() {
     force();
   }
 
-  function beginRound() {
+  // เริ่มรอบใหม่: หักรอบที่เซิร์ฟเวอร์ก่อน ถ้าสำเร็จจึงแสดง READY → GO!!! แล้วเริ่มปีน
+  async function beginRound() {
+    if (round.starting) return;
+    audio(); // ปลดล็อกเสียงในจังหวะที่ผู้เล่นกดปุ่ม (ก่อน await)
+    const r = await round.start();
+    if (!aliveRef.current) return;
+    if (!r.ok) {
+      // ครบรอบ / เกมถูกล็อก / เน็ตหลุด: ไม่เริ่มเกม (round.error มีข้อความให้แสดง) หน้าเลือกสัตว์ยังเปิดค้างไว้
+      if (r.code === "limit" || r.code === "locked") loadQuota();
+      return;
+    }
+    guestRef.current = r.guest;
+    setGuest(r.guest);
     clearTimers();
-    audio();
     pressRef.current = null;
     pausedRef.current = false;
     setShowRules(false);
     setShowHow(false);
+    setPickStep(0);
     roundRef.current += 1;
     const ng = newG(roundRef.current, heroRef.current, petRef.current);
     ng.phase = "intro";
@@ -1714,6 +1756,9 @@ export default function UpAndUpPage() {
     }, 1300);
     later(() => setIntro(null), 2200);
   }
+
+  // ให้คีย์ลัดเรียกฟังก์ชัน/ค่าล่าสุดเสมอ (ตัว listener ผูกครั้งเดียวตอนเปิดหน้า)
+  beginRef.current = beginRound;
 
   function endGame() {
     const cur = gRef.current;
@@ -1817,7 +1862,10 @@ export default function UpAndUpPage() {
           if (dl) choosePet(PET_LIST[(i + n - 1) % n]);
           else if (dr) choosePet(PET_LIST[(i + 1) % n]);
           else if (du || dd) { e.preventDefault(); choosePet(PET_LIST[(i + 3) % n]); }
-          else if (e.code === "Enter" || e.code === "Space") { e.preventDefault(); setPickStep(0); beginRound(); }
+          else if (e.code === "Enter" || e.code === "Space") {
+            e.preventDefault();
+            if (!blockedRef.current) beginRef.current(); // หน้าเลือกสัตว์ปิดเองเมื่อหักรอบสำเร็จ
+          }
         }
         return;
       }
@@ -1834,8 +1882,10 @@ export default function UpAndUpPage() {
       if (e.code === "ArrowDown" || e.code === "KeyS") { kr.d = true; e.preventDefault(); }
       if (e.code === "Space" || e.code === "Enter") {
         if (onBtn || pausedRef.current) return;
-        if (c.phase === "over") { e.preventDefault(); beginRound(); }
-        else if (c.phase === "playing" && c.state === "hang" && !c.stand) {
+        if (c.phase === "over") {
+          e.preventDefault();
+          if (!blockedRef.current && !lockRef.current) beginRef.current();
+        } else if (c.phase === "playing" && c.state === "hang" && !c.stand) {
           e.preventDefault();
           if (!e.repeat) {
             audio();
@@ -1919,7 +1969,15 @@ export default function UpAndUpPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => () => clearTimers(), []);
+  // เก็บกวาดตอนออกจากหน้า (aliveRef กัน beginRound ที่รอเซิร์ฟเวอร์อยู่ไปเริ่มเกมหลังออกจากหน้าแล้ว)
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      clearTimers();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (g.phase === "over" && sumRef.current) setNatH(sumRef.current.offsetHeight);
@@ -1953,11 +2011,46 @@ export default function UpAndUpPage() {
   const saveText: Record<SaveState, string> = {
     idle: "",
     saving: "กำลังบันทึกแต้ม...",
-    saved: `บวก ${savedPts} แต้มเข้าคะแนนสะสมของคุณแล้ว`,
+    saved: savedPts > 0 ? `บวก ${savedPts} แต้มเข้าคะแนนสะสมของคุณแล้ว` : "บันทึกรอบนี้แล้ว (ไม่ได้แต้ม)",
     guest: "เข้าสู่ระบบเพื่อสะสมแต้มเข้าอันดับ",
     error: "บันทึกแต้มไม่สำเร็จ",
   };
   const stCol = g.stamina > 50 ? "#4ADE80" : g.stamina > 25 ? "#FFB020" : "#FF4D6D";
+
+  // ครบรอบวันนี้: เฉพาะผู้ล็อกอินที่มีลิมิต
+  const blocked = !!quota?.authed && quota.limit > 0 && (quota.remaining ?? 0) <= 0;
+  blockedRef.current = blocked;
+  const qText = quotaText(quota);
+  const startLabel = round.starting ? "กำลังเริ่ม..." : blocked ? "ครบรอบวันนี้แล้ว" : null;
+
+  // ระหว่างบันทึกคะแนน ห้ามออกจากหน้า ไม่งั้นแต้มอาจไม่ถูกบันทึก
+  const lockNav = over && (saveState === "idle" || saveState === "saving");
+  lockRef.current = lockNav;
+  const lockProps = {
+    "aria-disabled": lockNav,
+    onClick: (e: React.MouseEvent) => {
+      if (lockNav) e.preventDefault();
+    },
+  };
+  const lockCls = lockNav ? " pointer-events-none opacity-50" : "";
+
+  // ปิดแท็บ/รีเฟรชระหว่างเล่น: เตือนก่อน เพราะรอบนี้ถูกหักไปแล้วและจะไม่ได้แต้ม (guest ไม่โดน)
+  const inRound = g.phase === "intro" || g.phase === "playing";
+  const warnLeave = (inRound || lockNav) && !guest;
+  useEffect(() => {
+    if (!warnLeave) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [warnLeave]);
+
+  // ออกกลางเกม = เสียรอบและไม่ได้แต้ม (guest ไม่โดน)
+  function confirmLeave(e: React.MouseEvent) {
+    if (!guest && !confirm(LEAVE_MSG)) e.preventDefault();
+  }
 
   return (
     <div className="ua-anim fixed inset-0 z-50 select-none overflow-hidden overscroll-none bg-[#8FD3FF] font-sans text-zinc-900" style={{ touchAction: "manipulation" }}>
@@ -2013,7 +2106,8 @@ export default function UpAndUpPage() {
             {record > 0 && (
               <p className="text-center text-sm font-bold text-[#FFE08A]">🏆 สถิติสูงสุด {record.toLocaleString("en-US")}</p>
             )}
-            <button onClick={() => openPick(true)} className={BTN_ORANGE}>▲ เริ่มปีน</button>
+            {qText && <p className="text-center text-sm font-bold text-white">{qText}</p>}
+            <button onClick={() => openPick(true)} disabled={blocked} className={BTN_ORANGE}>{blocked ? "ครบรอบวันนี้แล้ว" : "▲ เริ่มปีน"}</button>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setHow(true)} className={BTN_DARK}>วิธีเล่น</button>
               <button onClick={() => setRules(true)} className={BTN_DARK}>⭐ เกณฑ์แต้ม</button>
@@ -2026,7 +2120,7 @@ export default function UpAndUpPage() {
 
       {/* ===== เลือกตัวละคร (ขั้น 1) / เลือกสัตว์เลี้ยง (ขั้น 2) ===== */}
       {pick > 0 && menu && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#1E2A4A]/45 p-4" onClick={() => openPick(false)}>
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#1E2A4A]/45 p-4" onClick={() => { if (!round.starting) openPick(false); }}>
           <div role="dialog" aria-modal="true" aria-label={pick === 1 ? "เลือกนักปีน" : "เลือกสัตว์เลี้ยง"} className="max-h-[94%] w-full max-w-md overflow-y-auto rounded-[2rem] bg-gradient-to-b from-[#EAF6FF] via-[#FFF8E6] to-white px-4 pb-4 pt-5 shadow-2xl ring-4 ring-white" style={{ animation: "ua-rise .3s cubic-bezier(.2,.8,.2,1) both" }} onClick={(e) => e.stopPropagation()}>
             {pick === 1 ? (
               <>
@@ -2076,8 +2170,19 @@ export default function UpAndUpPage() {
                     </button>
                   ))}
                 </div>
-                <button onClick={() => { setPickStep(0); beginRound(); }} className={`${BTN_ORANGE} mt-4`}>ลุย!</button>
-                <button onClick={() => setPickStep(1)} className={`${BTN_SUB} mt-2`}>ย้อนกลับ</button>
+                {qText && <p className="mt-3 text-center text-sm font-bold text-[#1E2A4A]">{qText}</p>}
+                <p className="mt-1 text-center text-[11px] leading-snug text-zinc-500">
+                  กด "ลุย!" แล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม
+                </p>
+                {round.error && (
+                  <p role="alert" className="mt-2 text-center text-sm font-bold text-[#E5484D]">
+                    {round.error}
+                  </p>
+                )}
+                <button onClick={beginRound} disabled={round.starting || blocked} className={`${BTN_ORANGE} mt-3`}>
+                  {startLabel ?? "ลุย!"}
+                </button>
+                <button onClick={() => setPickStep(1)} disabled={round.starting} className={`${BTN_SUB} mt-2`}>ย้อนกลับ</button>
                 <p className="mt-2 hidden text-center text-[11px] text-zinc-500 sm:block">← → ↑ ↓ เลือกสัตว์ · Enter เริ่มเกม · Esc ย้อนกลับ</p>
               </>
             )}
@@ -2140,7 +2245,7 @@ export default function UpAndUpPage() {
             )}
 
             <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 sm:inset-x-5 sm:bottom-5">
-              <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND}>←</Link>
+              <Link href="/#games" aria-label="กลับหน้าเกม" title="กลับ" className={BTN_ROUND} onClick={confirmLeave}>←</Link>
               <button onClick={toggleMute} aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"} title="เปิด/ปิดเสียง (M)" className={BTN_ROUND}>{isMuted ? "🔇" : "🔊"}</button>
               <button onClick={() => setHow(true)} aria-label="วิธีเล่น" title="วิธีเล่น" className={BTN_ROUND}>?</button>
               <button onClick={() => setRules(true)} aria-label="ดูเกณฑ์แต้มสะสม" title="เกณฑ์แต้มสะสม" className={`${BTN_ROUND} !bg-[#FFD66B]`}><StarIcon size={24} /></button>
@@ -2228,12 +2333,20 @@ export default function UpAndUpPage() {
 
               <p className="mt-3 text-xs text-zinc-500">สถิติสูงสุด {record}</p>
               <p className="h-4 text-xs text-zinc-500" role="status">{saveText[saveState]}</p>
+              {qText && <p className="mt-1 text-xs font-semibold text-zinc-700">{qText}</p>}
+              {round.error && (
+                <p role="alert" className="mt-1 text-xs font-semibold text-[#E5484D]">
+                  {round.error}
+                </p>
+              )}
               <button onClick={() => setRules(true)} className="mt-1 text-xs font-medium text-[#E5502A] underline underline-offset-2">ดูเกณฑ์แต้มสะสม</button>
-              <button onClick={beginRound} className={`${BTN_MAIN} mt-3`}>เล่นอีกครั้ง</button>
+              <button onClick={beginRound} disabled={lockNav || round.starting || blocked} className={`${BTN_MAIN} mt-3`}>
+                {startLabel ?? "เล่นอีกครั้ง"}
+              </button>
               <div className="mt-3 grid grid-cols-3 gap-2">
-                <button onClick={goMenu} className={BTN_SUB}>เมนู</button>
-                <Link href="/rank" className={BTN_SUB}>อันดับ</Link>
-                <Link href="/" className={BTN_SUB}>หน้าหลัก</Link>
+                <button onClick={goMenu} disabled={lockNav} className={BTN_SUB}>เมนู</button>
+                <Link href="/rank" className={`${BTN_SUB}${lockCls}`} {...lockProps}>อันดับ</Link>
+                <Link href="/" className={`${BTN_SUB}${lockCls}`} {...lockProps}>หน้าหลัก</Link>
               </div>
             </div>
           </div>
@@ -2255,6 +2368,7 @@ export default function UpAndUpPage() {
               <li className="rounded-2xl bg-white/80 px-3 py-2"><b>ตัวละคร</b> Max แรงเกาะลดช้ากว่าแต่พุ่งสั้นกว่าเล็กน้อย Minnie จับหินไว วงจับกว้างกว่า แต่แรงเกาะลดเร็ว</li>
               <li className="rounded-2xl bg-white/80 px-3 py-2"><b>สัตว์เลี้ยง</b> เลือกได้ 6 ตัว 🐿️ กระรอกจับหินง่ายขึ้น 🐱 แมวแรงเกาะลดช้า 🐸 กบพุ่งไกลขึ้น 🐦 นกร่อนนานขึ้น 🐢 เต่าลมกระทบน้อยลง 10% 🦎 ตุ๊กแกหินร่วงทนนานและหินน้ำแข็งกินแรงน้อยลง</li>
               <li className="rounded-2xl bg-white/80 px-3 py-2"><b>หินพิเศษ</b> หินสีน้ำตาลร้าวจะร่วงหลังจับไม่นาน หินใสสีฟ้าลื่นและกินแรงเกาะ</li>
+              <li className="rounded-2xl bg-[#FFF3C4]/80 px-3 py-2"><b>รอบเล่นต่อวัน</b> กดเริ่มเล่นแล้วนับเป็น 1 รอบทันที ถ้ารีเฟรช ออกจากเกม หรือปิดหน้าระหว่างเล่น จะเสียรอบนั้นและไม่ได้แต้ม</li>
             </ul>
             <button onClick={() => setHow(false)} className={`${BTN_MAIN} mt-3 !h-12`}>{menu || over ? "ปิด" : "ปิดและเล่นต่อ"}</button>
           </div>
