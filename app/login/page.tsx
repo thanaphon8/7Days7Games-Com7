@@ -85,6 +85,14 @@ function searchItems(query: string, list: Item[]): Item[] {
     .map((r) => r.x);
 }
 
+// รับเฉพาะ path ภายในเว็บ (ขึ้นต้น / ตัวเดียว) กัน open redirect และไม่วนกลับหน้า login
+function safeNext(raw: string | null): string {
+  if (!raw) return "/";
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return "/";
+  if (raw === "/login" || raw.startsWith("/login/") || raw.startsWith("/login?")) return "/";
+  return raw;
+}
+
 // ตัดกลางภาพเป็นสี่เหลี่ยมจัตุรัสแล้วย่อเป็น JPEG (ถ้าเบราว์เซอร์อ่านไฟล์ไม่ได้ คืนไฟล์เดิม)
 async function resizeSquare(file: File, size: number): Promise<File> {
   try {
@@ -619,6 +627,9 @@ export default function Login() {
   const [mode, setMode] = useState<Mode>("in");
   const [step, setStep] = useState(0);
 
+  // หน้าที่จะกลับไปหลัง login / สมัครสำเร็จ (มาจาก ?next=) ค่าเริ่มต้นคือหน้าหลัก
+  const [nextPath, setNextPath] = useState("/");
+
   // login
   const [lgUser, setLgUser] = useState("");
   const [lgPass, setLgPass] = useState("");
@@ -657,7 +668,9 @@ export default function Login() {
 
   useEffect(() => {
     if (window.location.hash === "#signup") setMode("up");
-    if (new URLSearchParams(window.location.search).get("reset") === "1") setResetOk(true);
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("reset") === "1") setResetOk(true);
+    setNextPath(safeNext(sp.get("next")));
     setCanCam(!!navigator.mediaDevices?.getUserMedia);
   }, []);
 
@@ -889,7 +902,7 @@ export default function Login() {
         return;
       }
       saveProfile(data.user);
-      router.push("/");
+      router.push(nextPath);
     } catch {
       setErrors({ form: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ ลองใหม่อีกครั้ง" });
     } finally {
@@ -1039,7 +1052,7 @@ export default function Login() {
             <p className={`mt-4 max-w-sm text-base leading-7 ${MUTED}`}>
               บัญชีพร้อมแล้ว ลองเล่นเกมแรกเพื่อเริ่มสะสมแต้ม แล้วดูว่าคุณอยู่อันดับไหน
             </p>
-            <Btn onClick={() => router.push("/")} className="mt-8 h-14 w-full sm:w-56">
+            <Btn onClick={() => router.push(nextPath)} className="mt-8 h-14 w-full sm:w-56">
               เริ่มเล่นเลย
             </Btn>
           </div>

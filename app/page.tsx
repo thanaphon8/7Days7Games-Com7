@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import EventsCarousel, {
   Badge,
@@ -457,12 +458,16 @@ function GameDetail({
   game,
   saved,
   quota,
+  loggedIn,
+  onNeedLogin,
   onToggleSave,
   onClose,
 }: {
   game: Game | null;
   saved: boolean;
   quota: QuotaView | null;
+  loggedIn: boolean;
+  onNeedLogin: (href: string) => void;
   onToggleSave: () => void;
   onClose: () => void;
 }) {
@@ -571,7 +576,11 @@ function GameDetail({
         <div className="w-full max-w-sm">
           {playable && quota && <QuotaTag view={quota} className="mb-3 text-center" />}
           {playable && !out ? (
-            <Button href={game.href} fullWidth>เริ่มเล่น</Button>
+            loggedIn ? (
+              <Button href={game.href} fullWidth>เริ่มเล่น</Button>
+            ) : (
+              <Button onClick={() => onNeedLogin(game.href!)} fullWidth>เข้าสู่ระบบเพื่อเล่น</Button>
+            )
           ) : (
             <Button disabled fullWidth variant="outline">
               {playable && out ? "ครบรอบวันนี้แล้ว" : soon ? "เปิดเร็วๆ นี้" : "เกมกำลังเตรียมพร้อม"}
@@ -638,6 +647,7 @@ type RankUser = { userId?: string; name: string; avatarId?: string; games: numbe
 const wrap = "mx-auto w-full max-w-7xl px-6";
 
 export default function Home() {
+  const router = useRouter();
   const [cat, setCat] = useState("ทั้งหมด");
   const [saved, setSaved] = useState<string[]>([]);
   const [savedGames, setSavedGames] = useState<string[]>([]);
@@ -1281,6 +1291,11 @@ export default function Home() {
         game={detailGame}
         saved={!!detailGame && savedGames.includes(detailGame.id)}
         quota={detailGame ? quota.quotaOf(detailGame.id) : null}
+        loggedIn={!!profile?.userId}
+        onNeedLogin={(href) => {
+          setGameId(null);
+          router.push(`/login?next=${encodeURIComponent(href)}`);
+        }}
         onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)}
         onClose={() => setGameId(null)}
       />

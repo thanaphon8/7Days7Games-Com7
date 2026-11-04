@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 // กันหน้าเกมที่ admin ล็อกไว้: ถ้าเข้า /game/<id> ของเกมที่ล็อก จะพากลับหน้าหลัก
 // (การกันจริงของคะแนนอยู่ที่ API ส่วนนี้กันแค่การพิมพ์ลิงก์ตรง)
+// ถ้ายังไม่ได้ login จะพาไป /login?next=<path นี้> ก่อน
 export default function GameLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
@@ -14,6 +15,20 @@ export default function GameLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let alive = true;
     setOk(false);
+
+    let loggedIn = false;
+    try {
+      const raw = localStorage.getItem("profile");
+      if (raw) {
+        const p = JSON.parse(raw);
+        loggedIn = !!(p.userId || p.id || p._id);
+      }
+    } catch {}
+    if (!loggedIn) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     (async () => {
       try {
         const res = await fetch("/api/games/locks", { cache: "no-store" });
@@ -30,7 +45,7 @@ export default function GameLayout({ children }: { children: React.ReactNode }) 
     return () => {
       alive = false;
     };
-  }, [gameId, router]);
+  }, [gameId, pathname, router]);
 
   if (!ok) return <div aria-busy="true" className="min-h-[100dvh] bg-[#05080a]" />;
   return <>{children}</>;
