@@ -451,6 +451,51 @@ function useCountUp(target: number, run: boolean, ms: number, onDone: () => void
 }
 
 /* ------------------------------------------------------------------ */
+/*  TERMS MODAL (ข้อตกลงก่อนเข้าเล่นเกม)                                 */
+/* ------------------------------------------------------------------ */
+
+function TermsModal({
+  href,
+  onAccept,
+  onClose,
+}: {
+  href: string | null;
+  onAccept: (href: string) => void;
+  onClose: () => void;
+}) {
+  useOverlay(!!href, onClose);
+  if (!href) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="terms-title"
+      onClick={onClose}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-6 backdrop-blur-sm"
+      style={{ animation: "rise .3s cubic-bezier(.2,.8,.2,1) both" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md border border-[#17FFA2]/40 bg-[#0a1014] p-7 shadow-[10px_10px_0_0_#ff2a55]"
+      >
+        <span className="mb-4 block h-1.5 w-12 -skew-x-12 bg-[#17FFA2] shadow-[0_0_14px_#17FFA2]" />
+        <h3 id="terms-title" className="text-xl font-bold uppercase tracking-tight">
+          ข้อตกลงและเงื่อนไขการเข้าเล่นเกม
+        </h3>
+        <p className="mt-4 text-sm leading-7 text-white/80">
+          ข้าพเจ้ายินยอมและรับทราบว่า จะเล่นเกมเฉพาะในช่วงเวลาว่างหรือเวลาพักเท่านั้น
+          โดยไม่กระทบต่อเวลาทำงานและหน้าที่ความรับผิดชอบของตนเอง
+        </p>
+        <div className="mt-7 flex flex-col gap-3 sm:flex-row-reverse">
+          <Button onClick={() => onAccept(href)} fullWidth>ยอมรับและเริ่มเล่น</Button>
+          <Button onClick={onClose} variant="outline" fullWidth>ยกเลิก</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  GAME DETAIL                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -460,6 +505,7 @@ function GameDetail({
   quota,
   loggedIn,
   onNeedLogin,
+  onPlay,
   onToggleSave,
   onClose,
 }: {
@@ -468,6 +514,7 @@ function GameDetail({
   quota: QuotaView | null;
   loggedIn: boolean;
   onNeedLogin: (href: string) => void;
+  onPlay: (href: string) => void;
   onToggleSave: () => void;
   onClose: () => void;
 }) {
@@ -577,7 +624,7 @@ function GameDetail({
           {playable && quota && <QuotaTag view={quota} className="mb-3 text-center" />}
           {playable && !out ? (
             loggedIn ? (
-              <Button href={game.href} fullWidth>เริ่มเล่น</Button>
+              <Button onClick={() => onPlay(game.href!)} fullWidth>เริ่มเล่น</Button>
             ) : (
               <Button onClick={() => onNeedLogin(game.href!)} fullWidth>เข้าสู่ระบบเพื่อเล่น</Button>
             )
@@ -654,6 +701,7 @@ export default function Home() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [favOpen, setFavOpen] = useState(false);
   const [gameId, setGameId] = useState<string | null>(null);
+  const [termsHref, setTermsHref] = useState<string | null>(null); // เกมที่รอผู้ใช้ยอมรับข้อตกลง
   const [profile, setProfile] = useState<Profile | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -1296,8 +1344,20 @@ export default function Home() {
           setGameId(null);
           router.push(`/login?next=${encodeURIComponent(href)}`);
         }}
+        onPlay={(href) => setTermsHref(href)}
         onToggleSave={() => detailGame && toggleSaveGame(detailGame.id)}
         onClose={() => setGameId(null)}
+      />
+
+      {/* ข้อตกลงก่อนเข้าเล่นเกม */}
+      <TermsModal
+        href={termsHref}
+        onClose={() => setTermsHref(null)}
+        onAccept={(href) => {
+          setTermsHref(null);
+          setGameId(null);
+          router.push(href);
+        }}
       />
 
       {/* Component รายการโปรดที่แยกออกมา */}
